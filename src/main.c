@@ -1,4 +1,4 @@
-#include "method_parser.h"
+#include "method.h"
 #include "version.h"
 #include <stdio.h>
 
@@ -16,19 +16,14 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    char* method_name = get_method_name(&method_id);
-    if (method_id == NULL) {
-        printf("Please insert a valid methoid: ./analyzer <methodid>\n");
+    method* m = create_method(method_id);
+    if (m == NULL) {
+        printf("methodid is not valid\n");
         return 1;
     }
 
-    char* params = get_method_params(&method_id);
-    if (params == NULL) {
-        printf("Please insert a valid methoid: ./analyzer <methodid>\n");
-        return 1;
-    }
-
-    printf("%s\n%s\n%s\n", method_name, params, method_id);
+    print_method(m);
+    delete_method(m);
 
     return 0;
 }
