@@ -12,9 +12,10 @@ struct method {
     char* class;
     char* name;
     char* arguments;
-    char* returns;
+    char* return_type;
 };
 
+// all until the last .
 static char* get_method_class(char** method_id)
 {
     char* c = strrchr(*method_id, METHOD_CLASS_SEP);
@@ -29,12 +30,14 @@ static char* get_method_class(char** method_id)
     return buffer;
 }
 
+// from the last . to :
 static char* get_method_name(char** method_id)
 {
     char* buffer = strsep(method_id, METHOD_NAME_SEP);
     return buffer;
 }
 
+// whats inside ()
 static char* get_method_arguments(char** method_id)
 {
     strsep(method_id, METHOD_ARGUMENTS_FIRST);
@@ -42,7 +45,17 @@ static char* get_method_arguments(char** method_id)
     return buffer;
 }
 
-static void cleanup_method_partial(method* m)
+static char* get_method_return_type(char* method_id)
+{
+    if (method_id == NULL) {
+        return NULL;
+    }
+
+    return method_id;
+};
+
+static void
+cleanup_method_partial(method* m)
 {
     if (m->class)
         free(m->class);
@@ -50,30 +63,33 @@ static void cleanup_method_partial(method* m)
         free(m->name);
     if (m->arguments)
         free(m->arguments);
-    if (m->returns)
-        free(m->returns);
+    if (m->return_type)
+        free(m->return_type);
 }
 
-//in case of error code (>0), must call delete_method on m
+// in case of error code (>0), must call delete_method on m
 static int parse_method(method* m, char* method_id)
 {
     m->class = strdup(get_method_class(&method_id));
-    if (m->class == NULL) {
+    if (m->class == NULL || !strlen(m->class)) {
         return 1;
     }
 
     m->name = strdup(get_method_name(&method_id));
-    if (m->name == NULL) {
+    if (m->name == NULL || !strlen(m->name)) {
         return 1;
     }
 
+    // arguments can be empty
     m->arguments = strdup(get_method_arguments(&method_id));
     if (m->arguments == NULL) {
         return 1;
     }
 
-    m->returns = strdup(method_id);
-    if (m->returns == NULL) {
+    // TODO
+    // return type must be 1 char (or array [I ?)
+    m->return_type = strdup(get_method_return_type(method_id));
+    if (m->return_type == NULL || strlen(m->return_type) != 1) {
         return 1;
     }
 
@@ -90,7 +106,7 @@ method* create_method(char* method_id)
     m->class = NULL;
     m->name = NULL;
     m->arguments = NULL;
-    m->returns = NULL;
+    m->return_type = NULL;
 
     if (parse_method(m, method_id)) {
         delete_method(m);
@@ -112,8 +128,8 @@ void delete_method(method* m)
 
 void print_method(const method* m)
 {
-    printf("method class:      %s\n", m->class);
-    printf("method name:       %s\n", m->name);
-    printf("method arguments:  %s\n", m->arguments);
-    printf("method returns:    %s\n", m->returns);
+    printf("method class:          %s\n", m->class);
+    printf("method name:           %s\n", m->name);
+    printf("method arguments:      %s\n", m->arguments);
+    printf("method return_type:    %s\n", m->return_type);
 }

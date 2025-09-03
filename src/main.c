@@ -22,7 +22,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    print_method(m);
+    //print_method(m);
+
     delete_method(m);
 
     return 0;
