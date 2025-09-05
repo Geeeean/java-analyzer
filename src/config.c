@@ -3,10 +3,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
-#define CONFIG_FILE "analyzer.conf"
+#define APP_NAME "java-analyzer"
+#define CONFIG_FILE "java-analyzer.conf"
 #define LINE_SIZE 256
 #define LINE_SEP " "
+
+#define PWD_MAX 256
+#define CONFIG_PATH_MAX 256
 
 static void
 cleanup_method_partial(config* cfg)
@@ -84,9 +89,32 @@ static int sanity_check(const config* cfg)
     return 0;
 }
 
+static char* get_user_config_path(const char* appname, const char* filename)
+{
+    const char* xdg = getenv("XDG_CONFIG_HOME");
+    const char* home = getenv("HOME");
+
+    static char path[CONFIG_PATH_MAX];
+
+    if (xdg && *xdg) {
+        snprintf(path, sizeof(path), "%s/%s/%s", xdg, appname, filename);
+    } else if (home && *home) {
+        snprintf(path, sizeof(path), "%s/.config/%s/%s", home, appname, filename);
+    } else {
+        return NULL;
+    }
+
+    return path;
+}
+
 config* load_config()
 {
-    FILE* f = fopen(CONFIG_FILE, "r");
+    char* path = get_user_config_path(APP_NAME, CONFIG_FILE);
+    if (!path) {
+        return NULL;
+    }
+
+    FILE* f = fopen(path, "r");
     if (f == NULL) {
         return NULL;
     }
@@ -97,9 +125,12 @@ config* load_config()
     while (fgets(buffer, sizeof(buffer), f) != NULL) {
         if (set_field(cfg, buffer)) {
             delete_config(cfg);
+            fclose(f);
             return NULL;
         }
     }
+
+    fclose(f);
 
     if (sanity_check(cfg)) {
         delete_config(cfg);
