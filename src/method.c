@@ -1,12 +1,17 @@
 #include "method.h"
+#include "utils.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #define METHOD_CLASS_SEP '.'
 #define METHOD_NAME_SEP ":"
 #define METHOD_ARGUMENTS_FIRST "("
 #define METHOD_ARGUMENTS_LAST ")"
+
+#define SRC_PATH_MAX 256
 
 struct method {
     char* class;
@@ -148,4 +153,45 @@ void print_method(const method* m)
     printf("method name:           %s\n", m->name);
     printf("method arguments:      %s\n", m->arguments);
     printf("method return_type:    %s\n", m->return_type);
+}
+
+char* read_method(const method* m, const config* cfg)
+{
+    char path[SRC_PATH_MAX];
+
+    char* class_path = strdup(m->class);
+    if (!class_path) {
+        return NULL;
+    }
+
+    replace_char(class_path, '.', '/');
+
+    // todo check for error in sprintf
+    sprintf(path, "%s/%s.java", cfg->jpamb_path, class_path);
+
+    free(class_path);
+
+    struct stat buf;
+    if (stat(path, &buf) < 0) {
+        return NULL;
+    }
+
+    FILE* f = fopen(path, "r");
+    if (!f) {
+        return NULL;
+    }
+
+    size_t nitems = buf.st_size;
+
+    char* source = malloc(sizeof(char) * nitems + 1);
+    if (!source) {
+        return NULL;
+    }
+
+    if (fread(source, sizeof(char), nitems, f) < nitems) {
+        free(source);
+        return NULL;
+    }
+
+    return source;
 }

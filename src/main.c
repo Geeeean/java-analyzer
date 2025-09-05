@@ -1,7 +1,9 @@
 #include "config.h"
 #include "info.h"
 #include "method.h"
+
 #include <stdio.h>
+#include <stdlib.h>
 
 int main(int argc, char** argv)
 {
@@ -12,11 +14,9 @@ int main(int argc, char** argv)
 
     config* cfg = load_config();
     if (cfg == NULL) {
-        printf("Config file is wrongly formatted\n");
+        printf("Config file is wrongly formatted or not exist\n");
         return 1;
     }
-
-    print_config(cfg);
 
     char* method_id = argv[1];
     if (is_info(method_id)) {
@@ -30,8 +30,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    print_method(m);
+    char* source = read_method(m, cfg);
 
+    free(source);
     delete_method(m);
     delete_config(cfg);
 
