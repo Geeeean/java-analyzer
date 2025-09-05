@@ -57,43 +57,55 @@ static char* get_method_return_type(char* method_id)
 static void
 cleanup_method_partial(method* m)
 {
-    if (m->class)
+    if (m->class) {
         free(m->class);
-    if (m->name)
+    }
+
+    if (m->name) {
         free(m->name);
-    if (m->arguments)
+    }
+
+    if (m->arguments) {
         free(m->arguments);
-    if (m->return_type)
+    }
+
+    if (m->return_type) {
         free(m->return_type);
+    }
+}
+
+static int sanity_check(const method* m)
+{
+    if (m->class == NULL || !strlen(m->class)) {
+        return 1;
+    }
+
+    if (m->name == NULL || !strlen(m->name)) {
+        return 2;
+    }
+
+    if (m->arguments == NULL) {
+        return 3;
+    }
+
+    // TODO
+    // return type must be 1 char (or array [I ?)
+    if (m->return_type == NULL || strlen(m->return_type) != 1) {
+        return 4;
+    }
+
+    return 0;
 }
 
 // in case of error code (>0), must call delete_method on m
 static int parse_method(method* m, char* method_id)
 {
     m->class = strdup(get_method_class(&method_id));
-    if (m->class == NULL || !strlen(m->class)) {
-        return 1;
-    }
-
     m->name = strdup(get_method_name(&method_id));
-    if (m->name == NULL || !strlen(m->name)) {
-        return 1;
-    }
-
-    // arguments can be empty
     m->arguments = strdup(get_method_arguments(&method_id));
-    if (m->arguments == NULL) {
-        return 1;
-    }
-
-    // TODO
-    // return type must be 1 char (or array [I ?)
     m->return_type = strdup(get_method_return_type(method_id));
-    if (m->return_type == NULL || strlen(m->return_type) != 1) {
-        return 1;
-    }
 
-    return 0;
+    return sanity_check(m);
 }
 
 method* create_method(char* method_id)
@@ -128,6 +140,10 @@ void delete_method(method* m)
 
 void print_method(const method* m)
 {
+    if (sanity_check(m)) {
+        return;
+    }
+
     printf("method class:          %s\n", m->class);
     printf("method name:           %s\n", m->name);
     printf("method arguments:      %s\n", m->arguments);

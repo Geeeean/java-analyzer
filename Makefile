@@ -1,6 +1,7 @@
 CC = gcc
 CFLAGS = -I$(IDIR)
 
+CONFIG = analyzer.conf
 SRCDIR = src
 IDIR = include
 BUILDDIR = build
@@ -17,15 +18,14 @@ OBJ := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SOURCES))
 
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(DEPS)
 	@mkdir -p $(BUILDDIR)
-	@$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(TARGET): $(OBJ)
 	@mkdir -p $(BINDIR)
-	@$(CC) -o $(BINDIR)/$@ $^ $(CFLAGS) $(LIBS)
-	@echo Build complete, the binary file is in ./bin
+	@cp $(CONFIG) $(BINDIR)/
+	$(CC) -o $(BINDIR)/$@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean
 
 clean:
-	@rm -f $(BUILDDIR)/*.o *~ core $(IDIR)/*~ 
-	@echo Cleaned: ./build ./bin 
+	rm -f $(BUILDDIR)/*.o *~ core $(IDIR)/*~ 
