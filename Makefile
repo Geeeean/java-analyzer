@@ -1,7 +1,6 @@
 CC = gcc
 CFLAGS = -I$(IDIR)
 
-CONFIG = analyzer.conf
 SRCDIR = src
 IDIR = include
 BUILDDIR = build
@@ -22,7 +21,6 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c $(DEPS)
 
 $(TARGET): $(OBJ)
 	@mkdir -p $(BINDIR)
-	@cp $(CONFIG) $(BINDIR)/
 	$(CC) -o $(BINDIR)/$@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean
