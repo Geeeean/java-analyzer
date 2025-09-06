@@ -155,7 +155,7 @@ void print_method(const method* m)
     printf("method return_type:    %s\n", m->return_type);
 }
 
-char* read_method(const method* m, const config* cfg)
+char* read_method_source(const method* m, const config* cfg)
 {
     char path[SRC_PATH_MAX];
 
