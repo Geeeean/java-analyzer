@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include "config.h"
 
-bool is_info(char* id);
+bool is_info(const char* id);
 void print_info(const config* cfg);
 
 #endif

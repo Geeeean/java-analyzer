@@ -1,0 +1,55 @@
+#include "cli.h"
+#include "info.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define OPTIONS_NUM 1
+#define MANDATORY_ARGS_NUM 1
+
+#define INTERPRETER_TAG "i"
+#define INTERPRETER_TAG_F "interpreter"
+
+static bool is_interpreter_only(const char* opt)
+{
+    return strcmp(opt, INTERPRETER_TAG) == 0 || strcmp(opt, INTERPRETER_TAG_F) == 0;
+}
+
+int parse_args(const int argc, const char** argv, options* opts)
+{
+    int args_num = argc - 1;
+
+    opts->info = false;
+    opts->interpreter_only = false;
+    opts->method_id = NULL;
+
+    if (args_num < MANDATORY_ARGS_NUM || args_num > OPTIONS_NUM + MANDATORY_ARGS_NUM) {
+        return 1;
+    }
+
+    if (args_num > MANDATORY_ARGS_NUM) {
+        for (int i = 1; i <= OPTIONS_NUM; i++) {
+            if (argv[i][0] && argv[i][0] != '-') {
+                return 2;
+            }
+
+            if (is_interpreter_only(argv[i] + 1)) {
+                opts->interpreter_only = true;
+            }
+            // else if (other options) {...}
+            else {
+                return 3;
+            }
+        }
+    }
+
+    const char* method_id = argv[args_num];
+
+    if (is_info(method_id)) {
+        opts->info = true;
+    } else {
+        opts->method_id = strdup(method_id);
+    }
+
+    return 0;
+}

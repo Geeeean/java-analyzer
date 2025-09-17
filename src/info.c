@@ -5,7 +5,7 @@
 
 #define INFO_ID "info"
 
-bool is_info(char* id)
+bool is_info(const char* id)
 {
     return strcmp(id, INFO_ID) == 0;
 }
