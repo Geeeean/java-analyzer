@@ -167,7 +167,7 @@ char* read_method_source(const method* m, const config* cfg)
     replace_char(class_path, '.', '/');
 
     // todo check for error in sprintf
-    sprintf(path, "%s/%s.java", cfg->jpamb_path, class_path);
+    sprintf(path, "%s/%s.java", cfg->jpamb_source_path, class_path);
 
     free(class_path);
 

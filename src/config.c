@@ -32,15 +32,15 @@ cleanup_method_partial(config* cfg)
         free(cfg->tags);
     }
 
-    if (cfg->jpamb_path != NULL) {
-        free(cfg->jpamb_path);
+    if (cfg->jpamb_source_path != NULL) {
+        free(cfg->jpamb_source_path);
     }
 }
 
 static int set_field(config* cfg, char* line)
 {
     char* key = strtok(line, LINE_SEP);
-    char* value = strtok(NULL, "\n");
+    char* value = strtok(NULL, " \n");
 
     if (!key || !value)
         return 1;
@@ -55,8 +55,10 @@ static int set_field(config* cfg, char* line)
         cfg->for_science = strcmp(key, "1") == 0;
     } else if (strcmp(key, "tags") == 0) {
         cfg->tags = strdup(value);
-    } else if (strcmp(key, "jpamb_path") == 0) {
-        cfg->jpamb_path = strdup(value);
+    } else if (strcmp(key, "jpamb_source_path") == 0) {
+        cfg->jpamb_source_path = strdup(value);
+    } else if (strcmp(key, "jpamb_decompiled_path") == 0) {
+        cfg->jpamb_decompiled_path = strdup(value);
     } else {
         return 1;
     }
@@ -82,7 +84,11 @@ static int sanity_check(const config* cfg)
         return 5;
     }
 
-    if (cfg->jpamb_path == NULL) {
+    if (cfg->jpamb_source_path == NULL) {
+        return 6;
+    }
+
+    if (cfg->jpamb_decompiled_path == NULL) {
         return 6;
     }
 
@@ -124,6 +130,8 @@ config* load_config()
     char buffer[LINE_SIZE];
     while (fgets(buffer, sizeof(buffer), f) != NULL) {
         if (set_field(cfg, buffer)) {
+            //fprintf(stderr, "Error while checking config structure: %d\n", check);
+
             delete_config(cfg);
             fclose(f);
             return NULL;
@@ -132,7 +140,9 @@ config* load_config()
 
     fclose(f);
 
-    if (sanity_check(cfg)) {
+    int check = sanity_check(cfg);
+    if (check) {
+        fprintf(stderr, "Error while checking config structure: %d\n", check);
         delete_config(cfg);
         return NULL;
     }
@@ -152,14 +162,17 @@ void delete_config(config* cfg)
 
 void print_config(const config* cfg)
 {
-    if (sanity_check(cfg)) {
+    int check = sanity_check(cfg);
+    if (check) {
+        fprintf(stderr, "Error while checking config structure: %d\n", check);
         return;
     }
 
-    printf("analyzer name:        %s\n", cfg->name);
-    printf("analyzer version:     %s\n", cfg->version);
-    printf("analyzer group:       %s\n", cfg->group);
-    printf("analyzer for_science: %d\n", cfg->for_science);
-    printf("analyzer tags:        %s\n", cfg->tags);
-    printf("analyzer jpamb_path:  %s\n", cfg->jpamb_path);
+    printf("analyzer name:                   %s\n", cfg->name);
+    printf("analyzer version:                %s\n", cfg->version);
+    printf("analyzer group:                  %s\n", cfg->group);
+    printf("analyzer for_science:            %d\n", cfg->for_science);
+    printf("analyzer tags:                   %s\n", cfg->tags);
+    printf("analyzer jpamb_source_path:      %s\n", cfg->jpamb_source_path);
+    printf("analyzer jpamb_decompiler_path:  %s\n", cfg->jpamb_decompiled_path);
 }

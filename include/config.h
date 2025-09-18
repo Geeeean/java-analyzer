@@ -10,7 +10,8 @@ typedef struct {
     char* group;
     bool for_science;
     char* tags;
-    char* jpamb_path;
+    char* jpamb_source_path;
+    char* jpamb_decompiled_path;
 } config;
 
 config* load_config();
