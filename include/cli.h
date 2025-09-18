@@ -10,5 +10,6 @@ typedef struct {
 } options;
 
 int parse_args(const int argc, const char** argv, options* opts);
+void delete_options(options* opts);
 
 #endif

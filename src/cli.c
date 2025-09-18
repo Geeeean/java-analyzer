@@ -2,6 +2,7 @@
 #include "info.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define OPTIONS_NUM 1
@@ -52,4 +53,10 @@ int parse_args(const int argc, const char** argv, options* opts)
     }
 
     return 0;
+}
+
+void delete_options(options * opts) {
+    if (opts->method_id) {
+        free(opts->method_id);
+    }
 }
