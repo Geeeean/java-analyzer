@@ -1,10 +1,11 @@
 #ifndef SYNTAX_H
 #define SYNTAX_H
 
-#include "method.h"
 #include "config.h"
+#include "method.h"
 #include "tree_sitter/api.h"
 
-int get_method_node(method* m, config * cfg, TSNode* node);
+TSTree* build_syntax_tree(Method* m, Config* cfg);
+int get_method_node(TSTree* tree, TSNode* node);
 
 #endif

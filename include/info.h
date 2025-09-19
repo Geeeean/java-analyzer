@@ -1,10 +1,10 @@
 #ifndef INFO_H
 #define INFO_H
 
-#include <stdbool.h>
 #include "config.h"
+#include <stdbool.h>
 
 bool is_info(const char* id);
-void print_info(const config* cfg);
+void info_print(const Config* cfg);
 
 #endif

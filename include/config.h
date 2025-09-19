@@ -12,10 +12,10 @@ typedef struct {
     char* tags;
     char* jpamb_source_path;
     char* jpamb_decompiled_path;
-} config;
+} Config;
 
-config* load_config();
-void delete_config(config* cfg);
-void print_config(const config* cfg);
+Config* config_load();
+void config_delete(Config* cfg);
+void config_print(const Config* cfg);
 
 #endif

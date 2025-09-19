@@ -12,44 +12,63 @@
 
 int main(int argc, char** argv)
 {
+    int result = 0;
+
+    /*** OPTIONS ***/
     options opts;
     if (parse_args(argc, (const char**)argv, &opts) > 0) {
         fprintf(stderr, "Correct usage: ./analyzer <options> <methodid>\n");
-        return 1;
+        result = 1;
+        goto cleanup;
     }
 
-    config* cfg = load_config();
-    if (cfg == NULL) {
+    /*** CONFIG ***/
+    Config* cfg = config_load();
+    if (!cfg) {
         fprintf(stderr, "Config file is wrongly formatted or not exist\n");
-        return 2;
+        result = 2;
+        goto cleanup;
     }
 
     if (opts.info) {
-        print_info(cfg);
-        return 0;
+        info_print(cfg);
+        goto cleanup;
     }
 
-    if (opts.interpreter_only) {
-        return 0;
-    }
-
-    method* m = create_method(opts.method_id);
-    if (m == NULL) {
+    /*** METHOD ***/
+    Method* m = method_create(opts.method_id);
+    if (!m) {
         fprintf(stderr, "Methodid is not valid\n");
-        return 3;
+        result = 3;
+        goto cleanup;
+    }
+
+    /*** SYNTAX TREE ***/
+    TSTree* tree = NULL;
+    tree = build_syntax_tree(m, cfg);
+    if (!tree) {
+        fprintf(stderr, "Error while parsing code\n");
+        result = 4;
+        goto cleanup;
     }
 
     TSNode node;
-    if (get_method_node(m, cfg, &node)) {
-        fprintf(stderr, "Error while parsing code\n");
-
-        delete_method(m);
-        delete_config(cfg);
-        return 4;
+    if (get_method_node(tree, &node)) {
+        fprintf(stderr, "Error while getting method node in AST\n");
+        result = 5;
+        goto cleanup;
     }
 
-    delete_method(m);
-    delete_config(cfg);
+    /*** INTERPRETER ***/
+    char* dec_json = method_read(m, cfg, SRC_DECOMPILED);
+    printf("%s", dec_json);
+    free(dec_json);
 
-    return 0;
+cleanup:
+    ts_tree_delete(tree);
+    method_delete(m);
+    config_delete(cfg);
+    delete_options(&opts);
+
+    return result;
 }

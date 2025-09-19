@@ -7,10 +7,17 @@
 
 const TSLanguage* tree_sitter_java(void);
 
-static TSTree* build_syntax_tree(char* source)
+TSTree* build_syntax_tree(Method* m, Config* cfg)
 {
+
     TSParser* parser = ts_parser_new();
     if (!ts_parser_set_language(parser, tree_sitter_java())) {
+        return NULL;
+    }
+
+    char* source = method_read(m, cfg, SRC_SOURCE);
+    if (!source) {
+        ts_parser_delete(parser);
         return NULL;
     }
 
@@ -19,6 +26,9 @@ static TSTree* build_syntax_tree(char* source)
         NULL,
         source,
         strlen(source));
+
+    ts_parser_delete(parser);
+    free(source);
 
     return tree;
 }
@@ -88,26 +98,14 @@ static int find_method(TSNode root, char* source, const char* query_src, const c
     return 2;
 }
 
-int get_method_node(method* m, config* cfg, TSNode* node)
+int get_method_node(TSTree* tree, TSNode* node)
 {
-    char* source = read_method_source(m, cfg);
-    if (!source) {
-        return 1;
-    }
-
-    TSTree* tree = build_syntax_tree(source);
-    free(source);
-    if (!tree) {
-        return 2;
-    }
-
     TSNode root = ts_tree_root_node(tree);
 
     const char* query_src = "(method_declaration "
                             "      name: (identifier) @method.name)";
 
-
-
+    // TODO
 
     return 0;
 }

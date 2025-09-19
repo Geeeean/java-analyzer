@@ -55,8 +55,7 @@ int parse_args(const int argc, const char** argv, options* opts)
     return 0;
 }
 
-void delete_options(options * opts) {
-    if (opts->method_id) {
-        free(opts->method_id);
-    }
+void delete_options(options* opts)
+{
+    free(opts->method_id);
 }

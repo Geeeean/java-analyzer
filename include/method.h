@@ -3,11 +3,16 @@
 
 #include "config.h"
 
-typedef struct method method;
+typedef enum {
+    SRC_SOURCE,
+    SRC_DECOMPILED,
+} SourceType;
 
-method* create_method(char* method_id);
-void delete_method(method* m);
-void print_method(const method* m);
-char* read_method_source(const method* m, const config* cfg);
+typedef struct Method Method;
+
+Method* method_create(char* method_id);
+void method_delete(Method* m);
+void method_print(const Method* m);
+char* method_read(const Method* m, const Config* cfg, SourceType src);
 
 #endif

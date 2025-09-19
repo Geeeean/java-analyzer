@@ -13,15 +13,23 @@
 
 #define SRC_PATH_MAX 256
 
-struct method {
+#define DECOMPILED_FORMAT "json"
+#define SOURCE_FORMAT "java"
+
+struct Method {
     char* class;
     char* name;
     char* arguments;
     char* return_type;
 };
 
+static const char* format[] = {
+    [SRC_SOURCE] = SOURCE_FORMAT,
+    [SRC_DECOMPILED] = DECOMPILED_FORMAT,
+};
+
 // all until the last .
-static char* get_method_class(char** method_id)
+static char* method_get_class(char** method_id)
 {
     char* c = strrchr(*method_id, METHOD_CLASS_SEP);
     if (c == NULL) {
@@ -36,50 +44,26 @@ static char* get_method_class(char** method_id)
 }
 
 // from the last . to :
-static char* get_method_name(char** method_id)
+static char* method_get_name(char** method_id)
 {
     char* buffer = strsep(method_id, METHOD_NAME_SEP);
     return buffer;
 }
 
 // whats inside ()
-static char* get_method_arguments(char** method_id)
+static char* method_get_arguments(char** method_id)
 {
     strsep(method_id, METHOD_ARGUMENTS_FIRST);
     char* buffer = strsep(method_id, METHOD_ARGUMENTS_LAST);
     return buffer;
 }
 
-static char* get_method_return_type(char* method_id)
+static char* method_get_return_type(char* method_id)
 {
-    if (method_id == NULL) {
-        return NULL;
-    }
-
     return method_id;
 };
 
-static void
-cleanup_method_partial(method* m)
-{
-    if (m->class) {
-        free(m->class);
-    }
-
-    if (m->name) {
-        free(m->name);
-    }
-
-    if (m->arguments) {
-        free(m->arguments);
-    }
-
-    if (m->return_type) {
-        free(m->return_type);
-    }
-}
-
-static int sanity_check(const method* m)
+static int sanity_check(const Method* m)
 {
     if (m->class == NULL || !strlen(m->class)) {
         return 1;
@@ -103,19 +87,19 @@ static int sanity_check(const method* m)
 }
 
 // in case of error code (>0), must call delete_method on m
-static int parse_method(method* m, char* method_id)
+static int method_parse(Method* m, char* method_id)
 {
-    m->class = strdup(get_method_class(&method_id));
-    m->name = strdup(get_method_name(&method_id));
-    m->arguments = strdup(get_method_arguments(&method_id));
-    m->return_type = strdup(get_method_return_type(method_id));
+    m->class = strdup(method_get_class(&method_id));
+    m->name = strdup(method_get_name(&method_id));
+    m->arguments = strdup(method_get_arguments(&method_id));
+    m->return_type = strdup(method_get_return_type(method_id));
 
     return sanity_check(m);
 }
 
-method* create_method(char* method_id)
+Method* method_create(char* method_id)
 {
-    method* m = malloc(sizeof(method));
+    Method* m = malloc(sizeof(Method));
     if (m == NULL) {
         return NULL;
     }
@@ -125,25 +109,27 @@ method* create_method(char* method_id)
     m->arguments = NULL;
     m->return_type = NULL;
 
-    if (parse_method(m, method_id)) {
-        delete_method(m);
+    if (method_parse(m, method_id)) {
+        method_delete(m);
         return NULL;
     }
 
     return m;
 }
 
-void delete_method(method* m)
+void method_delete(Method* m)
 {
-    if (m == NULL) {
-        return;
+    if (m) {
+        free(m->class);
+        free(m->name);
+        free(m->arguments);
+        free(m->return_type);
     }
 
-    cleanup_method_partial(m);
     free(m);
 }
 
-void print_method(const method* m)
+void method_print(const Method* m)
 {
     if (sanity_check(m)) {
         return;
@@ -155,43 +141,52 @@ void print_method(const method* m)
     printf("method return_type:    %s\n", m->return_type);
 }
 
-char* read_method_source(const method* m, const config* cfg)
+char* method_read(const Method* m, const Config* cfg, SourceType src)
 {
     char path[SRC_PATH_MAX];
+    char* source = NULL;
 
     char* class_path = strdup(m->class);
     if (!class_path) {
-        return NULL;
+        goto cleanup;
     }
 
     replace_char(class_path, '.', '/');
 
-    // todo check for error in sprintf
-    sprintf(path, "%s/%s.java", cfg->jpamb_source_path, class_path);
+    char* dir = src == SRC_DECOMPILED ? cfg->jpamb_decompiled_path : cfg->jpamb_source_path;
 
-    free(class_path);
+    // todo check for error in sprintf
+    sprintf(path, "%s/%s.%s", dir, class_path, format[src]);
 
     struct stat buf;
     if (stat(path, &buf) < 0) {
-        return NULL;
+        goto cleanup;
     }
 
     FILE* f = fopen(path, "r");
     if (!f) {
-        return NULL;
+        goto cleanup;
     }
 
     size_t nitems = buf.st_size;
 
-    char* source = malloc(sizeof(char) * nitems + 1);
+    source = malloc(sizeof(char) * nitems + 1);
     if (!source) {
-        return NULL;
+        goto cleanup;
     }
 
     if (fread(source, sizeof(char), nitems, f) < nitems) {
         free(source);
-        return NULL;
+        source = NULL;
+
+        goto cleanup;
     }
+
+cleanup:
+    if (f) {
+        fclose(f);
+    }
+    free(class_path);
 
     return source;
 }

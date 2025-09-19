@@ -13,31 +13,7 @@
 #define PWD_MAX 256
 #define CONFIG_PATH_MAX 256
 
-static void
-cleanup_method_partial(config* cfg)
-{
-    if (cfg->name != NULL) {
-        free(cfg->name);
-    }
-
-    if (cfg->version != NULL) {
-        free(cfg->version);
-    }
-
-    if (cfg->group != NULL) {
-        free(cfg->group);
-    }
-
-    if (cfg->tags != NULL) {
-        free(cfg->tags);
-    }
-
-    if (cfg->jpamb_source_path != NULL) {
-        free(cfg->jpamb_source_path);
-    }
-}
-
-static int set_field(config* cfg, char* line)
+static int set_field(Config* cfg, char* line)
 {
     char* key = strtok(line, LINE_SEP);
     char* value = strtok(NULL, " \n");
@@ -66,7 +42,7 @@ static int set_field(config* cfg, char* line)
     return 0;
 }
 
-static int sanity_check(const config* cfg)
+static int sanity_check(const Config* cfg)
 {
     if (cfg->name == NULL) {
         return 1;
@@ -113,7 +89,7 @@ static char* get_user_config_path(const char* appname, const char* filename)
     return path;
 }
 
-config* load_config()
+Config* config_load()
 {
     char* path = get_user_config_path(APP_NAME, CONFIG_FILE);
     if (!path) {
@@ -125,14 +101,14 @@ config* load_config()
         return NULL;
     }
 
-    config* cfg = malloc(sizeof(config));
+    Config* cfg = malloc(sizeof(Config));
 
     char buffer[LINE_SIZE];
     while (fgets(buffer, sizeof(buffer), f) != NULL) {
         if (set_field(cfg, buffer)) {
-            //fprintf(stderr, "Error while checking config structure: %d\n", check);
+            // fprintf(stderr, "Error while checking config structure: %d\n", check);
 
-            delete_config(cfg);
+            config_delete(cfg);
             fclose(f);
             return NULL;
         }
@@ -143,24 +119,27 @@ config* load_config()
     int check = sanity_check(cfg);
     if (check) {
         fprintf(stderr, "Error while checking config structure: %d\n", check);
-        delete_config(cfg);
+        config_delete(cfg);
         return NULL;
     }
 
     return cfg;
 }
 
-void delete_config(config* cfg)
+void config_delete(Config* cfg)
 {
-    if (cfg == NULL) {
-        return;
+    if (cfg) {
+        free(cfg->name);
+        free(cfg->version);
+        free(cfg->group);
+        free(cfg->tags);
+        free(cfg->jpamb_source_path);
     }
 
-    cleanup_method_partial(cfg);
     free(cfg);
 }
 
-void print_config(const config* cfg)
+void config_print(const Config* cfg)
 {
     int check = sanity_check(cfg);
     if (check) {

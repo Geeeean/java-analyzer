@@ -16,7 +16,6 @@ static const char* outcome_strings[] = {
     [OUT_OF_BOUNDS] = OUT_OF_BOUNDS_TAG,
     [NULL_POINTER] = NULL_POINTER_TAG,
     [INFINITE_LOOP] = INFINITE_LOOP_TAG,
-
 };
 
 void print_outcome(const outcome oc, const uint8_t percentage)

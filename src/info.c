@@ -11,7 +11,7 @@ bool is_info(const char* id)
 }
 
 // variable number of arguments used for tags
-static void print_info_aux(char* name, char* version, char* group, bool for_science, char* tags)
+static void info_print_aux(char* name, char* version, char* group, bool for_science, char* tags)
 {
     printf("%s\n", name);
     printf("%s\n", version);
@@ -25,7 +25,7 @@ static void print_info_aux(char* name, char* version, char* group, bool for_scie
     }
 }
 
-void print_info(const config* cfg)
+void info_print(const Config* cfg)
 {
-    print_info_aux(cfg->name, cfg->version, cfg->group, cfg->for_science, cfg->tags);
+    info_print_aux(cfg->name, cfg->version, cfg->group, cfg->for_science, cfg->tags);
 }
