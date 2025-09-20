@@ -1,7 +1,7 @@
+#include "bytecode_parser.h"
 #include "cli.h"
 #include "config.h"
 #include "info.h"
-#include "interpreter.h"
 #include "method.h"
 #include "syntax.h"
 
