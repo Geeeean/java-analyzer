@@ -7,9 +7,9 @@ typedef struct {
     bool info;
     bool interpreter_only;
     char* method_id;
-} options;
+} Options;
 
-int parse_args(const int argc, const char** argv, options* opts);
-void delete_options(options* opts);
+int parse_args(const int argc, const char** argv, Options* opts);
+void delete_options(Options* opts);
 
 #endif

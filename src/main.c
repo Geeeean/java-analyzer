@@ -19,7 +19,7 @@ int main(int argc, char** argv)
     TSTree* tree = NULL;
 
     /*** OPTIONS ***/
-    options opts;
+    Options opts;
     if (parse_args(argc, (const char**)argv, &opts) > 0) {
         fprintf(stderr, "Correct usage: ./analyzer <options> <methodid>\n");
         result = 1;

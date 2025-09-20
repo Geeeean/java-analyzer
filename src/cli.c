@@ -16,7 +16,7 @@ static bool is_interpreter_only(const char* opt)
     return strcmp(opt, INTERPRETER_TAG) == 0 || strcmp(opt, INTERPRETER_TAG_F) == 0;
 }
 
-int parse_args(const int argc, const char** argv, options* opts)
+int parse_args(const int argc, const char** argv, Options* opts)
 {
     int args_num = argc - 1;
 
@@ -58,7 +58,7 @@ int parse_args(const int argc, const char** argv, options* opts)
     return 0;
 }
 
-void delete_options(options* opts)
+void delete_options(Options* opts)
 {
     free(opts->method_id);
 }

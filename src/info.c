@@ -27,5 +27,10 @@ static void info_print_aux(char* name, char* version, char* group, bool for_scie
 
 void info_print(const Config* cfg)
 {
-    info_print_aux(cfg->name, cfg->version, cfg->group, cfg->for_science, cfg->tags);
+    info_print_aux(
+        config_get_name(cfg),
+        config_get_version(cfg),
+        config_get_group(cfg),
+        config_get_for_science(cfg),
+        config_get_tags(cfg));
 }

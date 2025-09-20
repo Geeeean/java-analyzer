@@ -1,5 +1,4 @@
 #include "config.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +11,51 @@
 
 #define PWD_MAX 256
 #define CONFIG_PATH_MAX 256
+
+struct Config {
+    char* name;
+    char* version;
+    char* group;
+    bool for_science;
+    char* tags;
+    char* jpamb_source_path;
+    char* jpamb_decompiled_path;
+};
+
+char* config_get_name(const Config* cfg)
+{
+    return cfg->name;
+}
+
+char* config_get_version(const Config* cfg)
+{
+    return cfg->version;
+}
+
+char* config_get_group(const Config* cfg)
+{
+    return cfg->group;
+}
+
+bool config_get_for_science(const Config* cfg)
+{
+    return cfg->for_science;
+}
+
+char* config_get_tags(const Config* cfg)
+{
+    return cfg->tags;
+}
+
+char* config_get_decompiled(const Config* cfg)
+{
+    return cfg->jpamb_decompiled_path;
+}
+
+char* config_get_source(const Config* cfg)
+{
+    return cfg->jpamb_source_path;
+}
 
 static int set_field(Config* cfg, char* line)
 {

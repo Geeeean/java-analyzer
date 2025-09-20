@@ -153,7 +153,7 @@ char* method_read(const Method* m, const Config* cfg, SourceType src)
 
     replace_char(class_path, '.', '/');
 
-    char* dir = src == SRC_DECOMPILED ? cfg->jpamb_decompiled_path : cfg->jpamb_source_path;
+    char* dir = src == SRC_DECOMPILED ? config_get_decompiled(cfg) : config_get_source(cfg);
 
     // todo check for error in sprintf
     sprintf(path, "%s/%s.%s", dir, class_path, format[src]);
