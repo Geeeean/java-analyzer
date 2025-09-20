@@ -7,6 +7,9 @@
 
 typedef struct Stack Stack;
 
+Stack* stack_new();
+void stack_delete(Stack* stack);
+
 Value* stack_peek(Stack* stack);
 int stack_pop(Stack* stack);
 int stack_push(Stack* stack, Value value);

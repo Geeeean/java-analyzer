@@ -64,3 +64,27 @@ bool stack_same_type_on_top(Stack* stack)
 
     return type1 == type2;
 }
+
+Stack* stack_new() {
+    Stack* stack = malloc(sizeof(Stack));
+    if (!stack) {
+        return NULL;
+    }
+
+    stack->head = NULL;
+    stack->size = 0;
+
+    return stack;
+}
+
+void stack_delete(Stack* stack) {
+    if (!stack) {
+        return;
+    }
+
+    while (stack->head) {
+        stack_pop(stack);
+    }
+
+    free(stack);
+}
