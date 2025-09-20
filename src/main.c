@@ -48,7 +48,7 @@ int main(int argc, char** argv)
     }
 
     /*** SYNTAX TREE ***/
-    tree = build_syntax_tree(m, cfg);
+    tree = syntax_tree_build(m, cfg);
     if (!tree) {
         fprintf(stderr, "Error while parsing code\n");
         result = 4;
@@ -56,16 +56,17 @@ int main(int argc, char** argv)
     }
 
     TSNode node;
-    if (get_method_node(tree, &node)) {
+    if (method_node_get(tree, &node)) {
         fprintf(stderr, "Error while getting method node in AST\n");
         result = 5;
         goto cleanup;
     }
 
     /*** INTERPRETER ***/
-    InstructionTable* inst_table = build_instruction_table(m, cfg);
+    InstructionTable* instruction_table = instruction_table_build(m, cfg);
 
 cleanup:
+    instruction_table_delete(instruction_table);
     ts_tree_delete(tree);
     method_delete(m);
     config_delete(cfg);

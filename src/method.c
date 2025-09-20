@@ -99,15 +99,10 @@ static int method_parse(Method* m, char* method_id)
 
 Method* method_create(char* method_id)
 {
-    Method* m = malloc(sizeof(Method));
+    Method* m = calloc(1, sizeof(Method));
     if (m == NULL) {
         return NULL;
     }
-
-    m->class = NULL;
-    m->name = NULL;
-    m->arguments = NULL;
-    m->return_type = NULL;
 
     if (method_parse(m, method_id)) {
         method_delete(m);

@@ -6,6 +6,7 @@
 
 typedef struct InstructionTable InstructionTable;
 
-InstructionTable* build_instruction_table(Method* m, Config* cfg);
+InstructionTable* instruction_table_build(Method* m, Config* cfg);
+void instruction_table_delete(InstructionTable* instruction_table);
 
 #endif

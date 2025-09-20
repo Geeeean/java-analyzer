@@ -1,7 +1,11 @@
 #include "interpreter.h"
+
 #include "cJSON/cJSON.h"
+
 #include <stdlib.h>
 #include <string.h>
+
+#define INSTRUCTION_TABLE_SIZE 100
 
 typedef enum {
     OP_LOAD,
@@ -62,7 +66,6 @@ typedef struct {
 
 typedef struct {
     Opcode opcode;
-    int offset;
 
     union {
         struct {
@@ -86,6 +89,9 @@ typedef struct {
 } Instruction;
 
 struct InstructionTable {
+    Instruction* instructions[INSTRUCTION_TABLE_SIZE];
+    int count;
+    int capacity;
 };
 
 static cJSON* get_method(Method* m, cJSON* methods)
@@ -105,7 +111,7 @@ static cJSON* get_method(Method* m, cJSON* methods)
     return NULL;
 }
 
-static Opcode parse_offset(int* offset, cJSON* instruction_json)
+static int parse_offset(int* offset, cJSON* instruction_json)
 {
     cJSON* offset_object = cJSON_GetObjectItem(instruction_json, "offset");
     if (!offset || !cJSON_IsNumber(offset_object)) {
@@ -117,7 +123,7 @@ static Opcode parse_offset(int* offset, cJSON* instruction_json)
     return 0;
 }
 
-static Opcode parse_opcode(Opcode* opcode, cJSON* instruction_json)
+static int parse_opcode(Opcode* opcode, cJSON* instruction_json)
 {
     cJSON* opr_object = cJSON_GetObjectItem(instruction_json, "opr");
     if (!opr_object || !cJSON_IsString(opr_object)) {
@@ -142,49 +148,73 @@ static Opcode parse_opcode(Opcode* opcode, cJSON* instruction_json)
     return 0;
 }
 
-static int parse_instruction(Instruction* instruction, cJSON* instruction_json)
+static Instruction* parse_instruction(cJSON* instruction_json, int* offset)
 {
-    if (parse_offset(&instruction->offset, instruction_json)) {
-        return 1;
+    Instruction* instruction = malloc(sizeof(Instruction));
+    if (!instruction) {
+        goto cleanup;
+    }
+
+    if (parse_offset(offset, instruction_json)) {
+        goto cleanup;
     }
 
     if (parse_opcode(&instruction->opcode, instruction_json)) {
-        return 2;
+        goto cleanup;
     }
 
-    printf("OFFSET:%d, OPR: %s\n", instruction->offset, opcode_signature[instruction->opcode]);
+    return instruction;
 
-    return 0;
+cleanup:
+    free(instruction);
+    return NULL;
 }
 
-static Instruction*
+static InstructionTable*
 parse_bytecode(cJSON* method)
 {
+    InstructionTable* instruction_table = calloc(1, sizeof(InstructionTable));
+    if (!instruction_table) {
+        goto cleanup;
+    }
+
+    instruction_table->capacity = INSTRUCTION_TABLE_SIZE;
+    instruction_table->count = 0;
+
     cJSON* code = cJSON_GetObjectItem(method, "code");
     if (!code) {
-        return NULL;
+        goto cleanup;
     }
 
     cJSON* bytecode = cJSON_GetObjectItem(code, "bytecode");
     if (!bytecode || !cJSON_IsArray(bytecode)) {
-        return NULL;
+        goto cleanup;
     }
 
     cJSON* buffer;
     cJSON_ArrayForEach(buffer, bytecode)
     {
-        Instruction instruction;
-        parse_instruction(&instruction, buffer);
-
-        // printf("Offset: %d\n", (int)cJSON_GetNumberValue(offset));
+        int offset;
+        Instruction* instruction = parse_instruction(buffer, &offset);
+        if (!instruction) {
+            goto cleanup;
+        }
+        instruction_table->instructions[offset] = instruction;
     }
 
+    return instruction_table;
+
+cleanup:
+    instruction_table_delete(instruction_table);
     return NULL;
 }
 
-InstructionTable* build_instruction_table(Method* m, Config* cfg)
+InstructionTable* instruction_table_build(Method* m, Config* cfg)
 {
-    InstructionTable* instr_table = NULL;
+    InstructionTable* instr_table = malloc(sizeof(InstructionTable));
+    if (!instr_table) {
+        goto cleanup;
+    }
 
     char* source_decompiled = method_read(m, cfg, SRC_DECOMPILED);
     if (!source_decompiled) {
@@ -213,4 +243,13 @@ cleanup:
     free(source_decompiled);
 
     return instr_table;
+}
+
+void instruction_table_delete(InstructionTable* instruction_table)
+{
+
+    for (int i = 0; i < INSTRUCTION_TABLE_SIZE; i++) {
+        free(instruction_table->instructions[i]);
+    }
+    free(instruction_table);
 }

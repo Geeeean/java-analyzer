@@ -7,7 +7,7 @@
 
 const TSLanguage* tree_sitter_java(void);
 
-TSTree* build_syntax_tree(Method* m, Config* cfg)
+TSTree* syntax_tree_build(Method* m, Config* cfg)
 {
 
     TSParser* parser = ts_parser_new();
@@ -98,7 +98,7 @@ static int find_method(TSNode root, char* source, const char* query_src, const c
     return 2;
 }
 
-int get_method_node(TSTree* tree, TSNode* node)
+int method_node_get(TSTree* tree, TSNode* node)
 {
     TSNode root = ts_tree_root_node(tree);
 
