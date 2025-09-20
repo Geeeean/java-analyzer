@@ -211,17 +211,20 @@ cleanup:
 
 InstructionTable* instruction_table_build(Method* m, Config* cfg)
 {
-    InstructionTable* instr_table = malloc(sizeof(InstructionTable));
-    if (!instr_table) {
-        goto cleanup;
+    if (!m || !cfg) {
+        return NULL;
     }
 
-    char* source_decompiled = method_read(m, cfg, SRC_DECOMPILED);
+    char* source_decompiled = NULL;
+    cJSON* source_json = NULL;
+    InstructionTable* instruction_table = NULL;
+
+    source_decompiled = method_read(m, cfg, SRC_DECOMPILED);
     if (!source_decompiled) {
         goto cleanup;
     }
 
-    cJSON* source_json = cJSON_Parse(source_decompiled);
+    source_json = cJSON_Parse(source_decompiled);
     if (!source_json) {
         goto cleanup;
     }
@@ -236,13 +239,15 @@ InstructionTable* instruction_table_build(Method* m, Config* cfg)
         goto cleanup;
     }
 
-    parse_bytecode(method);
+    instruction_table = parse_bytecode(method);
 
 cleanup:
-    cJSON_Delete(source_json);
+    if (source_json) {
+        cJSON_Delete(source_json);
+    }
     free(source_decompiled);
 
-    return instr_table;
+    return instruction_table;
 }
 
 void instruction_table_delete(InstructionTable* instruction_table)
