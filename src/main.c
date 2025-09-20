@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 
     /*** OPTIONS ***/
     Options opts;
-    if (parse_args(argc, (const char**)argv, &opts) > 0) {
+    if (options_parse_args(argc, (const char**)argv, &opts) > 0) {
         fprintf(stderr, "Correct usage: ./analyzer <options> <methodid>\n");
         result = 1;
         goto cleanup;
@@ -69,7 +69,7 @@ cleanup:
     ts_tree_delete(tree);
     method_delete(m);
     config_delete(cfg);
-    delete_options(&opts);
+    options_cleanup(&opts);
 
     return result;
 }

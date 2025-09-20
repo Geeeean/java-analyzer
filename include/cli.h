@@ -9,7 +9,7 @@ typedef struct {
     char* method_id;
 } Options;
 
-int parse_args(const int argc, const char** argv, Options* opts);
-void delete_options(Options* opts);
+int options_parse_args(const int argc, const char** argv, Options* opts);
+void options_cleanup(Options* opts);
 
 #endif
