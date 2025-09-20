@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define OPTIONS_NUM 1
+#define OPTIONS_NUM 2
 #define MANDATORY_ARGS_NUM 1
 
 #define INTERPRETER_TAG "i"
@@ -30,21 +30,24 @@ int parse_args(const int argc, const char** argv, options* opts)
 
     if (args_num > MANDATORY_ARGS_NUM) {
         for (int i = 1; i <= OPTIONS_NUM; i++) {
-            if (argv[i][0] && argv[i][0] != '-') {
-                return 2;
-            }
-
-            if (is_interpreter_only(argv[i] + 1)) {
-                opts->interpreter_only = true;
-            }
-            // else if (other options) {...}
-            else {
-                return 3;
+            if (argv[i][0] && argv[i][0] == '-') {
+                if (is_interpreter_only(argv[i] + 1)) {
+                    opts->interpreter_only = true;
+                }
+                // else if (other options) {...}
+                else {
+                    return 2;
+                }
             }
         }
     }
 
-    const char* method_id = argv[args_num];
+    const char* method_id = NULL;
+    if (opts->interpreter_only) {
+        method_id = argv[args_num - 1];
+    } else {
+        method_id = argv[args_num];
+    }
 
     if (is_info(method_id)) {
         opts->info = true;

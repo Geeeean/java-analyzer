@@ -14,5 +14,6 @@ Method* method_create(char* method_id);
 void method_delete(Method* m);
 void method_print(const Method* m);
 char* method_read(const Method* m, const Config* cfg, SourceType src);
+char* method_get_name(const Method* m);
 
 #endif

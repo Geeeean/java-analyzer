@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "config.h"
 #include "info.h"
+#include "interpreter.h"
 #include "method.h"
 #include "syntax.h"
 
@@ -13,6 +14,9 @@
 int main(int argc, char** argv)
 {
     int result = 0;
+    Config* cfg = NULL;
+    Method* m = NULL;
+    TSTree* tree = NULL;
 
     /*** OPTIONS ***/
     options opts;
@@ -23,7 +27,7 @@ int main(int argc, char** argv)
     }
 
     /*** CONFIG ***/
-    Config* cfg = config_load();
+    cfg = config_load();
     if (!cfg) {
         fprintf(stderr, "Config file is wrongly formatted or not exist\n");
         result = 2;
@@ -36,7 +40,7 @@ int main(int argc, char** argv)
     }
 
     /*** METHOD ***/
-    Method* m = method_create(opts.method_id);
+    m = method_create(opts.method_id);
     if (!m) {
         fprintf(stderr, "Methodid is not valid\n");
         result = 3;
@@ -44,7 +48,6 @@ int main(int argc, char** argv)
     }
 
     /*** SYNTAX TREE ***/
-    TSTree* tree = NULL;
     tree = build_syntax_tree(m, cfg);
     if (!tree) {
         fprintf(stderr, "Error while parsing code\n");
@@ -60,9 +63,7 @@ int main(int argc, char** argv)
     }
 
     /*** INTERPRETER ***/
-    char* dec_json = method_read(m, cfg, SRC_DECOMPILED);
-    printf("%s", dec_json);
-    free(dec_json);
+    InstructionTable* inst_table = build_instruction_table(m, cfg);
 
 cleanup:
     ts_tree_delete(tree);

@@ -1,8 +1,11 @@
 #ifndef INTERPRETER_H
 #define INTERPRETER_H
 
-typedef struct instruction_table instruction_table;
+#include "config.h"
+#include "method.h"
 
-instruction_table* build_instruction_table();
+typedef struct InstructionTable InstructionTable;
+
+InstructionTable* build_instruction_table(Method* m, Config* cfg);
 
 #endif

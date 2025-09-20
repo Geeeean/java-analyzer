@@ -29,7 +29,7 @@ static const char* format[] = {
 };
 
 // all until the last .
-static char* method_get_class(char** method_id)
+static char* method_parse_class(char** method_id)
 {
     char* c = strrchr(*method_id, METHOD_CLASS_SEP);
     if (c == NULL) {
@@ -44,21 +44,21 @@ static char* method_get_class(char** method_id)
 }
 
 // from the last . to :
-static char* method_get_name(char** method_id)
+static char* method_parse_name(char** method_id)
 {
     char* buffer = strsep(method_id, METHOD_NAME_SEP);
     return buffer;
 }
 
 // whats inside ()
-static char* method_get_arguments(char** method_id)
+static char* method_parse_arguments(char** method_id)
 {
     strsep(method_id, METHOD_ARGUMENTS_FIRST);
     char* buffer = strsep(method_id, METHOD_ARGUMENTS_LAST);
     return buffer;
 }
 
-static char* method_get_return_type(char* method_id)
+static char* method_parse_return_type(char* method_id)
 {
     return method_id;
 };
@@ -89,10 +89,10 @@ static int sanity_check(const Method* m)
 // in case of error code (>0), must call delete_method on m
 static int method_parse(Method* m, char* method_id)
 {
-    m->class = strdup(method_get_class(&method_id));
-    m->name = strdup(method_get_name(&method_id));
-    m->arguments = strdup(method_get_arguments(&method_id));
-    m->return_type = strdup(method_get_return_type(method_id));
+    m->class = strdup(method_parse_class(&method_id));
+    m->name = strdup(method_parse_name(&method_id));
+    m->arguments = strdup(method_parse_arguments(&method_id));
+    m->return_type = strdup(method_parse_return_type(method_id));
 
     return sanity_check(m);
 }
@@ -189,4 +189,9 @@ cleanup:
     free(class_path);
 
     return source;
+}
+
+char* method_get_name(const Method* m)
+{
+    return m->name;
 }
