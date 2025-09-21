@@ -7,6 +7,7 @@ typedef struct {
     bool info;
     bool interpreter_only;
     char* method_id;
+    char* parameters;
 } Options;
 
 int options_parse_args(const int argc, const char** argv, Options* opts);

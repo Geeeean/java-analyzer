@@ -23,6 +23,7 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
     opts->info = false;
     opts->interpreter_only = false;
     opts->method_id = NULL;
+    opts->parameters = NULL;
 
     if (args_num < MANDATORY_ARGS_NUM || args_num > OPTIONS_NUM + MANDATORY_ARGS_NUM) {
         return 1;
@@ -43,8 +44,11 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
     }
 
     const char* method_id = NULL;
+    const char* parameters = NULL;
+
     if (opts->interpreter_only) {
         method_id = argv[args_num - 1];
+        parameters = argv[args_num];
     } else {
         method_id = argv[args_num];
     }
@@ -55,10 +59,17 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
         opts->method_id = strdup(method_id);
     }
 
+    if (opts->interpreter_only) {
+        opts->parameters = strdup(parameters);
+    }
+
     return 0;
 }
 
 void options_cleanup(Options* opts)
 {
-    free(opts->method_id);
+    if (opts) {
+        free(opts->method_id);
+        free(opts->parameters);
+    }
 }

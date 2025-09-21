@@ -190,3 +190,8 @@ char* method_get_name(const Method* m)
 {
     return m->name;
 }
+
+char* method_get_arguments(const Method* m)
+{
+    return m->arguments;
+}

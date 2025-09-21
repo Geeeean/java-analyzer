@@ -1,4 +1,4 @@
-#include "bytecode_parser.h"
+#include "decompiled_parser.h"
 
 #include "cJSON/cJSON.h"
 
@@ -34,15 +34,6 @@ static const char* opcode_signature[] = {
     [OP_THROW] = "throw",
 };
 
-typedef enum {
-    TYPE_INT,
-    TYPE_BOOLEAN,
-    TYPE_REFERENCE,
-    TYPE_CLASS,
-    TYPE_STRING,
-    TYPE_VOID
-} ValueType;
-
 static const char* load_type_signature[] = {
     [TYPE_INT] = "int",
     [TYPE_BOOLEAN] = "boolean",
@@ -52,7 +43,7 @@ static const char* load_type_signature[] = {
 static const char* push_type_signature[] = {
     [TYPE_INT] = "integer",
     [TYPE_BOOLEAN] = "boolean",
-    [TYPE_STRING] = "string",
+    [TYPE_ARRAY] = "string",
 };
 
 static const char* binary_type_signature[] = {
@@ -78,16 +69,6 @@ static const char* binary_operatore_signature[] = {
     [DIV] = "div",
     [MUL] = "mul"
 };
-
-typedef struct {
-    ValueType type;
-    union {
-        int int_value;
-        bool bool_value;
-        void* ref_value;
-        char* string_value;
-    } data;
-} Value;
 
 typedef struct {
     Value value;
@@ -295,7 +276,8 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
 static int parse_return(ReturnOP* ret, cJSON* instruction_json)
 {
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
-    if (!type_obj || !cJSON_IsString(type_obj)) {
+    // printf("%s\n",cJSON_GetStringValue(type_obj));
+    if (!type_obj) {
         fprintf(stderr, "Return instruction missing or invalid 'type' field\n");
         return 1;
     }
@@ -403,11 +385,11 @@ parse_bytecode(cJSON* method)
     cJSON* buffer;
     cJSON_ArrayForEach(buffer, bytecode)
     {
-        //char* json_string_formatted = cJSON_Print(buffer);
-        //if (json_string_formatted) {
-        //    printf("%s\n\n", json_string_formatted);
-        //    free(json_string_formatted);
-        //}
+        // char* json_string_formatted = cJSON_Print(buffer);
+        // if (json_string_formatted) {
+        //     printf("%s\n\n", json_string_formatted);
+        //     free(json_string_formatted);
+        // }
 
         int offset;
         Instruction* instruction = parse_instruction(buffer, &offset);
@@ -475,4 +457,39 @@ void instruction_table_delete(InstructionTable* instruction_table)
     }
 
     free(instruction_table);
+}
+
+void value_print(const Value* value)
+{
+    if (value == NULL) {
+        printf("NULL");
+        return;
+    }
+
+    switch (value->type) {
+    case TYPE_INT:
+        printf("%d", value->data.int_value);
+        break;
+    case TYPE_BOOLEAN:
+        printf("%s", value->data.bool_value ? "true" : "false");
+        break;
+    case TYPE_ARRAY:
+        printf("[");
+        if (value->data.array_value != NULL) {
+            Value* arr = value->data.array_value;
+            for (int i = 0; arr[i].type != TYPE_VOID; i++) {
+                if (i > 0)
+                    printf(", ");
+                value_print(&arr[i]);
+            }
+        }
+        printf("]");
+        break;
+    case TYPE_VOID:
+        printf("void");
+        break;
+    default:
+        printf("unknown_value");
+        break;
+    }
 }

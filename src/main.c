@@ -1,7 +1,8 @@
-#include "bytecode_parser.h"
 #include "cli.h"
 #include "config.h"
+#include "decompiled_parser.h"
 #include "info.h"
+#include "interpreter.h"
 #include "method.h"
 #include "syntax.h"
 
@@ -64,6 +65,8 @@ int main(int argc, char** argv)
 
     /*** INTERPRETER ***/
     InstructionTable* instruction_table = instruction_table_build(m, cfg);
+
+    interpreter_execute(instruction_table, m, opts.parameters);
 
 cleanup:
     instruction_table_delete(instruction_table);
