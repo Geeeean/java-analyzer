@@ -45,12 +45,22 @@ typedef enum {
 } Opcode;
 
 typedef enum {
-    ADD,
-    SUB,
-    DIV,
-    MUL,
-    BINARY_OPERATOR_COUNT
+    BO_ADD,
+    BO_SUB,
+    BO_DIV,
+    BO_MUL,
+    BO_COUNT
 } BinaryOperator;
+
+typedef enum {
+    IFZ_EQ,
+    IFZ_NE,
+    IFZ_GT,
+    IFZ_LT,
+    IFZ_GE,
+    IFZ_LE,
+    IFZ_CONDITION_COUNT
+} IfzCondition;
 
 typedef struct {
     Value value;
@@ -71,6 +81,17 @@ typedef struct {
 } ReturnOP;
 
 typedef struct {
+} GetOP;
+
+typedef struct {
+} ThrowOP;
+
+typedef struct {
+    IfzCondition condition;
+    int target;
+} IfzOP;
+
+typedef struct {
     Opcode opcode;
     int seq;
     union {
@@ -78,6 +99,9 @@ typedef struct {
         LoadOP load;
         BinaryOP binary;
         ReturnOP ret;
+        GetOP get;
+        IfzOP ifz;
+        ThrowOP trw;
     } data;
 } Instruction;
 
@@ -95,4 +119,7 @@ int value_add(Value* value1, Value* value2, Value* result);
 int value_mul(Value* value1, Value* value2, Value* result);
 int value_sub(Value* value1, Value* value2, Value* result);
 int value_div(Value* value1, Value* value2, Value* result);
+
+char* opcode_print(Opcode opcode);
+
 #endif

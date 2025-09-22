@@ -179,13 +179,13 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
         return 2;
     }
 
-    (*arguments) += 1;
+    (*arguments)++;
 
     value->type = type;
 
     if (type == TYPE_ARRAY) {
         ValueType array_type = get_type(**arguments);
-        (*arguments) += 1;
+        (*arguments)++;
         value->data.array_value = parse_array(array_type, token);
     } else if (type == TYPE_INT) {
         value->type = type;
@@ -265,19 +265,21 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
+    // printf("Interpreting: %s\n", opcode_print(instruction->opcode));
+
     switch (instruction->opcode) {
     case OP_LOAD: {
         Value value = frame->locals[instruction->data.load.index];
         stack_push(frame->stack, &value);
     };
-        frame->pc += 1;
+        frame->pc++;
         break;
 
     case OP_PUSH: {
         Value value = instruction->data.push.value;
         stack_push(frame->stack, &value);
     };
-        frame->pc += 1;
+        frame->pc++;
         break;
 
     case OP_BINARY: {
@@ -293,7 +295,7 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
         }
 
         switch (instruction->data.binary.op) {
-        case MUL:
+        case BO_MUL:
             if (value_mul(&value1, &value2, &result)) {
                 fprintf(stderr, "Error when handling MUL op\n");
                 return 3;
@@ -301,9 +303,9 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
 
             stack_push(frame->stack, &result);
             break;
-        case ADD:
+        case BO_ADD:
             break;
-        case DIV: {
+        case BO_DIV: {
             int div_res = value_div(&value1, &value2, &result);
             if (div_res) {
                 if (div_res == 3) {
@@ -316,16 +318,29 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
             stack_push(frame->stack, &result);
         };
             break;
-        case SUB:
+        case BO_SUB:
+            if (value_sub(&value1, &value2, &result)) {
+                fprintf(stderr, "Error when handling SUB op\n");
+                return 3;
+            }
+
+            stack_push(frame->stack, &result);
             break;
         default:
             fprintf(stderr, "Unknown binary operation\n");
             return 7;
         }
     };
-        frame->pc += 1;
+        frame->pc++;
         break;
-    case OP_GET:
+    case OP_GET: {
+        Value value;
+        value.type = TYPE_BOOLEAN;
+        value.data.bool_value = true;
+
+        stack_push(frame->stack, &value);
+    };
+        frame->pc++;
         break;
     case OP_RETURN: {
         Value value;
@@ -335,7 +350,58 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
     };
         call_stack_pop(call_stack);
         break;
-    case OP_IF_ZERO:
+    case OP_IF_ZERO: {
+        Value value;
+        stack_pop(frame->stack, &value);
+
+        switch (value.type) {
+        case TYPE_INT:
+            switch (instruction->data.ifz.condition) {
+            case IFZ_EQ:
+                if (value.data.int_value == 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            case IFZ_NE:
+                if (value.data.int_value != 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            default:
+                fprintf(stderr, "Dont know how to handle ifz\n");
+                return 9;
+            }
+            break;
+        case TYPE_BOOLEAN:
+            switch (instruction->data.ifz.condition) {
+            case IFZ_EQ:
+                if (!value.data.bool_value) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            case IFZ_NE:
+                if (value.data.bool_value) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            default:
+                fprintf(stderr, "Cant handle this ifz op on boolean\n");
+                return 10;
+            }
+            break;
+        default:
+            fprintf(stderr, "Dont know how to ifz onto type %d\n", value.type);
+            return 8;
+        }
+    };
         break;
     case OP_NEW:
         break;
@@ -344,6 +410,8 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
     case OP_INVOKE:
         break;
     case OP_THROW:
+        fprintf(stderr, "Throw\n");
+        return 11;
         break;
     case OP_COUNT:
         break;
@@ -383,6 +451,7 @@ int interpreter_execute(InstructionTable* instruction_table, const Method* m, co
                 return 1;
             }
         } else {
+            printf("ok\n");
             break;
         }
     }

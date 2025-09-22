@@ -40,10 +40,19 @@ static const char* return_type_signature[] = {
 };
 
 static const char* binary_operatore_signature[] = {
-    [ADD] = "add",
-    [SUB] = "sub",
-    [DIV] = "div",
-    [MUL] = "mul"
+    [BO_ADD] = "add",
+    [BO_SUB] = "sub",
+    [BO_DIV] = "div",
+    [BO_MUL] = "mul"
+};
+
+static const char* condition_signature[] = {
+    [IFZ_EQ] = "eq",
+    [IFZ_NE] = "ne",
+    [IFZ_GT] = "gt",
+    [IFZ_LT] = "lt",
+    [IFZ_GE] = "ge",
+    [IFZ_LE] = "le",
 };
 
 static cJSON* get_method(Method* m, cJSON* methods)
@@ -166,7 +175,7 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
     char* operant = cJSON_GetStringValue(operant_obj);
 
     binary->op = -1;
-    for (int i = 0; i < BINARY_OPERATOR_COUNT; i++) {
+    for (int i = 0; i < BO_COUNT; i++) {
         if (strcmp(operant, binary_operatore_signature[i]) == 0) {
             binary->op = i;
             break;
@@ -198,7 +207,6 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
 static int parse_return(ReturnOP* ret, cJSON* instruction_json)
 {
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
-    // printf("%s\n",cJSON_GetStringValue(type_obj));
     if (!type_obj) {
         fprintf(stderr, "Return instruction missing or invalid 'type' field\n");
         return 1;
@@ -214,6 +222,49 @@ static int parse_return(ReturnOP* ret, cJSON* instruction_json)
         return 2;
     }
 
+    return 0;
+}
+
+static int parse_ifz(IfzOP* ifz, cJSON* instruction_json)
+{
+    cJSON* condition_obj = cJSON_GetObjectItem(instruction_json, "condition");
+    if (!condition_obj || !cJSON_IsString(condition_obj)) {
+        fprintf(stderr, "Ifz instruction missing or invalid 'condition' field\n");
+        return 1;
+    }
+    char* condition = cJSON_GetStringValue(condition_obj);
+
+    ifz->condition = -1;
+    for (int i = 0; i < IFZ_CONDITION_COUNT; i++) {
+        if (strcmp(condition, condition_signature[i]) == 0) {
+            ifz->condition = i;
+            break;
+        }
+    }
+
+    if (ifz->condition < 0) {
+        fprintf(stderr, "Ifz condition not known: %s\n", condition);
+        return 1;
+    }
+
+    cJSON* target_obj = cJSON_GetObjectItem(instruction_json, "target");
+    if (!target_obj || !cJSON_IsNumber(target_obj)) {
+        fprintf(stderr, "Ifz instruction missing or invalid 'target' field\n");
+        return 2;
+    }
+
+    ifz->target = cJSON_GetNumberValue(target_obj);
+
+    return 0;
+}
+
+static int parse_get(GetOP* get, cJSON* instruction_json)
+{
+    return 0;
+}
+
+static int parse_throw(ThrowOP* trw, cJSON* instruction_json)
+{
     return 0;
 }
 
@@ -241,7 +292,9 @@ parse_instruction(cJSON* instruction_json)
         }
         break;
     case OP_GET:
-        // todo
+        if (parse_get(&instruction->data.get, instruction_json)) {
+            goto cleanup;
+        }
         break;
     case OP_BINARY:
         if (parse_binary(&instruction->data.binary, instruction_json)) {
@@ -253,20 +306,19 @@ parse_instruction(cJSON* instruction_json)
             goto cleanup;
         }
         break;
-        /*
-            case OP_IF_ZERO:
-                break;
-            case OP_NEW:
-                break;
-            case OP_DUP:
-                break;
-            case OP_INVOKE:
-                break;
-            case OP_THROW:
-                break;
-            case OP_COUNT:
-                break;
-        */
+    case OP_IF_ZERO:
+        if (parse_ifz(&instruction->data.ifz, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+    case OP_NEW:
+    case OP_DUP:
+    case OP_INVOKE:
+    case OP_THROW:
+        if (parse_throw(&instruction->data.trw, instruction_json)) {
+            goto cleanup;
+        }
+        break;
     default:
         fprintf(stderr, "Unknown opcode: %d\n", instruction->opcode);
         goto cleanup;
@@ -374,6 +426,48 @@ void instruction_table_delete(InstructionTable* instruction_table)
     }
 
     free(instruction_table);
+}
+
+char* opcode_print(Opcode opcode)
+{
+    char* result = NULL;
+
+    switch (opcode) {
+    case OP_LOAD:
+        result = "OP_LOAD";
+        break;
+    case OP_PUSH:
+        result = "OP_PUSH";
+        break;
+    case OP_BINARY:
+        result = "OP_BINARY";
+        break;
+    case OP_GET:
+        result = "OP_GET";
+        break;
+    case OP_RETURN:
+        result = "OP_RETURN";
+        break;
+    case OP_IF_ZERO:
+        result = "OP_IF_ZERO";
+        break;
+    case OP_NEW:
+        result = "OP_NEW";
+        break;
+    case OP_DUP:
+        result = "OP_DUP";
+        break;
+    case OP_INVOKE:
+        result = "OP_INVOKE";
+        break;
+    case OP_THROW:
+        result = "OP_THROW";
+        break;
+    default:
+        break;
+    }
+
+    return result;
 }
 
 void value_print(const Value* value)
