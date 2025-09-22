@@ -4,6 +4,6 @@
 #include "decompiled_parser.h"
 #include "method.h"
 
-int interpreter_execute(InstructionTable* instruction_table, const Method* m, char* parameters);
+int interpreter_execute(InstructionTable* instruction_table, const Method* m, const char* parameters);
 
 #endif

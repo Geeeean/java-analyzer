@@ -5,22 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define INSTRUCTION_TABLE_SIZE 100
-
-typedef enum {
-    OP_LOAD,
-    OP_PUSH,
-    OP_BINARY,
-    OP_GET,
-    OP_RETURN,
-    OP_IF_ZERO,
-    OP_NEW,
-    OP_DUP,
-    OP_INVOKE,
-    OP_THROW,
-    OP_COUNT
-} Opcode;
-
 static const char* opcode_signature[] = {
     [OP_LOAD] = "load",
     [OP_PUSH] = "push",
@@ -55,53 +39,11 @@ static const char* return_type_signature[] = {
     [TYPE_VOID] = "null",
 };
 
-typedef enum {
-    ADD,
-    SUB,
-    DIV,
-    MUL,
-    BINARY_OPERATOR_COUNT
-} BinaryOperator;
-
 static const char* binary_operatore_signature[] = {
     [ADD] = "add",
     [SUB] = "sub",
     [DIV] = "div",
     [MUL] = "mul"
-};
-
-typedef struct {
-    Value value;
-} PushOP;
-
-typedef struct {
-    int index;
-    ValueType TYPE_type;
-} LoadOP;
-
-typedef struct {
-    ValueType type;
-    BinaryOperator op;
-} BinaryOP;
-
-typedef struct {
-    ValueType type;
-} ReturnOP;
-
-typedef struct {
-    Opcode opcode;
-    union {
-        PushOP push;
-        LoadOP load;
-        BinaryOP binary;
-        ReturnOP ret;
-    } data;
-} Instruction;
-
-struct InstructionTable {
-    Instruction* instructions[INSTRUCTION_TABLE_SIZE];
-    int count;
-    int capacity;
 };
 
 static cJSON* get_method(Method* m, cJSON* methods)
@@ -119,18 +61,6 @@ static cJSON* get_method(Method* m, cJSON* methods)
     }
 
     return NULL;
-}
-
-static int parse_offset(int* offset, cJSON* instruction_json)
-{
-    cJSON* offset_object = cJSON_GetObjectItem(instruction_json, "offset");
-    if (!offset || !cJSON_IsNumber(offset_object)) {
-        fprintf(stderr, "Offset is wrongly formatted or not exist\n");
-        return 1;
-    }
-
-    *offset = (int)cJSON_GetNumberValue(offset_object);
-    return 0;
 }
 
 static int parse_opcode(Opcode* opcode, cJSON* instruction_json)
@@ -218,15 +148,7 @@ static int parse_push(PushOP* push, cJSON* instruction_json)
             return 4;
         }
         push->value.data.int_value = cJSON_GetNumberValue(inside_TYPE_obj);
-    }
-    /*else if (strcmp(type, push_type_signature[TYPE_BOOLEAN]) == 0) {
-        push->value.type = TYPE_BOOLEAN;
-        sscanf(inside_value, "%d", &push->value.data.bo);
-    }
-    else if (strcmp(type, push_type_signature[TYPE_STRING]) == 0) {
-        push->value.type = TYPE_STRING;
-    }*/
-    else {
+    } else {
         fprintf(stderr, "Unknown type in push instruction: %s\n", type);
         return 5;
     }
@@ -296,14 +218,10 @@ static int parse_return(ReturnOP* ret, cJSON* instruction_json)
 }
 
 static Instruction*
-parse_instruction(cJSON* instruction_json, int* offset)
+parse_instruction(cJSON* instruction_json)
 {
     Instruction* instruction = malloc(sizeof(Instruction));
     if (!instruction) {
-        goto cleanup;
-    }
-
-    if (parse_offset(offset, instruction_json)) {
         goto cleanup;
     }
 
@@ -383,20 +301,18 @@ parse_bytecode(cJSON* method)
     }
 
     cJSON* buffer;
+    int i = 0;
     cJSON_ArrayForEach(buffer, bytecode)
     {
-        // char* json_string_formatted = cJSON_Print(buffer);
-        // if (json_string_formatted) {
-        //     printf("%s\n\n", json_string_formatted);
-        //     free(json_string_formatted);
-        // }
-
-        int offset;
-        Instruction* instruction = parse_instruction(buffer, &offset);
+        Instruction* instruction = parse_instruction(buffer);
+        instruction_table->count++;
+        instruction->seq = i;
         if (!instruction) {
             goto cleanup;
         }
-        instruction_table->instructions[offset] = instruction;
+
+        instruction_table->instructions[i] = instruction;
+        i++;
     }
 
     return instruction_table;
@@ -454,6 +370,7 @@ void instruction_table_delete(InstructionTable* instruction_table)
         for (int i = 0; i < INSTRUCTION_TABLE_SIZE; i++) {
             free(instruction_table->instructions[i]);
         }
+        // free(instruction_table->offsetmap);
     }
 
     free(instruction_table);
@@ -492,4 +409,147 @@ void value_print(const Value* value)
         printf("unknown_value");
         break;
     }
+}
+
+Value value_deep_copy(const Value* src)
+{
+    Value dst;
+    dst.type = TYPE_VOID;
+
+    if (!src)
+        return dst;
+
+    dst.type = src->type;
+
+    switch (src->type) {
+    case TYPE_INT:
+        dst.data.int_value = src->data.int_value;
+        break;
+
+    case TYPE_BOOLEAN:
+        dst.data.bool_value = src->data.bool_value;
+        break;
+
+    case TYPE_CHAR:
+        dst.data.char_value = src->data.char_value;
+        break;
+
+    case TYPE_ARRAY:
+        if (src->data.array_value) {
+            int count = 0;
+            while (src->data.array_value[count].type != TYPE_VOID) {
+                count++;
+            }
+
+            dst.data.array_value = malloc((count + 1) * sizeof(Value));
+            if (!dst.data.array_value) {
+                fprintf(stderr, "Failed to allocate array\n");
+                dst.type = TYPE_VOID;
+                break;
+            }
+
+            for (int i = 0; i < count; i++) {
+                dst.data.array_value[i] = value_deep_copy(&src->data.array_value[i]);
+            }
+
+            dst.data.array_value[count].type = TYPE_VOID;
+        } else {
+            dst.data.array_value = NULL;
+        }
+        break;
+
+    case TYPE_REFERENCE:
+        dst.data.ref_value = src->data.ref_value;
+        break;
+
+    case TYPE_VOID:
+        break;
+
+    default:
+        fprintf(stderr, "Unknown value type: %d\n", src->type);
+        dst.type = TYPE_VOID;
+        break;
+    }
+
+    return dst;
+}
+
+int value_add(Value* value1, Value* value2, Value* result)
+{
+    if (value1->type != value2->type) {
+        return 1;
+    }
+
+    switch (value1->type) {
+    case TYPE_INT:
+        result->type = TYPE_INT;
+        result->data.int_value = value1->data.int_value + value2->data.int_value;
+        break;
+    default:
+        fprintf(stderr, "Dont know handle this type add\n");
+        return 2;
+    }
+
+    return 0;
+}
+
+int value_mul(Value* value1, Value* value2, Value* result)
+{
+    if (value1->type != value2->type) {
+        return 1;
+    }
+
+    switch (value1->type) {
+    case TYPE_INT:
+        result->type = TYPE_INT;
+        result->data.int_value = value1->data.int_value * value2->data.int_value;
+        break;
+    default:
+        fprintf(stderr, "Dont know handle this type mul\n");
+        return 2;
+    }
+
+    return 0;
+}
+
+int value_sub(Value* value1, Value* value2, Value* result)
+{
+    if (value1->type != value2->type) {
+        return 1;
+    }
+
+    switch (value1->type) {
+    case TYPE_INT:
+        result->type = TYPE_INT;
+        result->data.int_value = value1->data.int_value - value2->data.int_value;
+        break;
+    default:
+        fprintf(stderr, "Dont know handle this type sub\n");
+        return 2;
+    }
+
+    return 0;
+}
+
+int value_div(Value* value1, Value* value2, Value* result)
+{
+    if (value1->type != value2->type) {
+        return 1;
+    }
+
+    switch (value1->type) {
+    case TYPE_INT:
+        result->type = TYPE_INT;
+        if (value2->data.int_value == 0) {
+            return 3;
+        }
+
+        result->data.int_value = value1->data.int_value / value2->data.int_value;
+        break;
+    default:
+        fprintf(stderr, "Dont know handle this type div\n");
+        return 2;
+    }
+
+    return 0;
 }

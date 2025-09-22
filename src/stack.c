@@ -10,22 +10,22 @@ struct Item {
 
 struct Stack {
     int size;
-    Item* head;
+    Item* top;
 };
 
-int stack_push(Stack* stack, Value value)
+int stack_push(Stack* stack, Value* value)
 {
-    Item* to_push = malloc(sizeof(Value));
+    Item* to_push = malloc(sizeof(Item));
     if (!to_push) {
         return 1;
     }
 
     stack->size += 1;
 
-    to_push->value = value;
-    to_push->next = stack->head;
+    to_push->value = value_deep_copy(value);
+    to_push->next = stack->top;
 
-    stack->head = to_push;
+    stack->top = to_push;
 
     return 0;
 }
@@ -36,20 +36,23 @@ Value* stack_peek(Stack* stack)
         return NULL;
     }
 
-    return &stack->head->value;
+    return &stack->top->value;
 }
 
-int stack_pop(Stack* stack)
+int stack_pop(Stack* stack, Value* value)
 {
     if (stack->size == 0) {
         return 1;
     }
 
-    Item* to_pop = stack->head;
-    stack->head = to_pop->next;
+    Item* to_pop = stack->top;
+    stack->top = to_pop->next;
+
+    if (value) {
+        *value = value_deep_copy(&to_pop->value);
+    }
 
     free(to_pop);
-
     return 0;
 }
 
@@ -59,31 +62,33 @@ bool stack_same_type_on_top(Stack* stack)
         return false;
     }
 
-    ValueType type1 = stack->head->value.type;
-    ValueType type2 = stack->head->next->value.type;
+    ValueType type1 = stack->top->value.type;
+    ValueType type2 = stack->top->next->value.type;
 
     return type1 == type2;
 }
 
-Stack* stack_new() {
+Stack* stack_new()
+{
     Stack* stack = malloc(sizeof(Stack));
     if (!stack) {
         return NULL;
     }
 
-    stack->head = NULL;
+    stack->top = NULL;
     stack->size = 0;
 
     return stack;
 }
 
-void stack_delete(Stack* stack) {
+void stack_delete(Stack* stack)
+{
     if (!stack) {
         return;
     }
 
-    while (stack->head) {
-        stack_pop(stack);
+    while (stack->top) {
+        stack_pop(stack, NULL);
     }
 
     free(stack);

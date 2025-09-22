@@ -18,6 +18,7 @@ int main(int argc, char** argv)
     Config* cfg = NULL;
     Method* m = NULL;
     TSTree* tree = NULL;
+    InstructionTable* instruction_table = NULL;
 
     /*** OPTIONS ***/
     Options opts;
@@ -64,7 +65,12 @@ int main(int argc, char** argv)
     }
 
     /*** INTERPRETER ***/
-    InstructionTable* instruction_table = instruction_table_build(m, cfg);
+    instruction_table = instruction_table_build(m, cfg);
+    if (!instruction_table) {
+        fprintf(stderr, "Error while building instruction table\n");
+        result = 6;
+        goto cleanup;
+    }
 
     interpreter_execute(instruction_table, m, opts.parameters);
 

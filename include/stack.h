@@ -11,8 +11,8 @@ Stack* stack_new();
 void stack_delete(Stack* stack);
 
 Value* stack_peek(Stack* stack);
-int stack_pop(Stack* stack);
-int stack_push(Stack* stack, Value value);
+int stack_pop(Stack* stack, Value* value);
+int stack_push(Stack* stack, Value* value);
 bool stack_same_type_on_top(Stack* stack);
 
 #endif
