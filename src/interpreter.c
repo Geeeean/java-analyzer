@@ -275,6 +275,7 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
 
     case OP_PUSH: {
         Value value = instruction->data.push.value;
+        stack_push(frame->stack, &value);
     };
         frame->pc += 1;
         break;
@@ -371,14 +372,16 @@ int interpreter_execute(InstructionTable* instruction_table, const Method* m, co
     free(arguments);
     free(params);
 
-    //frame_print(frame);
+    // frame_print(frame);
 
     CallStack* call_stack = malloc(sizeof(CallStack));
     call_stack_push(call_stack, frame);
 
     for (int i = 0; i < 1000; i++) {
         if (call_stack->count > 0) {
-            step(call_stack, instruction_table);
+            if (step(call_stack, instruction_table)) {
+                return 1;
+            }
         } else {
             break;
         }
