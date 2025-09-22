@@ -31,6 +31,10 @@ static const char* format[] = {
 // all until the last .
 static char* method_parse_class(char** method_id)
 {
+    if (!*method_id) {
+        return NULL;
+    }
+
     char* c = strrchr(*method_id, METHOD_CLASS_SEP);
     if (c == NULL) {
         return NULL;
@@ -46,6 +50,10 @@ static char* method_parse_class(char** method_id)
 // from the last . to :
 static char* method_parse_name(char** method_id)
 {
+    if (!*method_id) {
+        return NULL;
+    }
+
     char* buffer = strsep(method_id, METHOD_NAME_SEP);
     return buffer;
 }
@@ -53,6 +61,10 @@ static char* method_parse_name(char** method_id)
 // whats inside ()
 static char* method_parse_arguments(char** method_id)
 {
+    if (!*method_id) {
+        return NULL;
+    }
+
     strsep(method_id, METHOD_ARGUMENTS_FIRST);
     char* buffer = strsep(method_id, METHOD_ARGUMENTS_LAST);
     return buffer;
@@ -65,22 +77,26 @@ static char* method_parse_return_type(char* method_id)
 
 static int sanity_check(const Method* m)
 {
-    if (m->class == NULL || !strlen(m->class)) {
+    if (!m) {
         return 1;
     }
 
-    if (m->name == NULL || !strlen(m->name)) {
+    if (!m->class || !strlen(m->class)) {
         return 2;
     }
 
-    if (m->arguments == NULL) {
+    if (!m->name || !strlen(m->name)) {
         return 3;
+    }
+
+    if (!m->arguments) {
+        return 4;
     }
 
     // TODO
     // return type must be 1 char (or array [I ?)
     if (m->return_type == NULL || strlen(m->return_type) != 1) {
-        return 4;
+        return 5;
     }
 
     return 0;
@@ -89,10 +105,29 @@ static int sanity_check(const Method* m)
 // in case of error code (>0), must call delete_method on m
 static int method_parse(Method* m, char* method_id)
 {
-    m->class = strdup(method_parse_class(&method_id));
-    m->name = strdup(method_parse_name(&method_id));
-    m->arguments = strdup(method_parse_arguments(&method_id));
-    m->return_type = strdup(method_parse_return_type(method_id));
+    char* buffer = method_parse_class(&method_id);
+    if (!buffer) {
+        return 1;
+    }
+    m->class = strdup(buffer);
+
+    buffer = method_parse_name(&method_id);
+    if (!buffer) {
+        return 2;
+    }
+    m->name = strdup(buffer);
+
+    buffer = method_parse_arguments(&method_id);
+    if (!buffer) {
+        return 3;
+    }
+    m->arguments = strdup(buffer);
+
+    buffer = method_parse_return_type(method_id);
+    if (!buffer) {
+        return 3;
+    }
+    m->return_type = strdup(buffer);
 
     return sanity_check(m);
 }
