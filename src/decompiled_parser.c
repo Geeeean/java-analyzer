@@ -211,7 +211,13 @@ static int parse_return(ReturnOP* ret, cJSON* instruction_json)
         fprintf(stderr, "Return instruction missing or invalid 'type' field\n");
         return 1;
     }
-    char* type = cJSON_GetStringValue(type_obj);
+
+    char* type = NULL;
+    if (cJSON_IsNull(type_obj)) {
+        type = "null";
+    } else {
+        type = cJSON_GetStringValue(type_obj);
+    }
 
     if (strcmp(return_type_signature[TYPE_INT], type) == 0) {
         ret->type = TYPE_INT;
@@ -279,6 +285,8 @@ parse_instruction(cJSON* instruction_json)
     if (parse_opcode(&instruction->opcode, instruction_json)) {
         goto cleanup;
     }
+
+    fprintf(stderr, "OPCODE: %s\n", opcode_print(instruction->opcode));
 
     switch (instruction->opcode) {
     case OP_LOAD:
@@ -393,7 +401,6 @@ InstructionTable* instruction_table_build(Method* m, Config* cfg)
     if (!source_json) {
         goto cleanup;
     }
-
     cJSON* methods = cJSON_GetObjectItem(source_json, "methods");
     if (!methods || !cJSON_IsArray(methods)) {
         goto cleanup;

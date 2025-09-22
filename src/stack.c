@@ -42,6 +42,7 @@ Value* stack_peek(Stack* stack)
 int stack_pop(Stack* stack, Value* value)
 {
     if (stack->size == 0) {
+        value->type = TYPE_VOID;
         return 1;
     }
 
@@ -51,6 +52,8 @@ int stack_pop(Stack* stack, Value* value)
     if (value) {
         *value = value_deep_copy(&to_pop->value);
     }
+
+    stack->size--;
 
     free(to_pop);
     return 0;

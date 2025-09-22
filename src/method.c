@@ -61,10 +61,6 @@ static char* method_parse_name(char** method_id)
 // whats inside ()
 static char* method_parse_arguments(char** method_id)
 {
-    if (!*method_id) {
-        return NULL;
-    }
-
     strsep(method_id, METHOD_ARGUMENTS_FIRST);
     char* buffer = strsep(method_id, METHOD_ARGUMENTS_LAST);
     return buffer;
@@ -118,9 +114,6 @@ static int method_parse(Method* m, char* method_id)
     m->name = strdup(buffer);
 
     buffer = method_parse_arguments(&method_id);
-    if (!buffer) {
-        return 3;
-    }
     m->arguments = strdup(buffer);
 
     buffer = method_parse_return_type(method_id);

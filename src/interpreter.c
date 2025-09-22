@@ -79,6 +79,7 @@ static char arg_types_signature[] = {
     [TYPE_INT] = 'I',
     [TYPE_CHAR] = 'C',
     [TYPE_ARRAY] = '[',
+    [TYPE_BOOLEAN] = 'Z',
 };
 
 static ValueType get_type(char c)
@@ -89,6 +90,8 @@ static ValueType get_type(char c)
         return TYPE_CHAR;
     } else if (c == arg_types_signature[TYPE_ARRAY]) {
         return TYPE_ARRAY;
+    } else if (c == arg_types_signature[TYPE_BOOLEAN]) {
+        return TYPE_BOOLEAN;
     }
 
     return -1;
@@ -188,8 +191,16 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
         (*arguments)++;
         value->data.array_value = parse_array(array_type, token);
     } else if (type == TYPE_INT) {
-        value->type = type;
         value->data.int_value = (int)strtol(token, NULL, 10);
+    } else if (type == TYPE_BOOLEAN) {
+        if (strcmp(token, "false") == 0) {
+            value->data.bool_value = false;
+        } else if (strcmp(token, "true") == 0) {
+            value->data.bool_value = true;
+        } else {
+            fprintf(stderr, "Type is bool but token is neither 'true' or 'false': %s\n", token);
+            return 4;
+        }
     } else {
         fprintf(stderr, "Not handled type in method signature: %c\n", **arguments);
         return 3;
@@ -309,7 +320,7 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
             int div_res = value_div(&value1, &value2, &result);
             if (div_res) {
                 if (div_res == 3) {
-                    fprintf(stderr, "Error when diving by zero\n");
+                    printf("divide by zero\n");
                 } else {
                     fprintf(stderr, "Error when handling DIV op\n");
                 }
@@ -336,7 +347,7 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
     case OP_GET: {
         Value value;
         value.type = TYPE_BOOLEAN;
-        value.data.bool_value = true;
+        value.data.bool_value = false;
 
         stack_push(frame->stack, &value);
     };
@@ -345,8 +356,8 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
     case OP_RETURN: {
         Value value;
         stack_pop(frame->stack, &value);
-        printf("Returning: ");
-        value_print(&value);
+        // printf("Returning: ");
+        // value_print(&value);
     };
         call_stack_pop(call_stack);
         break;
@@ -371,12 +382,41 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
                     frame->pc++;
                 }
                 break;
+            case IFZ_GT:
+                if (value.data.int_value > 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            case IFZ_LT:
+                if (value.data.int_value < 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            case IFZ_GE:
+                if (value.data.int_value >= 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
+            case IFZ_LE:
+                if (value.data.int_value <= 0) {
+                    frame->pc = instruction->data.ifz.target;
+                } else {
+                    frame->pc++;
+                }
+                break;
             default:
-                fprintf(stderr, "Dont know how to handle ifz\n");
+                fprintf(stderr, "Dont know how to handle ifz: %d\n", instruction->data.ifz.condition);
                 return 9;
             }
             break;
         case TYPE_BOOLEAN:
+
             switch (instruction->data.ifz.condition) {
             case IFZ_EQ:
                 if (!value.data.bool_value) {
@@ -404,13 +444,10 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
     };
         break;
     case OP_NEW:
-        break;
     case OP_DUP:
-        break;
     case OP_INVOKE:
-        break;
     case OP_THROW:
-        fprintf(stderr, "Throw\n");
+        printf("assertion error\n");
         return 11;
         break;
     case OP_COUNT:
