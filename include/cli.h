@@ -10,7 +10,14 @@ typedef struct {
     char* parameters;
 } Options;
 
-int options_parse_args(const int argc, const char** argv, Options* opts);
+typedef enum {
+    OPT_OK,
+    OPT_NOT_ENOUGH_ARGS,
+    OPT_TOO_MANY_ARGS,
+    OPT_OPTION_NOT_KNOWN
+} OptionsParseResult;
+
+OptionsParseResult options_parse_args(const int argc, const char** argv, Options* opts);
 void options_cleanup(Options* opts);
 
 #endif

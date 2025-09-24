@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef enum {
+    PARSE_OK,
+    PARSE_MALFORMED,
+    PARSE_UNABLE_TO_HANDLE_TYPE,
+    PARSE_IF_COND_NOW_KNOWN,
+    PARSE_BO_UNKNOWN_OP,
+} ParseResult;
+
 static const char* opcode_signature[] = {
     [OP_LOAD] = "load",
     [OP_PUSH] = "push",
@@ -72,12 +80,12 @@ static cJSON* get_method(Method* m, cJSON* methods)
     return NULL;
 }
 
-static int parse_opcode(Opcode* opcode, cJSON* instruction_json)
+static ParseResult parse_opcode(Opcode* opcode, cJSON* instruction_json)
 {
     cJSON* opr_object = cJSON_GetObjectItem(instruction_json, "opr");
     if (!opr_object || !cJSON_IsString(opr_object)) {
         fprintf(stderr, "Opr is wrongly formatted or not exist\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
 
     char* opr = cJSON_GetStringValue(opr_object);
@@ -94,7 +102,7 @@ static int parse_opcode(Opcode* opcode, cJSON* instruction_json)
         return 2;
     }
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_load(LoadOP* load, cJSON* instruction_json)
@@ -102,14 +110,14 @@ static int parse_load(LoadOP* load, cJSON* instruction_json)
     cJSON* index_obj = cJSON_GetObjectItem(instruction_json, "index");
     if (!index_obj || !cJSON_IsNumber(index_obj)) {
         fprintf(stderr, "Load instruction missing or invalid 'index' field\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
     load->index = (int)cJSON_GetNumberValue(index_obj);
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
         fprintf(stderr, "Load instruction missing or invalid 'type' field\n");
-        return 2;
+        return PARSE_MALFORMED;
     }
 
     char* type = cJSON_GetStringValue(type_obj);
@@ -122,10 +130,10 @@ static int parse_load(LoadOP* load, cJSON* instruction_json)
         load->TYPE_type = TYPE_REFERENCE;
     } else {
         fprintf(stderr, "Unknown type in load instruction: %s\n", type);
-        return 3;
+        return PARSE_UNABLE_TO_HANDLE_TYPE;
     }
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_push(PushOP* push, cJSON* instruction_json)
@@ -133,20 +141,20 @@ static int parse_push(PushOP* push, cJSON* instruction_json)
     cJSON* value = cJSON_GetObjectItem(instruction_json, "value");
     if (!value) {
         fprintf(stderr, "Load instruction missing or invalid 'value' field\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
 
     cJSON* type_obj = cJSON_GetObjectItem(value, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
         fprintf(stderr, "Push instruction missing or invalid 'type' field\n");
-        return 2;
+        return PARSE_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
 
     cJSON* inside_TYPE_obj = cJSON_GetObjectItem(value, "value");
     if (!inside_TYPE_obj) {
         fprintf(stderr, "Push instruction missing or invalid inside value, 'value' field\n");
-        return 3;
+        return PARSE_MALFORMED;
     }
     char* inside_value = cJSON_GetStringValue(inside_TYPE_obj);
 
@@ -154,15 +162,15 @@ static int parse_push(PushOP* push, cJSON* instruction_json)
         push->value.type = TYPE_INT;
         if (!cJSON_IsNumber(inside_TYPE_obj)) {
             fprintf(stderr, "Push instruction invalid int number inside value, 'value' field\n");
-            return 4;
+            return PARSE_MALFORMED;
         }
         push->value.data.int_value = cJSON_GetNumberValue(inside_TYPE_obj);
     } else {
         fprintf(stderr, "Unknown type in push instruction: %s\n", type);
-        return 5;
+        return PARSE_UNABLE_TO_HANDLE_TYPE;
     }
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
@@ -170,7 +178,7 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
     cJSON* operant_obj = cJSON_GetObjectItem(instruction_json, "operant");
     if (!operant_obj || !cJSON_IsString(operant_obj)) {
         fprintf(stderr, "Binary instruction missing or invalid 'operant' field\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
     char* operant = cJSON_GetStringValue(operant_obj);
 
@@ -184,13 +192,13 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
 
     if (binary->op < 0) {
         fprintf(stderr, "Binary instruction unknown operant: %s\n", operant);
-        return 2;
+        return PARSE_BO_UNKNOWN_OP;
     }
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
         fprintf(stderr, "Binary instruction missing or invalid 'type' field\n");
-        return 3;
+        return PARSE_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
 
@@ -198,10 +206,10 @@ static int parse_binary(BinaryOP* binary, cJSON* instruction_json)
         binary->type = TYPE_INT;
     } else {
         fprintf(stderr, "Binary instruction unknown type: %s\n", type);
-        return 3;
+        return PARSE_UNABLE_TO_HANDLE_TYPE;
     }
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_return(ReturnOP* ret, cJSON* instruction_json)
@@ -209,7 +217,7 @@ static int parse_return(ReturnOP* ret, cJSON* instruction_json)
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj) {
         fprintf(stderr, "Return instruction missing or invalid 'type' field\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
 
     char* type = NULL;
@@ -225,10 +233,10 @@ static int parse_return(ReturnOP* ret, cJSON* instruction_json)
         ret->type = TYPE_VOID;
     } else {
         fprintf(stderr, "Binary instruction unknown type: %s\n", type);
-        return 2;
+        return PARSE_UNABLE_TO_HANDLE_TYPE;
     }
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_ifz(IfzOP* ifz, cJSON* instruction_json)
@@ -236,7 +244,7 @@ static int parse_ifz(IfzOP* ifz, cJSON* instruction_json)
     cJSON* condition_obj = cJSON_GetObjectItem(instruction_json, "condition");
     if (!condition_obj || !cJSON_IsString(condition_obj)) {
         fprintf(stderr, "Ifz instruction missing or invalid 'condition' field\n");
-        return 1;
+        return PARSE_MALFORMED;
     }
     char* condition = cJSON_GetStringValue(condition_obj);
 
@@ -250,28 +258,28 @@ static int parse_ifz(IfzOP* ifz, cJSON* instruction_json)
 
     if (ifz->condition < 0) {
         fprintf(stderr, "Ifz condition not known: %s\n", condition);
-        return 1;
+        return PARSE_IF_COND_NOW_KNOWN;
     }
 
     cJSON* target_obj = cJSON_GetObjectItem(instruction_json, "target");
     if (!target_obj || !cJSON_IsNumber(target_obj)) {
         fprintf(stderr, "Ifz instruction missing or invalid 'target' field\n");
-        return 2;
+        return PARSE_MALFORMED;
     }
 
     ifz->target = cJSON_GetNumberValue(target_obj);
 
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_get(GetOP* get, cJSON* instruction_json)
 {
-    return 0;
+    return PARSE_OK;
 }
 
 static int parse_throw(ThrowOP* trw, cJSON* instruction_json)
 {
-    return 0;
+    return PARSE_OK;
 }
 
 static Instruction*
@@ -512,6 +520,7 @@ void value_print(const Value* value)
     }
 }
 
+// todo use return as status code
 Value value_deep_copy(const Value* src)
 {
     Value dst;
@@ -575,10 +584,10 @@ Value value_deep_copy(const Value* src)
     return dst;
 }
 
-int value_add(Value* value1, Value* value2, Value* result)
+BinaryResult value_add(Value* value1, Value* value2, Value* result)
 {
     if (value1->type != value2->type) {
-        return 1;
+        return BO_DIFFERENT_TYPES;
     }
 
     switch (value1->type) {
@@ -588,16 +597,16 @@ int value_add(Value* value1, Value* value2, Value* result)
         break;
     default:
         fprintf(stderr, "Dont know handle this type add\n");
-        return 2;
+        return BO_NOT_SUPPORTED_TYPES;
     }
 
-    return 0;
+    return BO_OK;
 }
 
-int value_mul(Value* value1, Value* value2, Value* result)
+BinaryResult value_mul(Value* value1, Value* value2, Value* result)
 {
     if (value1->type != value2->type) {
-        return 1;
+        return BO_DIFFERENT_TYPES;
     }
 
     switch (value1->type) {
@@ -607,16 +616,16 @@ int value_mul(Value* value1, Value* value2, Value* result)
         break;
     default:
         fprintf(stderr, "Dont know handle this type mul\n");
-        return 2;
+        return BO_NOT_SUPPORTED_TYPES;
     }
 
-    return 0;
+    return BO_OK;
 }
 
-int value_sub(Value* value1, Value* value2, Value* result)
+BinaryResult value_sub(Value* value1, Value* value2, Value* result)
 {
     if (value1->type != value2->type) {
-        return 1;
+        return BO_DIFFERENT_TYPES;
     }
 
     switch (value1->type) {
@@ -626,31 +635,31 @@ int value_sub(Value* value1, Value* value2, Value* result)
         break;
     default:
         fprintf(stderr, "Dont know handle this type sub\n");
-        return 2;
+        return BO_NOT_SUPPORTED_TYPES;
     }
 
-    return 0;
+    return BO_OK;
 }
 
-int value_div(Value* value1, Value* value2, Value* result)
+BinaryResult value_div(Value* value1, Value* value2, Value* result)
 {
     if (value1->type != value2->type) {
-        return 1;
+        return BO_DIFFERENT_TYPES;
     }
 
     switch (value1->type) {
     case TYPE_INT:
         result->type = TYPE_INT;
         if (value2->data.int_value == 0) {
-            return 3;
+            return BO_DIVIDE_BY_ZERO;
         }
 
         result->data.int_value = value1->data.int_value / value2->data.int_value;
         break;
     default:
         fprintf(stderr, "Dont know handle this type div\n");
-        return 2;
+        return BO_NOT_SUPPORTED_TYPES;
     }
 
-    return 0;
+    return BO_OK;
 }

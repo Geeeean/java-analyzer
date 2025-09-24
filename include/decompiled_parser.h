@@ -7,6 +7,13 @@
 #define INSTRUCTION_TABLE_SIZE 100
 
 typedef enum {
+    BO_OK,
+    BO_DIFFERENT_TYPES,
+    BO_NOT_SUPPORTED_TYPES,
+    BO_DIVIDE_BY_ZERO,
+} BinaryResult;
+
+typedef enum {
     TYPE_INT,
     TYPE_BOOLEAN,
     TYPE_REFERENCE,
@@ -115,10 +122,10 @@ InstructionTable* instruction_table_build(Method* m, Config* cfg);
 void instruction_table_delete(InstructionTable* instruction_table);
 void value_print(const Value* value);
 
-int value_add(Value* value1, Value* value2, Value* result);
-int value_mul(Value* value1, Value* value2, Value* result);
-int value_sub(Value* value1, Value* value2, Value* result);
-int value_div(Value* value1, Value* value2, Value* result);
+BinaryResult value_add(Value* value1, Value* value2, Value* result);
+BinaryResult value_mul(Value* value1, Value* value2, Value* result);
+BinaryResult value_sub(Value* value1, Value* value2, Value* result);
+BinaryResult value_div(Value* value1, Value* value2, Value* result);
 
 char* opcode_print(Opcode opcode);
 

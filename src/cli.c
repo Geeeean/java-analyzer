@@ -16,7 +16,7 @@ static bool is_interpreter_only(const char* opt)
     return strcmp(opt, INTERPRETER_TAG) == 0 || strcmp(opt, INTERPRETER_TAG_F) == 0;
 }
 
-int options_parse_args(const int argc, const char** argv, Options* opts)
+OptionsParseResult options_parse_args(const int argc, const char** argv, Options* opts)
 {
     int args_num = argc - 1;
 
@@ -25,8 +25,12 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
     opts->method_id = NULL;
     opts->parameters = NULL;
 
-    if (args_num < MANDATORY_ARGS_NUM || args_num > OPTIONS_NUM + MANDATORY_ARGS_NUM) {
-        return 1;
+    if (args_num < MANDATORY_ARGS_NUM) {
+        return OPT_NOT_ENOUGH_ARGS;
+    }
+
+    if (args_num > OPTIONS_NUM + MANDATORY_ARGS_NUM) {
+        return OPT_TOO_MANY_ARGS;
     }
 
     if (args_num > MANDATORY_ARGS_NUM) {
@@ -37,7 +41,7 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
                 }
                 // else if (other options) {...}
                 else {
-                    return 2;
+                    return OPT_OPTION_NOT_KNOWN;
                 }
             }
         }
@@ -63,7 +67,7 @@ int options_parse_args(const int argc, const char** argv, Options* opts)
         opts->parameters = strdup(parameters);
     }
 
-    return 0;
+    return OPT_OK;
 }
 
 void options_cleanup(Options* opts)
