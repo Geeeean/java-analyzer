@@ -72,7 +72,28 @@ int main(int argc, char** argv)
         goto cleanup;
     }
 
-    interpreter_execute(instruction_table, m, opts.parameters);
+    RuntimeResult interpreter_result = interpreter_run(instruction_table, m, opts.parameters);
+    if (opts.interpreter_only) {
+        switch (interpreter_result) {
+        case RT_OK:
+            printf("ok\n");
+            break;
+        case RT_DIVIDE_BY_ZERO:
+            printf("divide by zero\n");
+            break;
+        case RT_ASSERTION_ERR:
+            printf("assertion error\n");
+            break;
+        case RT_INFINITE:
+            printf("*\n");
+            break;
+        case RT_CANT_BUILD_FRAME:
+        case RT_NULL_PARAMETERS:
+        case RT_UNKNOWN_ERROR:
+        default:
+            fprintf(stderr, "Error while executing interpreter: %d", interpreter_result);
+        }
+    }
 
 cleanup:
     instruction_table_delete(instruction_table);

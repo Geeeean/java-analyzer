@@ -5,6 +5,8 @@
 
 #include <stdlib.h>
 
+#define ITERATION 1000
+
 // todo: reason about splitting in specific code for each op
 typedef enum {
     SR_OK,
@@ -548,10 +550,13 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
     return result;
 }
 
-int interpreter_execute(InstructionTable* instruction_table, const Method* m, const char* parameters)
+RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method* m, const char* parameters)
 {
+    RuntimeResult result = RT_OK;
+
     if (!instruction_table || !m || !parameters) {
-        return 1;
+        result = RT_NULL_PARAMETERS;
+        goto cleanup;
     }
 
     char* arguments = strdup(method_get_arguments(m));
@@ -559,36 +564,50 @@ int interpreter_execute(InstructionTable* instruction_table, const Method* m, co
 
     Frame* frame = build_first_frame(arguments, params);
     if (!frame) {
-        return 2;
+        result = RT_CANT_BUILD_FRAME;
+        goto cleanup;
     }
-
-    free(arguments);
-    free(params);
-
-    // frame_print(frame);
 
     CallStack* call_stack = malloc(sizeof(CallStack));
     call_stack_push(call_stack, frame);
 
-    for (int i = 0; i < 1000; i++) {
+    int i = 1;
+    for (; i <= ITERATION; i++) {
         if (call_stack->count > 0) {
-            StepResult result = step(call_stack, instruction_table);
-
-            if (result == SR_BO_DIV_DBZ) {
-                printf("divide by zero\n");
-            } else if (result == SR_ASSERTION_ERR) {
-                printf("assertion error\n");
+            switch (step(call_stack, instruction_table)) {
+            case SR_OK:
+                continue;
+            case SR_BO_DIV_DBZ:
+                result = RT_DIVIDE_BY_ZERO;
+                break;
+            case SR_ASSERTION_ERR:
+                result = RT_ASSERTION_ERR;
+                break;
+            default:
+                result = RT_UNKNOWN_ERROR;
+                break;
             }
 
-            if (result) {
-                fprintf(stderr, "Error while interpreting: %s\n", step_result_signature[result]);
-                return 1;
-            }
+            goto cleanup;
         } else {
-            printf("ok\n");
-            break;
+            result = RT_OK;
+            goto cleanup;
         }
     }
 
-    return 0;
+cleanup:
+    // todo: deallocate call_stack, frame, ...
+
+    free(arguments);
+    free(params);
+
+    if (result) {
+        return result;
+    }
+
+    if (i == ITERATION) {
+        return RT_INFINITE;
+    }
+
+    return RT_OK;
 }
