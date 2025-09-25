@@ -16,6 +16,13 @@
 #define DECOMPILED_FORMAT "json"
 #define SOURCE_FORMAT "java"
 
+typedef enum {
+    MPR_OK,
+    MPR_CLASS_MALFORMED,
+    MPR_NAME_MALFORMED,
+    MPR_RT_MALFORMED,
+} MethodParseResult;
+
 struct Method {
     char* class;
     char* name;
@@ -71,45 +78,18 @@ static char* method_parse_return_type(char* method_id)
     return method_id;
 };
 
-static int sanity_check(const Method* m)
-{
-    if (!m) {
-        return 1;
-    }
-
-    if (!m->class || !strlen(m->class)) {
-        return 2;
-    }
-
-    if (!m->name || !strlen(m->name)) {
-        return 3;
-    }
-
-    if (!m->arguments) {
-        return 4;
-    }
-
-    // TODO
-    // return type must be 1 char (or array [I ?)
-    if (m->return_type == NULL || strlen(m->return_type) != 1) {
-        return 5;
-    }
-
-    return 0;
-}
-
 // in case of error code (>0), must call delete_method on m
-static int method_parse(Method* m, char* method_id)
+static MethodParseResult method_parse(Method* m, char* method_id)
 {
     char* buffer = method_parse_class(&method_id);
     if (!buffer) {
-        return 1;
+        return MPR_CLASS_MALFORMED;
     }
     m->class = strdup(buffer);
 
     buffer = method_parse_name(&method_id);
     if (!buffer) {
-        return 2;
+        return MPR_NAME_MALFORMED;
     }
     m->name = strdup(buffer);
 
@@ -118,11 +98,11 @@ static int method_parse(Method* m, char* method_id)
 
     buffer = method_parse_return_type(method_id);
     if (!buffer) {
-        return 3;
+        return MPR_RT_MALFORMED;
     }
     m->return_type = strdup(buffer);
 
-    return sanity_check(m);
+    return MPR_OK;
 }
 
 Method* method_create(char* method_id)
@@ -154,10 +134,6 @@ void method_delete(Method* m)
 
 void method_print(const Method* m)
 {
-    if (sanity_check(m)) {
-        return;
-    }
-
     printf("method class:          %s\n", m->class);
     printf("method name:           %s\n", m->name);
     printf("method arguments:      %s\n", m->arguments);

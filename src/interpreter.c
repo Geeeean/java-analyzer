@@ -1,8 +1,44 @@
+// todo handle pop error
 #include "interpreter.h"
 #include "stack.h"
 #include "string.h"
 
 #include <stdlib.h>
+
+// todo: reason about splitting in specific code for each op
+typedef enum {
+    SR_OK,
+    SR_OUT_OF_BOUNDS,
+    SR_NULL_INSTRUCTION,
+    SR_EMPTY_STACK,
+    SR_DIVIDE_BY_ZERO,
+    SR_BO_UNKNOWN,
+    SR_BO_MUL_GE,
+    SR_BO_DIV_GE,
+    SR_BO_DIV_DBZ,
+    SR_BO_ADD_GE,
+    SR_BO_SUB_GE,
+    SR_UNKNOWN_OPCODE,
+    SR_ASSERTION_ERR,
+    SR_INVALID_TYPE,
+} StepResult;
+
+static const char* step_result_signature[] = {
+    [SR_OK] = "SR_OK",
+    [SR_OUT_OF_BOUNDS] = "SR_OUT_OF_BOUNDS",
+    [SR_NULL_INSTRUCTION] = "SR_NULL_INSTRUCTION",
+    [SR_EMPTY_STACK] = "SR_EMPTY_STACK",
+    [SR_DIVIDE_BY_ZERO] = "SR_DIVIDE_BY_ZERO",
+    [SR_BO_UNKNOWN] = "SR_BO_UNKNOWN",
+    [SR_BO_MUL_GE] = "SR_BO_MUL_GE",
+    [SR_BO_DIV_GE] = "SR_BO_DIV_GE",
+    [SR_BO_DIV_DBZ] = "SR_BO_DIV_DBZ",
+    [SR_BO_ADD_GE] = "SR_BO_ADD_GE",
+    [SR_BO_SUB_GE] = "SR_BO_SUB_GE",
+    [SR_UNKNOWN_OPCODE] = "SR_UNKNOWN_OPCODE",
+    [SR_ASSERTION_ERR] = "SR_ASSERTION_ERR",
+    [SR_INVALID_TYPE] = "SR_INVALID_TYPE",
+};
 
 typedef struct {
     Value* locals;
@@ -11,16 +47,6 @@ typedef struct {
     int pc;
 } Frame;
 
-static void frame_print(Frame* frame)
-{
-    printf("PC: %d\n", frame->pc);
-    printf("LOCALS:\n");
-    for (int i = 0; i < frame->locals_count; i++) {
-        printf("[%2d]: ", i);
-        value_print(frame->locals + i);
-        printf("\n");
-    }
-}
 typedef struct CallStackNode {
     Frame* frame;
     struct CallStackNode* next;
@@ -267,7 +293,201 @@ cleanup:
     return NULL;
 }
 
-static int step(CallStack* call_stack, InstructionTable* instruction_table)
+static StepResult handle_load(Frame* frame, LoadOP* load)
+{
+    if (!load) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    int index = load->index;
+    if (index >= frame->locals_count) {
+        return SR_OUT_OF_BOUNDS;
+    }
+
+    Value value = frame->locals[index];
+    stack_push(frame->stack, &value);
+    frame->pc++;
+
+    return SR_OK;
+}
+
+static StepResult handle_push(Frame* frame, PushOP* push)
+{
+    if (!push) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Value value = push->value;
+    stack_push(frame->stack, &value);
+    frame->pc++;
+
+    return SR_OK;
+}
+
+static StepResult handle_binary(Frame* frame, BinaryOP* binary)
+{
+    Value value1, value2, result;
+    if (stack_pop(frame->stack, &value2)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (stack_pop(frame->stack, &value1)) {
+        return SR_EMPTY_STACK;
+    }
+
+    switch (binary->op) {
+    case BO_MUL:
+        if (value_mul(&value1, &value2, &result)) {
+            return SR_BO_MUL_GE;
+        }
+        break;
+
+    case BO_ADD:
+        if (value_add(&value1, &value2, &result)) {
+            return SR_BO_ADD_GE;
+        }
+        break;
+
+    case BO_DIV:
+        switch (value_div(&value1, &value2, &result)) {
+        case BO_OK:
+            break;
+        case BO_DIVIDE_BY_ZERO:
+            return SR_BO_DIV_DBZ;
+        default:
+            return SR_BO_DIV_GE;
+        }
+        break;
+
+    case BO_SUB:
+        if (value_sub(&value1, &value2, &result)) {
+            return SR_BO_SUB_GE;
+        }
+
+        break;
+    default:
+        return SR_BO_UNKNOWN;
+    }
+
+    stack_push(frame->stack, &result);
+    frame->pc++;
+    return SR_OK;
+}
+
+static StepResult handle_get(Frame* frame, GetOP* get)
+{
+    if (!get) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Value value;
+    value.type = TYPE_BOOLEAN;
+    value.data.bool_value = false;
+
+    stack_push(frame->stack, &value);
+    frame->pc++;
+
+    return SR_OK;
+}
+
+// todo push into the stack of the next frame
+static StepResult handle_return(Frame* frame, CallStack* call_stack)
+{
+    Value value;
+    stack_pop(frame->stack, &value);
+    call_stack_pop(call_stack);
+
+    return SR_OK;
+}
+
+static bool handle_ift_aux(IfCondition condition, int value1, int value2)
+{
+    switch (condition) {
+    case IF_EQ:
+        return value1 == value2;
+    case IF_NE:
+        return value1 != value2;
+    case IF_GT:
+        return value1 > value2;
+    case IF_LT:
+        return value1 < value2;
+    case IF_GE:
+        return value1 >= value2;
+    case IF_LE:
+        return value1 <= value2;
+    default:
+        return false;
+    }
+
+    return false;
+}
+
+static StepResult handle_ifz(Frame* frame, IfOP* ift)
+{
+    Value value1;
+    stack_pop(frame->stack, &value1);
+
+    bool result;
+
+    switch (value1.type) {
+    case TYPE_INT:
+        result = handle_ift_aux(ift->condition, value1.data.int_value, 0);
+        break;
+    case TYPE_CHAR:
+        result = handle_ift_aux(ift->condition, value1.data.char_value, 0);
+        break;
+    case TYPE_BOOLEAN:
+        result = handle_ift_aux(ift->condition, value1.data.bool_value, 0);
+        break;
+    default:
+        return SR_INVALID_TYPE;
+    }
+
+    if (result) {
+        frame->pc = ift->target;
+    } else {
+        frame->pc++;
+    }
+
+    return SR_OK;
+}
+
+static StepResult handle_ift(Frame* frame, IfOP* ift)
+{
+    Value value1, value2;
+    stack_pop(frame->stack, &value2);
+    stack_pop(frame->stack, &value1);
+
+    if (value1.type != value2.type) {
+        return SR_INVALID_TYPE;
+    }
+
+    bool result;
+
+    switch (value1.type) {
+    case TYPE_INT:
+        result = handle_ift_aux(ift->condition, value1.data.int_value, value2.data.int_value);
+        break;
+    case TYPE_CHAR:
+        result = handle_ift_aux(ift->condition, value1.data.char_value, value2.data.char_value);
+        break;
+    case TYPE_BOOLEAN:
+        result = handle_ift_aux(ift->condition, value1.data.bool_value, value2.data.bool_value);
+        break;
+    default:
+        return SR_INVALID_TYPE;
+    }
+
+    if (result) {
+        frame->pc = ift->target;
+    } else {
+        frame->pc++;
+    }
+
+    return SR_OK;
+}
+
+static StepResult step(CallStack* call_stack, InstructionTable* instruction_table)
 {
     Frame* frame = call_stack_peek(call_stack);
     if (!frame) {
@@ -276,188 +496,56 @@ static int step(CallStack* call_stack, InstructionTable* instruction_table)
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
-    // printf("Interpreting: %s\n", opcode_print(instruction->opcode));
+    fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
+    StepResult result = SR_OK;
 
     switch (instruction->opcode) {
-    case OP_LOAD: {
-        Value value = frame->locals[instruction->data.load.index];
-        stack_push(frame->stack, &value);
-    };
-        frame->pc++;
+    case OP_LOAD:
+        result = handle_load(frame, &instruction->data.load);
         break;
 
-    case OP_PUSH: {
-        Value value = instruction->data.push.value;
-        stack_push(frame->stack, &value);
-    };
-        frame->pc++;
+    case OP_PUSH:
+        result = handle_push(frame, &instruction->data.push);
         break;
 
-    case OP_BINARY: {
-        Value value1, value2, result;
-        if (stack_pop(frame->stack, &value2)) {
-            fprintf(stderr, "Cant pop from stack\n");
-            return 2;
-        }
-
-        if (stack_pop(frame->stack, &value1)) {
-            fprintf(stderr, "Cant pop from stack\n");
-            return 2;
-        }
-
-        switch (instruction->data.binary.op) {
-        case BO_MUL:
-            if (value_mul(&value1, &value2, &result)) {
-                fprintf(stderr, "Error when handling MUL op\n");
-                return 3;
-            }
-
-            stack_push(frame->stack, &result);
-            break;
-        case BO_ADD:
-            break;
-        case BO_DIV: {
-            int div_res = value_div(&value1, &value2, &result);
-            if (div_res) {
-                if (div_res == 3) {
-                    printf("divide by zero\n");
-                } else {
-                    fprintf(stderr, "Error when handling DIV op\n");
-                }
-                return 5;
-            }
-            stack_push(frame->stack, &result);
-        };
-            break;
-        case BO_SUB:
-            if (value_sub(&value1, &value2, &result)) {
-                fprintf(stderr, "Error when handling SUB op\n");
-                return 3;
-            }
-
-            stack_push(frame->stack, &result);
-            break;
-        default:
-            fprintf(stderr, "Unknown binary operation\n");
-            return 7;
-        }
-    };
-        frame->pc++;
+    case OP_BINARY:
+        result = handle_binary(frame, &instruction->data.binary);
         break;
-    case OP_GET: {
-        Value value;
-        value.type = TYPE_BOOLEAN;
-        value.data.bool_value = false;
 
-        stack_push(frame->stack, &value);
-    };
-        frame->pc++;
+    case OP_GET:
+        result = handle_get(frame, &instruction->data.get);
         break;
-    case OP_RETURN: {
-        Value value;
-        stack_pop(frame->stack, &value);
-        // printf("Returning: ");
-        // value_print(&value);
-    };
-        call_stack_pop(call_stack);
-        break;
-    case OP_IF_ZERO: {
-        Value value;
-        stack_pop(frame->stack, &value);
 
-        switch (value.type) {
-        case TYPE_INT:
-            switch (instruction->data.ifz.condition) {
-            case IFZ_EQ:
-                if (value.data.int_value == 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_NE:
-                if (value.data.int_value != 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_GT:
-                if (value.data.int_value > 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_LT:
-                if (value.data.int_value < 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_GE:
-                if (value.data.int_value >= 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_LE:
-                if (value.data.int_value <= 0) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            default:
-                fprintf(stderr, "Dont know how to handle ifz: %d\n", instruction->data.ifz.condition);
-                return 9;
-            }
-            break;
-        case TYPE_BOOLEAN:
-
-            switch (instruction->data.ifz.condition) {
-            case IFZ_EQ:
-                if (!value.data.bool_value) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            case IFZ_NE:
-                if (value.data.bool_value) {
-                    frame->pc = instruction->data.ifz.target;
-                } else {
-                    frame->pc++;
-                }
-                break;
-            default:
-                fprintf(stderr, "Cant handle this ifz op on boolean\n");
-                return 10;
-            }
-            break;
-        default:
-            fprintf(stderr, "Dont know how to ifz onto type %d\n", value.type);
-            return 8;
-        }
-    };
+    case OP_RETURN:
+        result = handle_return(frame, call_stack);
         break;
+
+    case OP_IF_ZERO:
+        result = handle_ifz(frame, &instruction->data.ift);
+        break;
+
+    case OP_IF:
+        result = handle_ift(frame, &instruction->data.ift);
+        break;
+
     case OP_NEW:
     case OP_DUP:
     case OP_INVOKE:
-    case OP_THROW:
-        printf("assertion error\n");
-        return 11;
+        frame->pc++;
         break;
+    case OP_THROW:
+        result = SR_ASSERTION_ERR;
+        break;
+
     case OP_COUNT:
         break;
+
     default:
-        fprintf(stderr, "Error while matching instruction during execution\n");
-        return 3;
+        result = SR_UNKNOWN_OPCODE;
+        break;
     }
 
-    return 0;
+    return result;
 }
 
 int interpreter_execute(InstructionTable* instruction_table, const Method* m, const char* parameters)
@@ -484,7 +572,16 @@ int interpreter_execute(InstructionTable* instruction_table, const Method* m, co
 
     for (int i = 0; i < 1000; i++) {
         if (call_stack->count > 0) {
-            if (step(call_stack, instruction_table)) {
+            StepResult result = step(call_stack, instruction_table);
+
+            if (result == SR_BO_DIV_DBZ) {
+                printf("divide by zero\n");
+            } else if (result == SR_ASSERTION_ERR) {
+                printf("assertion error\n");
+            }
+
+            if (result) {
+                fprintf(stderr, "Error while interpreting: %s\n", step_result_signature[result]);
                 return 1;
             }
         } else {

@@ -29,7 +29,7 @@ struct Value {
     union {
         int int_value;
         bool bool_value;
-        char* char_value;
+        char char_value;
         void* ref_value;
         Value* array_value;
     } data;
@@ -44,6 +44,7 @@ typedef enum {
     OP_GET,
     OP_RETURN,
     OP_IF_ZERO,
+    OP_IF,
     OP_NEW,
     OP_DUP,
     OP_INVOKE,
@@ -60,14 +61,14 @@ typedef enum {
 } BinaryOperator;
 
 typedef enum {
-    IFZ_EQ,
-    IFZ_NE,
-    IFZ_GT,
-    IFZ_LT,
-    IFZ_GE,
-    IFZ_LE,
-    IFZ_CONDITION_COUNT
-} IfzCondition;
+    IF_EQ,
+    IF_NE,
+    IF_GT,
+    IF_LT,
+    IF_GE,
+    IF_LE,
+    IF_CONDITION_COUNT
+} IfCondition;
 
 typedef struct {
     Value value;
@@ -94,9 +95,9 @@ typedef struct {
 } ThrowOP;
 
 typedef struct {
-    IfzCondition condition;
+    IfCondition condition;
     int target;
-} IfzOP;
+} IfOP;
 
 typedef struct {
     Opcode opcode;
@@ -107,7 +108,7 @@ typedef struct {
         BinaryOP binary;
         ReturnOP ret;
         GetOP get;
-        IfzOP ifz;
+        IfOP ift;
         ThrowOP trw;
     } data;
 } Instruction;
@@ -127,6 +128,6 @@ BinaryResult value_mul(Value* value1, Value* value2, Value* result);
 BinaryResult value_sub(Value* value1, Value* value2, Value* result);
 BinaryResult value_div(Value* value1, Value* value2, Value* result);
 
-char* opcode_print(Opcode opcode);
+const char* opcode_print(Opcode opcode);
 
 #endif
