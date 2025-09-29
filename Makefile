@@ -7,8 +7,8 @@ IDIR = include
 BUILDDIR = build
 BINDIR = bin
 LDIR = lib
-LIBS = libtree-sitter.a
-LLIBS := $(patsubst lib%.a,-l%,$(LIBS))
+LIBS = tree-sitter
+LLIBS := $(patsubst %,-l%,$(LIBS))
 
 TARGET = analyzer
 
