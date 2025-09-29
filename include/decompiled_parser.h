@@ -49,6 +49,13 @@ typedef enum {
     OP_DUP,
     OP_INVOKE,
     OP_THROW,
+    OP_STORE,
+    OP_GOTO,
+    OP_CAST,
+    OP_NEW_ARRAY,
+    OP_ARRAY_LOAD,
+    OP_ARRAY_STORE,
+    OP_ARRAY_LENGTH,
     OP_COUNT
 } Opcode;
 
@@ -57,6 +64,7 @@ typedef enum {
     BO_SUB,
     BO_DIV,
     BO_MUL,
+    BO_REM,
     BO_COUNT
 } BinaryOperator;
 
@@ -100,6 +108,40 @@ typedef struct {
 } IfOP;
 
 typedef struct {
+    ValueType type;
+    int index;
+} StoreOP;
+
+typedef struct {
+    int target;
+} GotoOP;
+
+typedef struct {
+    ValueType from;
+    ValueType to;
+} CastOP;
+
+typedef struct {
+    int words;
+} DupOP;
+
+typedef struct {
+    int dim;
+    ValueType type;
+} NewArrayOP;
+
+typedef struct {
+    ValueType type;
+} ArrayStoreOP;
+
+typedef struct {
+    ValueType type;
+} ArrayLoadOP;
+
+typedef struct {
+} ArrayLengthOP;
+
+typedef struct {
     Opcode opcode;
     int seq;
     union {
@@ -110,6 +152,14 @@ typedef struct {
         GetOP get;
         IfOP ift;
         ThrowOP trw;
+        StoreOP store;
+        GotoOP go2;
+        CastOP cast;
+        DupOP dup;
+        NewArrayOP new_array;
+        ArrayStoreOP array_store;
+        ArrayLoadOP array_load;
+        ArrayLengthOP array_length;
     } data;
 } Instruction;
 
@@ -127,6 +177,7 @@ BinaryResult value_add(Value* value1, Value* value2, Value* result);
 BinaryResult value_mul(Value* value1, Value* value2, Value* result);
 BinaryResult value_sub(Value* value1, Value* value2, Value* result);
 BinaryResult value_div(Value* value1, Value* value2, Value* result);
+BinaryResult value_rem(Value* value1, Value* value2, Value* result);
 
 const char* opcode_print(Opcode opcode);
 

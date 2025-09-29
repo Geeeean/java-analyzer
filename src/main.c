@@ -91,7 +91,7 @@ int main(int argc, char** argv)
         case RT_NULL_PARAMETERS:
         case RT_UNKNOWN_ERROR:
         default:
-            fprintf(stderr, "Error while executing interpreter: %d", interpreter_result);
+            fprintf(stderr, "Error while executing interpreter: %d\n", interpreter_result);
         }
     }
 
@@ -104,3 +104,13 @@ cleanup:
 
     return result;
 }
+
+
+/*
+ * TODO
+ * 1 -> handle array instructions
+ * 2 -> handle function calls
+ * 3 -> go from interpreting to evaluation
+ * 4 -> choose a project
+ * 5 -> get 12
+ */

@@ -25,6 +25,13 @@ static const char* opcode_signature[] = {
     [OP_DUP] = "dup",
     [OP_INVOKE] = "invoke",
     [OP_THROW] = "throw",
+    [OP_STORE] = "store",
+    [OP_GOTO] = "goto",
+    [OP_CAST] = "cast",
+    [OP_NEW_ARRAY] = "newarray",
+    [OP_ARRAY_LOAD] = "array_load",
+    [OP_ARRAY_STORE] = "array_store",
+    [OP_ARRAY_LENGTH] = "arraylength",
 };
 
 static const char* load_type_signature[] = {
@@ -43,6 +50,14 @@ static const char* binary_type_signature[] = {
     [TYPE_INT] = "int",
 };
 
+static const char* store_type_signature[] = {
+    [TYPE_INT] = "int",
+};
+
+static const char* array_type_signature[] = {
+    [TYPE_INT] = "int",
+};
+
 static const char* return_type_signature[] = {
     [TYPE_INT] = "int",
     [TYPE_VOID] = "null",
@@ -52,7 +67,8 @@ static const char* binary_operatore_signature[] = {
     [BO_ADD] = "add",
     [BO_SUB] = "sub",
     [BO_DIV] = "div",
-    [BO_MUL] = "mul"
+    [BO_MUL] = "mul",
+    [BO_REM] = "rem",
 };
 
 static const char* condition_signature[] = {
@@ -98,7 +114,7 @@ static InstructionParseResult parse_opcode(Opcode* opcode, cJSON* instruction_js
         }
     }
 
-    if (*opcode < 0) {
+    if ((*opcode) == -1) {
         fprintf(stderr, "Not known opr: %s\n", opr);
         return 2;
     }
@@ -191,7 +207,7 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
         }
     }
 
-    if (binary->op < 0) {
+    if (binary->op == -1) {
         fprintf(stderr, "Binary instruction unknown operant: %s\n", operant);
         return IPR_BO_UNKNOWN_OP;
     }
@@ -283,6 +299,146 @@ static int parse_throw(ThrowOP* trw, cJSON* instruction_json)
     return IPR_OK;
 }
 
+static int parse_dup(DupOP* dup, cJSON* instruction_json)
+{
+    cJSON* words_obj = cJSON_GetObjectItem(instruction_json, "words");
+    if (!words_obj || !cJSON_IsNumber(words_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'words' field\n");
+        return IPR_MALFORMED;
+    }
+    dup->words = cJSON_GetNumberValue(words_obj);
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_store(StoreOP* store, cJSON* instruction_json)
+{
+    cJSON* index_obj = cJSON_GetObjectItem(instruction_json, "index");
+    if (!index_obj || !cJSON_IsNumber(index_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'index' field\n");
+        return IPR_MALFORMED;
+    }
+    store->index = cJSON_GetNumberValue(index_obj);
+
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        return IPR_MALFORMED;
+    }
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, store_type_signature[TYPE_INT]) == 0) {
+        store->type = TYPE_INT;
+    } else {
+        fprintf(stderr, "Unknown type in store instruction: %s\n", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_goto(GotoOP* go2, cJSON* instruction_json)
+{
+    cJSON* target_obj = cJSON_GetObjectItem(instruction_json, "target");
+    if (!target_obj || !cJSON_IsNumber(target_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'target' field\n");
+        return IPR_MALFORMED;
+    }
+    go2->target = cJSON_GetNumberValue(target_obj);
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_cast(CastOP* cast, cJSON* instruction_json)
+{
+    cJSON* from_obj = cJSON_GetObjectItem(instruction_json, "from");
+    if (!from_obj || !cJSON_IsString(from_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'from' field\n");
+        return IPR_MALFORMED;
+    }
+    char* from = cJSON_GetStringValue(from_obj);
+    // todo: convert to ValueType
+
+    cJSON* to_obj = cJSON_GetObjectItem(instruction_json, "to");
+    if (!to_obj || !cJSON_IsString(to_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'to' field\n");
+        return IPR_MALFORMED;
+    }
+    char* to = cJSON_GetStringValue(to_obj);
+    // todo: convert to ValueType
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* instruction_json)
+{
+    cJSON* dim_obj = cJSON_GetObjectItem(instruction_json, "dim");
+    if (!dim_obj || !cJSON_IsNumber(dim_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'dim' field\n");
+        return IPR_MALFORMED;
+    }
+    new_array->dim = cJSON_GetNumberValue(dim_obj);
+
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        return IPR_MALFORMED;
+    }
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+        new_array->type = TYPE_INT;
+    } else {
+        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_array_load(ArrayLoadOP* load, cJSON* instruction_json)
+{
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        return IPR_MALFORMED;
+    }
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+        load->type = TYPE_INT;
+    } else {
+        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* instruction_json)
+{
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        return IPR_MALFORMED;
+    }
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+        store->type = TYPE_INT;
+    } else {
+        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_array_length(ArrayLengthOP* array_length, cJSON* instruction_json)
+{
+    return IPR_OK;
+}
+
 static Instruction*
 parse_instruction(cJSON* instruction_json)
 {
@@ -340,14 +496,61 @@ parse_instruction(cJSON* instruction_json)
         }
         break;
 
-    case OP_NEW:
     case OP_DUP:
+        if (parse_dup(&instruction->data.dup, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+    case OP_NEW:
     case OP_INVOKE:
     case OP_THROW:
         if (parse_throw(&instruction->data.trw, instruction_json)) {
             goto cleanup;
         }
         break;
+
+    case OP_STORE:
+        if (parse_store(&instruction->data.store, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_GOTO:
+        if (parse_goto(&instruction->data.go2, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_CAST:
+        if (parse_cast(&instruction->data.cast, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_NEW_ARRAY:
+        if (parse_new_array(&instruction->data.new_array, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_ARRAY_LOAD:
+        if (parse_array_load(&instruction->data.array_load, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_ARRAY_STORE:
+        if (parse_array_store(&instruction->data.array_store, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_ARRAY_LENGTH:
+        if (parse_array_length(&instruction->data.array_length, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
     default:
         fprintf(stderr, "Unknown opcode: %d\n", instruction->opcode);
         goto cleanup;
@@ -504,7 +707,7 @@ void value_print(const Value* value)
 Value value_deep_copy(const Value* src)
 {
     Value dst;
-    dst.type = TYPE_VOID;
+    dst.type = -1;
 
     if (!src)
         return dst;
@@ -612,6 +815,25 @@ BinaryResult value_sub(Value* value1, Value* value2, Value* result)
     case TYPE_INT:
         result->type = TYPE_INT;
         result->data.int_value = value1->data.int_value - value2->data.int_value;
+        break;
+    default:
+        fprintf(stderr, "Dont know handle this type sub\n");
+        return BO_NOT_SUPPORTED_TYPES;
+    }
+
+    return BO_OK;
+}
+
+BinaryResult value_rem(Value* value1, Value* value2, Value* result)
+{
+    if (value1->type != value2->type) {
+        return BO_DIFFERENT_TYPES;
+    }
+
+    switch (value1->type) {
+    case TYPE_INT:
+        result->type = TYPE_INT;
+        result->data.int_value = value1->data.int_value % value2->data.int_value;
         break;
     default:
         fprintf(stderr, "Dont know handle this type sub\n");

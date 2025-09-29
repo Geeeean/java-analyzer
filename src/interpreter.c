@@ -15,11 +15,12 @@ typedef enum {
     SR_EMPTY_STACK,
     SR_DIVIDE_BY_ZERO,
     SR_BO_UNKNOWN,
-    SR_BO_MUL_GE,
-    SR_BO_DIV_GE,
+    SR_BO_MUL_GEN_ERR,
     SR_BO_DIV_DBZ,
-    SR_BO_ADD_GE,
-    SR_BO_SUB_GE,
+    SR_BO_DIV_GEN_ERR,
+    SR_BO_ADD_GEN_ERR,
+    SR_BO_SUB_GEN_ERR,
+    SR_BO_REM_GEN_ERR,
     SR_UNKNOWN_OPCODE,
     SR_ASSERTION_ERR,
     SR_INVALID_TYPE,
@@ -32,11 +33,11 @@ static const char* step_result_signature[] = {
     [SR_EMPTY_STACK] = "SR_EMPTY_STACK",
     [SR_DIVIDE_BY_ZERO] = "SR_DIVIDE_BY_ZERO",
     [SR_BO_UNKNOWN] = "SR_BO_UNKNOWN",
-    [SR_BO_MUL_GE] = "SR_BO_MUL_GE",
-    [SR_BO_DIV_GE] = "SR_BO_DIV_GE",
+    [SR_BO_MUL_GEN_ERR] = "SR_BO_MUL_GEN_ERR",
+    [SR_BO_DIV_GEN_ERR] = "SR_BO_DIV_GEN_ERR",
     [SR_BO_DIV_DBZ] = "SR_BO_DIV_DBZ",
-    [SR_BO_ADD_GE] = "SR_BO_ADD_GE",
-    [SR_BO_SUB_GE] = "SR_BO_SUB_GE",
+    [SR_BO_ADD_GEN_ERR] = "SR_BO_ADD_GEN_ERR",
+    [SR_BO_SUB_GEN_ERR] = "SR_BO_SUB_GEN_ERR",
     [SR_UNKNOWN_OPCODE] = "SR_UNKNOWN_OPCODE",
     [SR_ASSERTION_ERR] = "SR_ASSERTION_ERR",
     [SR_INVALID_TYPE] = "SR_INVALID_TYPE",
@@ -58,6 +59,10 @@ typedef struct {
     CallStackNode* top;
     int count;
 } CallStack;
+
+typedef struct {
+    CallStack* call_stack;
+} Interpreter;
 
 static void call_stack_push(CallStack* call_stack, Frame* frame)
 {
@@ -340,13 +345,13 @@ static StepResult handle_binary(Frame* frame, BinaryOP* binary)
     switch (binary->op) {
     case BO_MUL:
         if (value_mul(&value1, &value2, &result)) {
-            return SR_BO_MUL_GE;
+            return SR_BO_MUL_GEN_ERR;
         }
         break;
 
     case BO_ADD:
         if (value_add(&value1, &value2, &result)) {
-            return SR_BO_ADD_GE;
+            return SR_BO_ADD_GEN_ERR;
         }
         break;
 
@@ -357,15 +362,21 @@ static StepResult handle_binary(Frame* frame, BinaryOP* binary)
         case BO_DIVIDE_BY_ZERO:
             return SR_BO_DIV_DBZ;
         default:
-            return SR_BO_DIV_GE;
+            return SR_BO_DIV_GEN_ERR;
         }
         break;
 
     case BO_SUB:
         if (value_sub(&value1, &value2, &result)) {
-            return SR_BO_SUB_GE;
+            return SR_BO_SUB_GEN_ERR;
         }
 
+        break;
+
+    case BO_REM:
+        if (value_rem(&value1, &value2, &result)) {
+            return SR_BO_REM_GEN_ERR;
+        }
         break;
     default:
         return SR_BO_UNKNOWN;
@@ -426,20 +437,20 @@ static bool handle_ift_aux(IfCondition condition, int value1, int value2)
 
 static StepResult handle_ifz(Frame* frame, IfOP* ift)
 {
-    Value value1;
-    stack_pop(frame->stack, &value1);
+    Value value;
+    stack_pop(frame->stack, &value);
 
     bool result;
 
-    switch (value1.type) {
+    switch (value.type) {
     case TYPE_INT:
-        result = handle_ift_aux(ift->condition, value1.data.int_value, 0);
+        result = handle_ift_aux(ift->condition, value.data.int_value, 0);
         break;
     case TYPE_CHAR:
-        result = handle_ift_aux(ift->condition, value1.data.char_value, 0);
+        result = handle_ift_aux(ift->condition, value.data.char_value, 0);
         break;
     case TYPE_BOOLEAN:
-        result = handle_ift_aux(ift->condition, value1.data.bool_value, 0);
+        result = handle_ift_aux(ift->condition, value.data.bool_value, 0);
         break;
     default:
         return SR_INVALID_TYPE;
@@ -489,6 +500,42 @@ static StepResult handle_ift(Frame* frame, IfOP* ift)
     return SR_OK;
 }
 
+static StepResult handle_store(Frame* frame, StoreOP* store)
+{
+    Value value1;
+    stack_pop(frame->stack, &value1);
+
+    int index = store->index;
+    if (index >= frame->locals_count) {
+        frame->locals_count = index + 1;
+        frame->locals = realloc(frame->locals, frame->locals_count * sizeof(Value));
+    }
+
+    frame->locals[index] = value1;
+
+    frame->pc++;
+    return SR_OK;
+}
+
+static StepResult handle_goto(Frame* frame, GotoOP* go2)
+{
+    frame->pc = go2->target;
+    return SR_OK;
+}
+
+static StepResult handle_dup(Frame* frame, DupOP* dup)
+{
+    stack_push(frame->stack, stack_peek(frame->stack));
+
+    frame->pc++;
+    return SR_OK;
+}
+
+static StepResult handle_new_array(Frame *frame, NewArrayOP* new_array) {
+    
+    return SR_OK;
+}
+
 static StepResult step(CallStack* call_stack, InstructionTable* instruction_table)
 {
     Frame* frame = call_stack_peek(call_stack);
@@ -498,7 +545,7 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
-    fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
+    // fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
     StepResult result = SR_OK;
 
     switch (instruction->opcode) {
@@ -530,13 +577,24 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
         result = handle_ift(frame, &instruction->data.ift);
         break;
 
-    case OP_NEW:
     case OP_DUP:
+        result = handle_dup(frame, &instruction->data.dup);
+        break;
+    case OP_CAST:
+    case OP_NEW:
     case OP_INVOKE:
         frame->pc++;
         break;
     case OP_THROW:
         result = SR_ASSERTION_ERR;
+        break;
+
+    case OP_STORE:
+        result = handle_store(frame, &instruction->data.store);
+        break;
+
+    case OP_GOTO:
+        result = handle_goto(frame, &instruction->data.go2);
         break;
 
     case OP_COUNT:
@@ -571,10 +629,11 @@ RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method*
     CallStack* call_stack = malloc(sizeof(CallStack));
     call_stack_push(call_stack, frame);
 
-    int i = 1;
-    for (; i <= ITERATION; i++) {
+    int i = 0;
+    for (; i < ITERATION; i++) {
         if (call_stack->count > 0) {
-            switch (step(call_stack, instruction_table)) {
+            StepResult step_result = step(call_stack, instruction_table);
+            switch (step_result) {
             case SR_OK:
                 continue;
             case SR_BO_DIV_DBZ:
@@ -587,6 +646,8 @@ RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method*
                 result = RT_UNKNOWN_ERROR;
                 break;
             }
+
+            fprintf(stderr, "Error: %s\n", step_result_signature[step_result]);
 
             goto cleanup;
         } else {
