@@ -21,6 +21,7 @@ typedef enum {
     MPR_CLASS_MALFORMED,
     MPR_NAME_MALFORMED,
     MPR_RT_MALFORMED,
+    MPR_INTERNAL_ERROR,
 } MethodParseResult;
 
 struct Method {
@@ -103,6 +104,24 @@ static MethodParseResult method_parse(Method* m, char* method_id)
     m->return_type = strdup(buffer);
 
     return MPR_OK;
+}
+
+static MethodParseResult method_parse_from_invoke(
+    Method* m,
+    char* ref_name,
+    char* method_name,
+    char* args_type,
+    char* return_type)
+{
+    char* method_id;
+    replace_char(ref_name, '/', '.');
+
+    // todo: parse the method directly, avoid overhead
+    if (asprintf(&method_id, "%s.%s:(%s)%s", ref_name, method_name, args_type, return_type) < 0) {
+        return MPR_INTERNAL_ERROR;
+    }
+
+    return method_parse(m, method_id);
 }
 
 Method* method_create(char* method_id)
@@ -195,6 +214,7 @@ char* method_get_name(const Method* m)
     return m->name;
 }
 
+// todo: get as array of ValueType?
 char* method_get_arguments(const Method* m)
 {
     return m->arguments;

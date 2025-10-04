@@ -3,8 +3,12 @@
 
 #include "config.h"
 #include "method.h"
+#include "type.h"
 
+// todo: make dynamic
 #define INSTRUCTION_TABLE_SIZE 100
+
+extern char args_type_signature[]; 
 
 typedef enum {
     BO_OK,
@@ -12,30 +16,6 @@ typedef enum {
     BO_NOT_SUPPORTED_TYPES,
     BO_DIVIDE_BY_ZERO,
 } BinaryResult;
-
-typedef enum {
-    TYPE_INT,
-    TYPE_BOOLEAN,
-    TYPE_REFERENCE,
-    TYPE_CLASS,
-    TYPE_CHAR,
-    TYPE_ARRAY,
-    TYPE_VOID,
-} ValueType;
-
-typedef struct Value Value;
-struct Value {
-    ValueType type;
-    union {
-        int int_value;
-        bool bool_value;
-        char char_value;
-        void* ref_value;
-        Value* array_value;
-    } data;
-};
-
-Value value_deep_copy(const Value* src);
 
 typedef enum {
     OP_LOAD,
@@ -79,25 +59,32 @@ typedef enum {
 } IfCondition;
 
 typedef struct {
-    Value value;
+    PrimitiveType value;
 } PushOP;
 
 typedef struct {
     int index;
-    ValueType TYPE_type;
+    Type type;
 } LoadOP;
 
 typedef struct {
-    ValueType type;
+    Type type;
     BinaryOperator op;
 } BinaryOP;
 
 typedef struct {
-    ValueType type;
+    Type type;
 } ReturnOP;
 
 typedef struct {
 } GetOP;
+
+typedef struct {
+    char* method_name;
+    char* ref_name;
+    Type return_type;
+    Type args[];
+} InvokeOP;
 
 typedef struct {
 } ThrowOP;
@@ -108,7 +95,7 @@ typedef struct {
 } IfOP;
 
 typedef struct {
-    ValueType type;
+    Type type;
     int index;
 } StoreOP;
 
@@ -117,8 +104,8 @@ typedef struct {
 } GotoOP;
 
 typedef struct {
-    ValueType from;
-    ValueType to;
+    Type from;
+    Type to;
 } CastOP;
 
 typedef struct {
@@ -127,15 +114,15 @@ typedef struct {
 
 typedef struct {
     int dim;
-    ValueType type;
+    Type type;
 } NewArrayOP;
 
 typedef struct {
-    ValueType type;
+    Type type;
 } ArrayStoreOP;
 
 typedef struct {
-    ValueType type;
+    Type type;
 } ArrayLoadOP;
 
 typedef struct {
@@ -150,6 +137,7 @@ typedef struct {
         BinaryOP binary;
         ReturnOP ret;
         GetOP get;
+        InvokeOP invoke;
         IfOP ift;
         ThrowOP trw;
         StoreOP store;
@@ -171,13 +159,13 @@ typedef struct {
 
 InstructionTable* instruction_table_build(Method* m, Config* cfg);
 void instruction_table_delete(InstructionTable* instruction_table);
-void value_print(const Value* value);
+// void value_print(const Value* value);
 
-BinaryResult value_add(Value* value1, Value* value2, Value* result);
-BinaryResult value_mul(Value* value1, Value* value2, Value* result);
-BinaryResult value_sub(Value* value1, Value* value2, Value* result);
-BinaryResult value_div(Value* value1, Value* value2, Value* result);
-BinaryResult value_rem(Value* value1, Value* value2, Value* result);
+BinaryResult value_add(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
+BinaryResult value_mul(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
+BinaryResult value_sub(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
+BinaryResult value_rem(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
+BinaryResult value_div(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
 
 const char* opcode_print(Opcode opcode);
 

@@ -44,7 +44,7 @@ static const char* step_result_signature[] = {
 };
 
 typedef struct {
-    Value* locals;
+    PrimitiveType* locals;
     int locals_count;
     Stack* stack;
     int pc;
@@ -108,22 +108,15 @@ static Frame* call_stack_peek(CallStack* call_stack)
     return call_stack->top->frame;
 }
 
-static char arg_types_signature[] = {
-    [TYPE_INT] = 'I',
-    [TYPE_CHAR] = 'C',
-    [TYPE_ARRAY] = '[',
-    [TYPE_BOOLEAN] = 'Z',
-};
-
-static ValueType get_type(char c)
+static Type get_type(char c)
 {
-    if (c == arg_types_signature[TYPE_INT]) {
+    if (c == args_type_signature[TYPE_INT]) {
         return TYPE_INT;
-    } else if (c == arg_types_signature[TYPE_CHAR]) {
+    } else if (c == args_type_signature[TYPE_CHAR]) {
         return TYPE_CHAR;
-    } else if (c == arg_types_signature[TYPE_ARRAY]) {
+    } else if (c == args_type_signature[TYPE_ARRAY]) {
         return TYPE_ARRAY;
-    } else if (c == arg_types_signature[TYPE_BOOLEAN]) {
+    } else if (c == args_type_signature[TYPE_BOOLEAN]) {
         return TYPE_BOOLEAN;
     }
 
@@ -154,62 +147,63 @@ static void parameter_fix(char* parameters)
 }
 
 // todo: embed count inside array structure
-static Value* parse_array(ValueType type, char* to_parse_array)
+static PrimitiveType* parse_array(Type type, char* to_parse_array)
 {
-    if (type < 0 /* || todo */ || !to_parse_array) {
-        return NULL;
-    }
-
-    char* token = strtok(to_parse_array, "[:_;]");
-    if (!token) {
-        return NULL;
-    }
-
-    if (type != get_type(*token)) {
-        return NULL;
-    }
-
-    int count = 0;
-    int capacity = 10;
-
-    Value* array = malloc(capacity * sizeof(Value));
-
-    while (token != NULL) {
-        if (count >= capacity) {
-            capacity *= 2;
-            array = realloc(array, capacity * sizeof(Value));
-        }
-
-        if (type == TYPE_INT) {
-            array[count].type = TYPE_INT;
-            array[count].data.int_value = strtol(token, NULL, 10);
-        }
-        // todo:
-        /* else if (other types) {...} */
-        else {
-            goto cleanup;
-        }
-
-        token = strtok(NULL, "[:_;]");
-        count++;
-    }
-
-    array = realloc(array, count * sizeof(Value) + 1);
-    array[count].type = TYPE_VOID;
-    return array;
-
-cleanup:
-    free(array);
     return NULL;
+    //    if (type < 0 /* || todo */ || !to_parse_array) {
+    //        return NULL;
+    //    }
+    //
+    //    char* token = strtok(to_parse_array, "[:_;]");
+    //    if (!token) {
+    //        return NULL;
+    //    }
+    //
+    //    if (type != get_type(*token)) {
+    //        return NULL;
+    //    }
+    //
+    //    int count = 0;
+    //    int capacity = 10;
+    //
+    //    Value* array = malloc(capacity * sizeof(Value));
+    //
+    //    while (token != NULL) {
+    //        if (count >= capacity) {
+    //            capacity *= 2;
+    //            array = realloc(array, capacity * sizeof(Value));
+    //        }
+    //
+    //        if (type == TYPE_INT) {
+    //            array[count].type = TYPE_INT;
+    //            array[count].data.int_value = strtol(token, NULL, 10);
+    //        }
+    //        // todo:
+    //        /* else if (other types) {...} */
+    //        else {
+    //            goto cleanup;
+    //        }
+    //
+    //        token = strtok(NULL, "[:_;]");
+    //        count++;
+    //    }
+    //
+    //    array = realloc(array, count * sizeof(Value) + 1);
+    //    array[count].type = TYPE_VOID;
+    //    return array;
+    //
+    // cleanup:
+    //    free(array);
+    //    return NULL;
 }
 
-static int parse_next_parameter(char** arguments, char* token, Value* value)
+static int parse_next_parameter(char** arguments, char* token, PrimitiveType* value)
 {
     if (!arguments || !(*arguments) || !token || !value) {
         return 1;
     }
 
-    ValueType type = get_type(**arguments);
+    Type type = get_type(**arguments);
     if (type < 0) {
         fprintf(stderr, "Unknown arg type in method signature: %c\n", **arguments);
         return 2;
@@ -220,9 +214,10 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
     value->type = type;
 
     if (type == TYPE_ARRAY) {
-        ValueType array_type = get_type(**arguments);
+        Type array_type = get_type(**arguments);
         (*arguments)++;
-        value->data.array_value = parse_array(array_type, token);
+        // todo
+        // value->data.array_value = parse_array(array_type, token);
     } else if (type == TYPE_INT) {
         value->data.int_value = (int)strtol(token, NULL, 10);
     } else if (type == TYPE_BOOLEAN) {
@@ -242,7 +237,7 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
     return 0;
 }
 
-static Frame* build_first_frame(char* arguments, char* parameters)
+static Frame* build_frame(char* arguments, char* parameters)
 {
     Frame* frame = malloc(sizeof(Frame));
     if (!frame) {
@@ -254,7 +249,7 @@ static Frame* build_first_frame(char* arguments, char* parameters)
     frame->locals_count = 0;
 
     int capacity = 10;
-    frame->locals = malloc(capacity * sizeof(Value));
+    frame->locals = malloc(capacity * sizeof(PrimitiveType));
 
     parameter_fix(parameters);
     char* strtok_state = NULL;
@@ -262,7 +257,7 @@ static Frame* build_first_frame(char* arguments, char* parameters)
     while (token != NULL) {
         if (frame->locals_count >= capacity) {
             capacity *= 2;
-            frame->locals = realloc(frame->locals, capacity * sizeof(Value));
+            frame->locals = realloc(frame->locals, capacity * sizeof(PrimitiveType));
             if (!frame->locals) {
                 // MEMORY LEAK
                 // todo cleanup locals in case of error
@@ -271,7 +266,7 @@ static Frame* build_first_frame(char* arguments, char* parameters)
             }
         }
 
-        Value value;
+        PrimitiveType value;
         if (parse_next_parameter(&arguments, token, &value)) {
             // MEMORY LEAK
             // todo cleanup locals in case of error
@@ -286,7 +281,7 @@ static Frame* build_first_frame(char* arguments, char* parameters)
         frame->locals_count++;
     }
 
-    frame->locals = realloc(frame->locals, frame->locals_count * sizeof(Value));
+    frame->locals = realloc(frame->locals, frame->locals_count * sizeof(PrimitiveType));
     if (!frame->locals) {
         // MEMORY LEAK
         // todo cleanup locals in case of error
@@ -311,8 +306,8 @@ static StepResult handle_load(Frame* frame, LoadOP* load)
         return SR_OUT_OF_BOUNDS;
     }
 
-    Value value = frame->locals[index];
-    stack_push(frame->stack, &value);
+    PrimitiveType value = frame->locals[index];
+    stack_push(frame->stack, value);
     frame->pc++;
 
     return SR_OK;
@@ -324,8 +319,8 @@ static StepResult handle_push(Frame* frame, PushOP* push)
         return SR_NULL_INSTRUCTION;
     }
 
-    Value value = push->value;
-    stack_push(frame->stack, &value);
+    PrimitiveType value = push->value;
+    stack_push(frame->stack, value);
     frame->pc++;
 
     return SR_OK;
@@ -333,7 +328,7 @@ static StepResult handle_push(Frame* frame, PushOP* push)
 
 static StepResult handle_binary(Frame* frame, BinaryOP* binary)
 {
-    Value value1, value2, result;
+    PrimitiveType value1, value2, result;
     if (stack_pop(frame->stack, &value2)) {
         return SR_EMPTY_STACK;
     }
@@ -382,7 +377,7 @@ static StepResult handle_binary(Frame* frame, BinaryOP* binary)
         return SR_BO_UNKNOWN;
     }
 
-    stack_push(frame->stack, &result);
+    stack_push(frame->stack, result);
     frame->pc++;
     return SR_OK;
 }
@@ -393,11 +388,11 @@ static StepResult handle_get(Frame* frame, GetOP* get)
         return SR_NULL_INSTRUCTION;
     }
 
-    Value value;
+    PrimitiveType value;
     value.type = TYPE_BOOLEAN;
     value.data.bool_value = false;
 
-    stack_push(frame->stack, &value);
+    stack_push(frame->stack, value);
     frame->pc++;
 
     return SR_OK;
@@ -406,7 +401,7 @@ static StepResult handle_get(Frame* frame, GetOP* get)
 // todo push into the stack of the next frame
 static StepResult handle_return(Frame* frame, CallStack* call_stack)
 {
-    Value value;
+    PrimitiveType value;
     stack_pop(frame->stack, &value);
     call_stack_pop(call_stack);
 
@@ -437,7 +432,7 @@ static bool handle_ift_aux(IfCondition condition, int value1, int value2)
 
 static StepResult handle_ifz(Frame* frame, IfOP* ift)
 {
-    Value value;
+    PrimitiveType value;
     stack_pop(frame->stack, &value);
 
     bool result;
@@ -467,7 +462,7 @@ static StepResult handle_ifz(Frame* frame, IfOP* ift)
 
 static StepResult handle_ift(Frame* frame, IfOP* ift)
 {
-    Value value1, value2;
+    PrimitiveType value1, value2;
     stack_pop(frame->stack, &value2);
     stack_pop(frame->stack, &value1);
 
@@ -502,13 +497,13 @@ static StepResult handle_ift(Frame* frame, IfOP* ift)
 
 static StepResult handle_store(Frame* frame, StoreOP* store)
 {
-    Value value1;
+    PrimitiveType value1;
     stack_pop(frame->stack, &value1);
 
     int index = store->index;
     if (index >= frame->locals_count) {
         frame->locals_count = index + 1;
-        frame->locals = realloc(frame->locals, frame->locals_count * sizeof(Value));
+        frame->locals = realloc(frame->locals, frame->locals_count * sizeof(PrimitiveType));
     }
 
     frame->locals[index] = value1;
@@ -525,14 +520,20 @@ static StepResult handle_goto(Frame* frame, GotoOP* go2)
 
 static StepResult handle_dup(Frame* frame, DupOP* dup)
 {
-    stack_push(frame->stack, stack_peek(frame->stack));
+    PrimitiveType* value = stack_peek(frame->stack);
+    
+    //todo: handle this case
+    if (value) {
+        stack_push(frame->stack, *value);
+    }
 
     frame->pc++;
     return SR_OK;
 }
 
-static StepResult handle_new_array(Frame *frame, NewArrayOP* new_array) {
-    
+static StepResult handle_new_array(Frame* frame, NewArrayOP* new_array)
+{
+
     return SR_OK;
 }
 
@@ -545,7 +546,7 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
-    // fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
+    fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
     StepResult result = SR_OK;
 
     switch (instruction->opcode) {
@@ -620,7 +621,7 @@ RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method*
     char* arguments = strdup(method_get_arguments(m));
     char* params = strdup(parameters);
 
-    Frame* frame = build_first_frame(arguments, params);
+    Frame* frame = build_frame(arguments, params);
     if (!frame) {
         result = RT_CANT_BUILD_FRAME;
         goto cleanup;

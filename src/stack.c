@@ -4,7 +4,7 @@
 
 typedef struct Item Item;
 struct Item {
-    Value value;
+    PrimitiveType value;
     Item* next;
 };
 
@@ -13,7 +13,7 @@ struct Stack {
     Item* top;
 };
 
-int stack_push(Stack* stack, Value* value)
+int stack_push(Stack* stack, PrimitiveType value)
 {
     Item* to_push = malloc(sizeof(Item));
     if (!to_push) {
@@ -22,7 +22,7 @@ int stack_push(Stack* stack, Value* value)
 
     stack->size += 1;
 
-    to_push->value = value_deep_copy(value);
+    to_push->value = value;
     to_push->next = stack->top;
 
     stack->top = to_push;
@@ -30,7 +30,7 @@ int stack_push(Stack* stack, Value* value)
     return 0;
 }
 
-Value* stack_peek(Stack* stack)
+PrimitiveType* stack_peek(Stack* stack)
 {
     if (stack->size == 0) {
         return NULL;
@@ -39,7 +39,7 @@ Value* stack_peek(Stack* stack)
     return &stack->top->value;
 }
 
-int stack_pop(Stack* stack, Value* value)
+int stack_pop(Stack* stack, PrimitiveType* value)
 {
     if (stack->size == 0) {
         value->type = TYPE_VOID;
@@ -50,7 +50,7 @@ int stack_pop(Stack* stack, Value* value)
     stack->top = to_pop->next;
 
     if (value) {
-        *value = value_deep_copy(&to_pop->value);
+        *value = to_pop->value;
     }
 
     stack->size--;
@@ -59,14 +59,14 @@ int stack_pop(Stack* stack, Value* value)
     return 0;
 }
 
-bool stack_same_type_on_top(Stack* stack)
+static bool stack_same_type_on_top(Stack* stack)
 {
     if (stack->size < 2) {
         return false;
     }
 
-    ValueType type1 = stack->top->value.type;
-    ValueType type2 = stack->top->next->value.type;
+    Type type1 = stack->top->value.type;
+    Type type2 = stack->top->next->value.type;
 
     return type1 == type2;
 }

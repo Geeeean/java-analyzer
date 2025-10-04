@@ -5,6 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+char args_type_signature[] = {
+    [TYPE_INT] = 'I',
+    [TYPE_CHAR] = 'C',
+    [TYPE_ARRAY] = '[',
+    [TYPE_BOOLEAN] = 'Z',
+};
+
 typedef enum {
     IPR_OK,
     IPR_MALFORMED,
@@ -63,13 +70,18 @@ static const char* return_type_signature[] = {
     [TYPE_VOID] = "null",
 };
 
-static const char* binary_operatore_signature[] = {
-    [BO_ADD] = "add",
-    [BO_SUB] = "sub",
-    [BO_DIV] = "div",
-    [BO_MUL] = "mul",
-    [BO_REM] = "rem",
+static const char* invoke_args_type_signature[] = {
+    [TYPE_INT] = "int",
 };
+
+static const char* binary_operatore_signature[]
+    = {
+          [BO_ADD] = "add",
+          [BO_SUB] = "sub",
+          [BO_DIV] = "div",
+          [BO_MUL] = "mul",
+          [BO_REM] = "rem",
+      };
 
 static const char* condition_signature[] = {
     [IF_EQ] = "eq",
@@ -140,11 +152,11 @@ static InstructionParseResult parse_load(LoadOP* load, cJSON* instruction_json)
     char* type = cJSON_GetStringValue(type_obj);
 
     if (strcmp(type, load_type_signature[TYPE_INT]) == 0) {
-        load->TYPE_type = TYPE_INT;
+        load->type = TYPE_INT;
     } else if (strcmp(type, load_type_signature[TYPE_BOOLEAN]) == 0) {
-        load->TYPE_type = TYPE_BOOLEAN;
+        load->type = TYPE_BOOLEAN;
     } else if (strcmp(type, load_type_signature[TYPE_REFERENCE]) == 0) {
-        load->TYPE_type = TYPE_REFERENCE;
+        load->type = TYPE_REFERENCE;
     } else {
         fprintf(stderr, "Unknown type in load instruction: %s\n", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -289,17 +301,90 @@ static InstructionParseResult parse_ift(IfOP* ift, cJSON* instruction_json)
     return IPR_OK;
 }
 
-static int parse_get(GetOP* get, cJSON* instruction_json)
+static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
 {
     return IPR_OK;
 }
 
-static int parse_throw(ThrowOP* trw, cJSON* instruction_json)
+// static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_json)
+//{
+//     cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
+//     if (!method_obj || !cJSON_IsObject(method_obj)) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'method' field\n");
+//         return IPR_MALFORMED;
+//     }
+//
+//     cJSON* name_obj = cJSON_GetObjectItem(method_obj, "name");
+//     if (!name_obj || !cJSON_IsString(name_obj)) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'name' field\n");
+//         return IPR_MALFORMED;
+//     }
+//     invoke->method_name = cJSON_GetStringValue(name_obj);
+//
+//     cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
+//     if (!ref_obj || !cJSON_IsObject(ref_obj)) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'ref' field\n");
+//         return IPR_MALFORMED;
+//     }
+//     cJSON* ref_name_obj = cJSON_GetObjectItem(method_obj, "name");
+//     if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'name' field in 'ref'\n");
+//         return IPR_MALFORMED;
+//     }
+//     invoke->ref_name = cJSON_GetStringValue(ref_name_obj);
+//
+//     cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
+//     if (!args_obj || !cJSON_IsArray(args_obj)) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'args' field\n");
+//         return IPR_MALFORMED;
+//     }
+//
+//     // todo: handle args dynamically
+//     char args[256] = "";
+//     int args_len = 0;
+//
+//     cJSON* buffer;
+//     cJSON_ArrayForEach(buffer, args_obj)
+//     {
+//         if (!cJSON_IsString(buffer)) {
+//             fprintf(stderr, "Invoke instruction missing or invalid 'args' field\n");
+//             return IPR_MALFORMED;
+//         }
+//
+//         char* type = cJSON_GetStringValue(buffer);
+//
+//         if (strcmp(type, invoke_args_type_signature[TYPE_INT]) == 0) {
+//             args[args_len] = args_type_signature[TYPE_INT];
+//             args_len++;
+//         } else {
+//             fprintf(stderr, "Invoke instruction not supported type in 'args' field\n");
+//             return IPR_MALFORMED;
+//         }
+//     }
+//
+//     args[args_len] = '\0';
+//
+//     // todo: free after use while deleting instruction table
+//     invoke->args = strdup(args);
+//
+//     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
+//     if (!returns_obj) {
+//         fprintf(stderr, "Invoke instruction missing or invalid 'returns' field\n");
+//         return IPR_MALFORMED;
+//     }
+//
+//     if (cJSON_IsNull(returns_obj)) {
+//     }
+//
+//     return IPR_OK;
+// }
+
+static InstructionParseResult parse_throw(ThrowOP* trw, cJSON* instruction_json)
 {
     return IPR_OK;
 }
 
-static int parse_dup(DupOP* dup, cJSON* instruction_json)
+static InstructionParseResult parse_dup(DupOP* dup, cJSON* instruction_json)
 {
     cJSON* words_obj = cJSON_GetObjectItem(instruction_json, "words");
     if (!words_obj || !cJSON_IsNumber(words_obj)) {
@@ -668,106 +753,42 @@ const char* opcode_print(Opcode opcode)
     return opcode_signature[opcode];
 }
 
-void value_print(const Value* value)
-{
-    if (value == NULL) {
-        printf("NULL");
-        return;
-    }
+// void value_print(const Value* value)
+//{
+//     if (value == NULL) {
+//         printf("NULL");
+//         return;
+//     }
+//
+//     switch (value->type) {
+//     case TYPE_INT:
+//         printf("%d", value->data.int_value);
+//         break;
+//     case TYPE_BOOLEAN:
+//         printf("%s", value->data.bool_value ? "true" : "false");
+//         break;
+//     case TYPE_ARRAY:
+//         printf("[");
+//         if (value->data.array_value != NULL) {
+//             Value* arr = value->data.array_value;
+//             for (int i = 0; arr[i].type != TYPE_VOID; i++) {
+//                 if (i > 0)
+//                     printf(", ");
+//                 value_print(&arr[i]);
+//             }
+//         }
+//         printf("]");
+//         break;
+//     case TYPE_VOID:
+//         printf("void");
+//         break;
+//     default:
+//         printf("unknown_value");
+//         break;
+//     }
+// }
 
-    switch (value->type) {
-    case TYPE_INT:
-        printf("%d", value->data.int_value);
-        break;
-    case TYPE_BOOLEAN:
-        printf("%s", value->data.bool_value ? "true" : "false");
-        break;
-    case TYPE_ARRAY:
-        printf("[");
-        if (value->data.array_value != NULL) {
-            Value* arr = value->data.array_value;
-            for (int i = 0; arr[i].type != TYPE_VOID; i++) {
-                if (i > 0)
-                    printf(", ");
-                value_print(&arr[i]);
-            }
-        }
-        printf("]");
-        break;
-    case TYPE_VOID:
-        printf("void");
-        break;
-    default:
-        printf("unknown_value");
-        break;
-    }
-}
-
-// todo use return as status code
-Value value_deep_copy(const Value* src)
-{
-    Value dst;
-    dst.type = -1;
-
-    if (!src)
-        return dst;
-
-    dst.type = src->type;
-
-    switch (src->type) {
-    case TYPE_INT:
-        dst.data.int_value = src->data.int_value;
-        break;
-
-    case TYPE_BOOLEAN:
-        dst.data.bool_value = src->data.bool_value;
-        break;
-
-    case TYPE_CHAR:
-        dst.data.char_value = src->data.char_value;
-        break;
-
-    case TYPE_ARRAY:
-        if (src->data.array_value) {
-            int count = 0;
-            while (src->data.array_value[count].type != TYPE_VOID) {
-                count++;
-            }
-
-            dst.data.array_value = malloc((count + 1) * sizeof(Value));
-            if (!dst.data.array_value) {
-                fprintf(stderr, "Failed to allocate array\n");
-                dst.type = TYPE_VOID;
-                break;
-            }
-
-            for (int i = 0; i < count; i++) {
-                dst.data.array_value[i] = value_deep_copy(&src->data.array_value[i]);
-            }
-
-            dst.data.array_value[count].type = TYPE_VOID;
-        } else {
-            dst.data.array_value = NULL;
-        }
-        break;
-
-    case TYPE_REFERENCE:
-        dst.data.ref_value = src->data.ref_value;
-        break;
-
-    case TYPE_VOID:
-        break;
-
-    default:
-        fprintf(stderr, "Unknown value type: %d\n", src->type);
-        dst.type = TYPE_VOID;
-        break;
-    }
-
-    return dst;
-}
-
-BinaryResult value_add(Value* value1, Value* value2, Value* result)
+BinaryResult value_add(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
 {
     if (value1->type != value2->type) {
         return BO_DIFFERENT_TYPES;
@@ -786,7 +807,7 @@ BinaryResult value_add(Value* value1, Value* value2, Value* result)
     return BO_OK;
 }
 
-BinaryResult value_mul(Value* value1, Value* value2, Value* result)
+BinaryResult value_mul(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
 {
     if (value1->type != value2->type) {
         return BO_DIFFERENT_TYPES;
@@ -805,7 +826,7 @@ BinaryResult value_mul(Value* value1, Value* value2, Value* result)
     return BO_OK;
 }
 
-BinaryResult value_sub(Value* value1, Value* value2, Value* result)
+BinaryResult value_sub(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
 {
     if (value1->type != value2->type) {
         return BO_DIFFERENT_TYPES;
@@ -824,7 +845,7 @@ BinaryResult value_sub(Value* value1, Value* value2, Value* result)
     return BO_OK;
 }
 
-BinaryResult value_rem(Value* value1, Value* value2, Value* result)
+BinaryResult value_rem(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
 {
     if (value1->type != value2->type) {
         return BO_DIFFERENT_TYPES;
@@ -843,7 +864,7 @@ BinaryResult value_rem(Value* value1, Value* value2, Value* result)
     return BO_OK;
 }
 
-BinaryResult value_div(Value* value1, Value* value2, Value* result)
+BinaryResult value_div(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
 {
     if (value1->type != value2->type) {
         return BO_DIFFERENT_TYPES;
