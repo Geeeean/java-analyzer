@@ -1,4 +1,5 @@
 #include "method.h"
+#include "log.h"
 #include "utils.h"
 
 #include <stdio.h>
@@ -153,10 +154,10 @@ void method_delete(Method* m)
 
 void method_print(const Method* m)
 {
-    printf("method class:          %s\n", m->class);
-    printf("method name:           %s\n", m->name);
-    printf("method arguments:      %s\n", m->arguments);
-    printf("method return_type:    %s\n", m->return_type);
+    LOG_INFO("method class:          %s", m->class);
+    LOG_INFO("method name:           %s", m->name);
+    LOG_INFO("method arguments:      %s", m->arguments);
+    LOG_INFO("method return_type:    %s", m->return_type);
 }
 
 char* method_read(const Method* m, const Config* cfg, SourceType src)

@@ -3,7 +3,9 @@
 #include "decompiled_parser.h"
 #include "info.h"
 #include "interpreter.h"
+#include "log.h"
 #include "method.h"
+#include "outcome.h"
 #include "syntax.h"
 
 #include "tree_sitter/api.h"
@@ -23,7 +25,7 @@ int main(int argc, char** argv)
     /*** OPTIONS ***/
     Options opts;
     if (options_parse_args(argc, (const char**)argv, &opts) > 0) {
-        fprintf(stderr, "Correct usage: ./analyzer <options> <methodid>\n");
+        LOG_ERROR("Correct usage: ./analyzer <options> <methodid>");
         result = 1;
         goto cleanup;
     }
@@ -31,7 +33,7 @@ int main(int argc, char** argv)
     /*** CONFIG ***/
     cfg = config_load();
     if (!cfg) {
-        fprintf(stderr, "Config file is wrongly formatted or not exist\n");
+        LOG_ERROR("Config file is wrongly formatted or not exist");
         result = 2;
         goto cleanup;
     }
@@ -44,7 +46,7 @@ int main(int argc, char** argv)
     /*** METHOD ***/
     m = method_create(opts.method_id);
     if (!m) {
-        fprintf(stderr, "Methodid is not valid\n");
+        LOG_ERROR("Methodid is not valid");
         result = 3;
         goto cleanup;
     }
@@ -52,14 +54,14 @@ int main(int argc, char** argv)
     /*** SYNTAX TREE ***/
     tree = syntax_tree_build(m, cfg);
     if (!tree) {
-        fprintf(stderr, "Error while parsing code\n");
+        LOG_ERROR("Error while parsing code");
         result = 4;
         goto cleanup;
     }
 
     TSNode node;
     if (method_node_get(tree, &node)) {
-        fprintf(stderr, "Error while getting method node in AST\n");
+        LOG_ERROR("Error while getting method node in AST");
         result = 5;
         goto cleanup;
     }
@@ -67,7 +69,7 @@ int main(int argc, char** argv)
     /*** INTERPRETER ***/
     instruction_table = instruction_table_build(m, cfg);
     if (!instruction_table) {
-        fprintf(stderr, "Error while building instruction table\n");
+        LOG_ERROR("Error while building instruction table");
         result = 6;
         goto cleanup;
     }
@@ -76,22 +78,22 @@ int main(int argc, char** argv)
     if (opts.interpreter_only) {
         switch (interpreter_result) {
         case RT_OK:
-            printf("ok\n");
+            print_interpreter_outcome(OC_OK);
             break;
         case RT_DIVIDE_BY_ZERO:
-            printf("divide by zero\n");
+            print_interpreter_outcome(OC_DIVIDE_BY_ZERO);
             break;
         case RT_ASSERTION_ERR:
-            printf("assertion error\n");
+            print_interpreter_outcome(OC_ASSERTION_ERROR);
             break;
         case RT_INFINITE:
-            printf("*\n");
+            print_interpreter_outcome(OC_INFINITE_LOOP);
             break;
         case RT_CANT_BUILD_FRAME:
         case RT_NULL_PARAMETERS:
         case RT_UNKNOWN_ERROR:
         default:
-            fprintf(stderr, "Error while executing interpreter: %d\n", interpreter_result);
+            LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
         }
     }
 
@@ -104,7 +106,6 @@ cleanup:
 
     return result;
 }
-
 
 /*
  * TODO

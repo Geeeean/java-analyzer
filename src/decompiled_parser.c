@@ -1,4 +1,5 @@
 #include "decompiled_parser.h"
+#include "log.h"
 
 #include "cJSON/cJSON.h"
 
@@ -113,7 +114,7 @@ static InstructionParseResult parse_opcode(Opcode* opcode, cJSON* instruction_js
 {
     cJSON* opr_object = cJSON_GetObjectItem(instruction_json, "opr");
     if (!opr_object || !cJSON_IsString(opr_object)) {
-        fprintf(stderr, "Opr is wrongly formatted or not exist\n");
+        LOG_ERROR("Opr is wrongly formatted or not exist");
         return IPR_MALFORMED;
     }
 
@@ -127,7 +128,7 @@ static InstructionParseResult parse_opcode(Opcode* opcode, cJSON* instruction_js
     }
 
     if ((*opcode) == -1) {
-        fprintf(stderr, "Not known opr: %s\n", opr);
+        LOG_ERROR("Not known opr: %s", opr);
         return 2;
     }
 
@@ -138,14 +139,14 @@ static InstructionParseResult parse_load(LoadOP* load, cJSON* instruction_json)
 {
     cJSON* index_obj = cJSON_GetObjectItem(instruction_json, "index");
     if (!index_obj || !cJSON_IsNumber(index_obj)) {
-        fprintf(stderr, "Load instruction missing or invalid 'index' field\n");
+        LOG_ERROR("Load instruction missing or invalid 'index' field");
         return IPR_MALFORMED;
     }
     load->index = (int)cJSON_GetNumberValue(index_obj);
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Load instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Load instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
 
@@ -158,7 +159,7 @@ static InstructionParseResult parse_load(LoadOP* load, cJSON* instruction_json)
     } else if (strcmp(type, load_type_signature[TYPE_REFERENCE]) == 0) {
         load->type = TYPE_REFERENCE;
     } else {
-        fprintf(stderr, "Unknown type in load instruction: %s\n", type);
+        LOG_ERROR("Unknown type in load instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -169,20 +170,20 @@ static InstructionParseResult parse_push(PushOP* push, cJSON* instruction_json)
 {
     cJSON* value = cJSON_GetObjectItem(instruction_json, "value");
     if (!value) {
-        fprintf(stderr, "Load instruction missing or invalid 'value' field\n");
+        LOG_ERROR("Load instruction missing or invalid 'value' field");
         return IPR_MALFORMED;
     }
 
     cJSON* type_obj = cJSON_GetObjectItem(value, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Push instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Push instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
 
     cJSON* inside_TYPE_obj = cJSON_GetObjectItem(value, "value");
     if (!inside_TYPE_obj) {
-        fprintf(stderr, "Push instruction missing or invalid inside value, 'value' field\n");
+        LOG_ERROR("Push instruction missing or invalid inside value, 'value' field");
         return IPR_MALFORMED;
     }
     char* inside_value = cJSON_GetStringValue(inside_TYPE_obj);
@@ -190,12 +191,12 @@ static InstructionParseResult parse_push(PushOP* push, cJSON* instruction_json)
     if (strcmp(type, push_type_signature[TYPE_INT]) == 0) {
         push->value.type = TYPE_INT;
         if (!cJSON_IsNumber(inside_TYPE_obj)) {
-            fprintf(stderr, "Push instruction invalid int number inside value, 'value' field\n");
+            LOG_ERROR("Push instruction invalid int number inside value, 'value' field");
             return IPR_MALFORMED;
         }
         push->value.data.int_value = cJSON_GetNumberValue(inside_TYPE_obj);
     } else {
-        fprintf(stderr, "Unknown type in push instruction: %s\n", type);
+        LOG_ERROR("Unknown type in push instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -206,7 +207,7 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
 {
     cJSON* operant_obj = cJSON_GetObjectItem(instruction_json, "operant");
     if (!operant_obj || !cJSON_IsString(operant_obj)) {
-        fprintf(stderr, "Binary instruction missing or invalid 'operant' field\n");
+        LOG_ERROR("Binary instruction missing or invalid 'operant' field");
         return IPR_MALFORMED;
     }
     char* operant = cJSON_GetStringValue(operant_obj);
@@ -220,13 +221,13 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
     }
 
     if (binary->op == -1) {
-        fprintf(stderr, "Binary instruction unknown operant: %s\n", operant);
+        LOG_ERROR("Binary instruction unknown operant: %s", operant);
         return IPR_BO_UNKNOWN_OP;
     }
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Binary instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Binary instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
@@ -234,7 +235,7 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
     if (strcmp(binary_type_signature[TYPE_INT], type) == 0) {
         binary->type = TYPE_INT;
     } else {
-        fprintf(stderr, "Binary instruction unknown type: %s\n", type);
+        LOG_ERROR("Binary instruction unknown type: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -245,7 +246,7 @@ static InstructionParseResult parse_return(ReturnOP* ret, cJSON* instruction_jso
 {
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj) {
-        fprintf(stderr, "Return instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Return instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
 
@@ -261,7 +262,7 @@ static InstructionParseResult parse_return(ReturnOP* ret, cJSON* instruction_jso
     } else if (strcmp(return_type_signature[TYPE_VOID], type) == 0) {
         ret->type = TYPE_VOID;
     } else {
-        fprintf(stderr, "Binary instruction unknown type: %s\n", type);
+        LOG_ERROR("Binary instruction unknown type: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -272,7 +273,7 @@ static InstructionParseResult parse_ift(IfOP* ift, cJSON* instruction_json)
 {
     cJSON* condition_obj = cJSON_GetObjectItem(instruction_json, "condition");
     if (!condition_obj || !cJSON_IsString(condition_obj)) {
-        fprintf(stderr, "If instruction missing or invalid 'condition' field\n");
+        LOG_ERROR("If instruction missing or invalid 'condition' field");
         return IPR_MALFORMED;
     }
     char* condition = cJSON_GetStringValue(condition_obj);
@@ -286,13 +287,13 @@ static InstructionParseResult parse_ift(IfOP* ift, cJSON* instruction_json)
     }
 
     if (ift->condition < 0) {
-        fprintf(stderr, "If condition not known: %s\n", condition);
+        LOG_ERROR("If condition not known: %s", condition);
         return IPR_IF_COND_NOW_KNOWN;
     }
 
     cJSON* target_obj = cJSON_GetObjectItem(instruction_json, "target");
     if (!target_obj || !cJSON_IsNumber(target_obj)) {
-        fprintf(stderr, "If instruction missing or invalid 'target' field\n");
+        LOG_ERROR("If instruction missing or invalid 'target' field");
         return IPR_MALFORMED;
     }
 
@@ -310,32 +311,32 @@ static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
 //{
 //     cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
 //     if (!method_obj || !cJSON_IsObject(method_obj)) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'method' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'method' field");
 //         return IPR_MALFORMED;
 //     }
 //
 //     cJSON* name_obj = cJSON_GetObjectItem(method_obj, "name");
 //     if (!name_obj || !cJSON_IsString(name_obj)) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'name' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'name' field");
 //         return IPR_MALFORMED;
 //     }
 //     invoke->method_name = cJSON_GetStringValue(name_obj);
 //
 //     cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
 //     if (!ref_obj || !cJSON_IsObject(ref_obj)) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'ref' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'ref' field");
 //         return IPR_MALFORMED;
 //     }
 //     cJSON* ref_name_obj = cJSON_GetObjectItem(method_obj, "name");
 //     if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'name' field in 'ref'\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'name' field in 'ref'");
 //         return IPR_MALFORMED;
 //     }
 //     invoke->ref_name = cJSON_GetStringValue(ref_name_obj);
 //
 //     cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
 //     if (!args_obj || !cJSON_IsArray(args_obj)) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'args' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'args' field");
 //         return IPR_MALFORMED;
 //     }
 //
@@ -347,7 +348,7 @@ static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
 //     cJSON_ArrayForEach(buffer, args_obj)
 //     {
 //         if (!cJSON_IsString(buffer)) {
-//             fprintf(stderr, "Invoke instruction missing or invalid 'args' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'args' field");
 //             return IPR_MALFORMED;
 //         }
 //
@@ -357,7 +358,7 @@ static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
 //             args[args_len] = args_type_signature[TYPE_INT];
 //             args_len++;
 //         } else {
-//             fprintf(stderr, "Invoke instruction not supported type in 'args' field\n");
+//LOG_ERROR("Invoke instruction not supported type in 'args' field");
 //             return IPR_MALFORMED;
 //         }
 //     }
@@ -369,7 +370,7 @@ static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
 //
 //     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
 //     if (!returns_obj) {
-//         fprintf(stderr, "Invoke instruction missing or invalid 'returns' field\n");
+//LOG_ERROR("Invoke instruction missing or invalid 'returns' field");
 //         return IPR_MALFORMED;
 //     }
 //
@@ -388,7 +389,7 @@ static InstructionParseResult parse_dup(DupOP* dup, cJSON* instruction_json)
 {
     cJSON* words_obj = cJSON_GetObjectItem(instruction_json, "words");
     if (!words_obj || !cJSON_IsNumber(words_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'words' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'words' field");
         return IPR_MALFORMED;
     }
     dup->words = cJSON_GetNumberValue(words_obj);
@@ -400,14 +401,14 @@ static InstructionParseResult parse_store(StoreOP* store, cJSON* instruction_jso
 {
     cJSON* index_obj = cJSON_GetObjectItem(instruction_json, "index");
     if (!index_obj || !cJSON_IsNumber(index_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'index' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'index' field");
         return IPR_MALFORMED;
     }
     store->index = cJSON_GetNumberValue(index_obj);
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
@@ -415,7 +416,7 @@ static InstructionParseResult parse_store(StoreOP* store, cJSON* instruction_jso
     if (strcmp(type, store_type_signature[TYPE_INT]) == 0) {
         store->type = TYPE_INT;
     } else {
-        fprintf(stderr, "Unknown type in store instruction: %s\n", type);
+        LOG_ERROR("Unknown type in store instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -426,7 +427,7 @@ static InstructionParseResult parse_goto(GotoOP* go2, cJSON* instruction_json)
 {
     cJSON* target_obj = cJSON_GetObjectItem(instruction_json, "target");
     if (!target_obj || !cJSON_IsNumber(target_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'target' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'target' field");
         return IPR_MALFORMED;
     }
     go2->target = cJSON_GetNumberValue(target_obj);
@@ -438,7 +439,7 @@ static InstructionParseResult parse_cast(CastOP* cast, cJSON* instruction_json)
 {
     cJSON* from_obj = cJSON_GetObjectItem(instruction_json, "from");
     if (!from_obj || !cJSON_IsString(from_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'from' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'from' field");
         return IPR_MALFORMED;
     }
     char* from = cJSON_GetStringValue(from_obj);
@@ -446,7 +447,7 @@ static InstructionParseResult parse_cast(CastOP* cast, cJSON* instruction_json)
 
     cJSON* to_obj = cJSON_GetObjectItem(instruction_json, "to");
     if (!to_obj || !cJSON_IsString(to_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'to' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'to' field");
         return IPR_MALFORMED;
     }
     char* to = cJSON_GetStringValue(to_obj);
@@ -459,14 +460,14 @@ static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* inst
 {
     cJSON* dim_obj = cJSON_GetObjectItem(instruction_json, "dim");
     if (!dim_obj || !cJSON_IsNumber(dim_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'dim' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'dim' field");
         return IPR_MALFORMED;
     }
     new_array->dim = cJSON_GetNumberValue(dim_obj);
 
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
@@ -474,7 +475,7 @@ static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* inst
     if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
         new_array->type = TYPE_INT;
     } else {
-        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        LOG_ERROR("Unknown type in newarray instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -485,7 +486,7 @@ static InstructionParseResult parse_array_load(ArrayLoadOP* load, cJSON* instruc
 {
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
@@ -493,7 +494,7 @@ static InstructionParseResult parse_array_load(ArrayLoadOP* load, cJSON* instruc
     if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
         load->type = TYPE_INT;
     } else {
-        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        LOG_ERROR("Unknown type in newarray instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -504,7 +505,7 @@ static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* inst
 {
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
-        fprintf(stderr, "Parse instruction missing or invalid 'type' field\n");
+        LOG_ERROR("Parse instruction missing or invalid 'type' field");
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
@@ -512,7 +513,7 @@ static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* inst
     if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
         store->type = TYPE_INT;
     } else {
-        fprintf(stderr, "Unknown type in newarray instruction: %s\n", type);
+        LOG_ERROR("Unknown type in newarray instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -536,7 +537,7 @@ parse_instruction(cJSON* instruction_json)
         goto cleanup;
     }
 
-    // fprintf(stderr, "OPCODE: %s\n", opcode_print(instruction->opcode));
+    LOG_DEBUG("Parsing opcode: %s", opcode_print(instruction->opcode));
 
     switch (instruction->opcode) {
     case OP_LOAD:
@@ -637,7 +638,7 @@ parse_instruction(cJSON* instruction_json)
         break;
 
     default:
-        fprintf(stderr, "Unknown opcode: %d\n", instruction->opcode);
+        LOG_ERROR("Unknown opcode: %d", instruction->opcode);
         goto cleanup;
     }
 
@@ -800,7 +801,7 @@ BinaryResult value_add(PrimitiveType* value1, PrimitiveType* value2, PrimitiveTy
         result->data.int_value = value1->data.int_value + value2->data.int_value;
         break;
     default:
-        fprintf(stderr, "Dont know handle this type add\n");
+        LOG_ERROR("Dont know handle this type add");
         return BO_NOT_SUPPORTED_TYPES;
     }
 
@@ -819,7 +820,7 @@ BinaryResult value_mul(PrimitiveType* value1, PrimitiveType* value2, PrimitiveTy
         result->data.int_value = value1->data.int_value * value2->data.int_value;
         break;
     default:
-        fprintf(stderr, "Dont know handle this type mul\n");
+        LOG_ERROR("Dont know handle this type mul");
         return BO_NOT_SUPPORTED_TYPES;
     }
 
@@ -838,7 +839,7 @@ BinaryResult value_sub(PrimitiveType* value1, PrimitiveType* value2, PrimitiveTy
         result->data.int_value = value1->data.int_value - value2->data.int_value;
         break;
     default:
-        fprintf(stderr, "Dont know handle this type sub\n");
+        LOG_ERROR("Dont know handle this type sub");
         return BO_NOT_SUPPORTED_TYPES;
     }
 
@@ -857,7 +858,7 @@ BinaryResult value_rem(PrimitiveType* value1, PrimitiveType* value2, PrimitiveTy
         result->data.int_value = value1->data.int_value % value2->data.int_value;
         break;
     default:
-        fprintf(stderr, "Dont know handle this type sub\n");
+        LOG_ERROR("Dont know handle this type sub");
         return BO_NOT_SUPPORTED_TYPES;
     }
 
@@ -880,7 +881,7 @@ BinaryResult value_div(PrimitiveType* value1, PrimitiveType* value2, PrimitiveTy
         result->data.int_value = value1->data.int_value / value2->data.int_value;
         break;
     default:
-        fprintf(stderr, "Dont know handle this type div\n");
+        LOG_ERROR("Dont know handle this type div");
         return BO_NOT_SUPPORTED_TYPES;
     }
 

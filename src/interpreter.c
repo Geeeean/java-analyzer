@@ -1,5 +1,6 @@
 // todo handle pop error
 #include "interpreter.h"
+#include "log.h"
 #include "stack.h"
 #include "string.h"
 
@@ -71,7 +72,7 @@ static void call_stack_push(CallStack* call_stack, Frame* frame)
 
     CallStackNode* new_node = malloc(sizeof(CallStackNode));
     if (!new_node) {
-        fprintf(stderr, "CallStack push: malloc failed\n");
+        LOG_ERROR("CallStack push: malloc failed");
         return;
     }
 
@@ -205,7 +206,7 @@ static int parse_next_parameter(char** arguments, char* token, PrimitiveType* va
 
     Type type = get_type(**arguments);
     if (type < 0) {
-        fprintf(stderr, "Unknown arg type in method signature: %c\n", **arguments);
+        LOG_ERROR("Unknown arg type in method signature: %c", **arguments);
         return 2;
     }
 
@@ -226,11 +227,11 @@ static int parse_next_parameter(char** arguments, char* token, PrimitiveType* va
         } else if (strcmp(token, "true") == 0) {
             value->data.bool_value = true;
         } else {
-            fprintf(stderr, "Type is bool but token is neither 'true' or 'false': %s\n", token);
+            LOG_ERROR("Type is bool but token is neither 'true' or 'false': %s", token);
             return 4;
         }
     } else {
-        fprintf(stderr, "Not handled type in method signature: %c\n", **arguments);
+        LOG_ERROR("Not handled type in method signature: %c", **arguments);
         return 3;
     }
 
@@ -521,8 +522,8 @@ static StepResult handle_goto(Frame* frame, GotoOP* go2)
 static StepResult handle_dup(Frame* frame, DupOP* dup)
 {
     PrimitiveType* value = stack_peek(frame->stack);
-    
-    //todo: handle this case
+
+    // todo: handle this case
     if (value) {
         stack_push(frame->stack, *value);
     }
@@ -546,7 +547,7 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
-    fprintf(stderr, "Interpreting: %s\n", opcode_print(instruction->opcode));
+    LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
     StepResult result = SR_OK;
 
     switch (instruction->opcode) {
@@ -648,7 +649,7 @@ RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method*
                 break;
             }
 
-            fprintf(stderr, "Error: %s\n", step_result_signature[step_result]);
+            LOG_ERROR("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

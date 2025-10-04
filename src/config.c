@@ -1,4 +1,5 @@
 #include "config.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -151,8 +152,6 @@ Config* config_load()
     char buffer[LINE_SIZE];
     while (fgets(buffer, sizeof(buffer), f) != NULL) {
         if (set_field(cfg, buffer)) {
-            // fprintf(stderr, "Error while checking config structure: %d\n", check);
-
             config_delete(cfg);
             fclose(f);
             return NULL;
@@ -163,7 +162,7 @@ Config* config_load()
 
     int check = sanity_check(cfg);
     if (check) {
-        fprintf(stderr, "Error while checking config structure: %d\n", check);
+        LOG_ERROR("Error while checking config structure: %d", check);
         config_delete(cfg);
         return NULL;
     }
@@ -188,7 +187,7 @@ void config_print(const Config* cfg)
 {
     int check = sanity_check(cfg);
     if (check) {
-        fprintf(stderr, "Error while checking config structure: %d\n", check);
+        LOG_ERROR("Error while checking config structure: %d", check);
         return;
     }
 

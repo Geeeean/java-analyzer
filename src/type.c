@@ -33,7 +33,7 @@
 //
 //            dst.data.array_value = malloc((count + 1) * sizeof(Value));
 //            if (!dst.data.array_value) {
-//                fprintf(stderr, "Failed to allocate array\n");
+//                LOG_ERROR("Failed to allocate array");
 //                dst.type = TYPE_VOID;
 //                break;
 //            }
@@ -56,7 +56,7 @@
 //        break;
 //
 //    default:
-//        fprintf(stderr, "Unknown value type: %d\n", src->type);
+//        LOG_ERROR("Unknown value type: %d", src->type);
 //        dst.type = TYPE_VOID;
 //        break;
 //    }
