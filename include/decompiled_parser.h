@@ -4,18 +4,12 @@
 #include "config.h"
 #include "method.h"
 #include "type.h"
+#include "value.h"
 
 // todo: make dynamic
 #define INSTRUCTION_TABLE_SIZE 100
 
-extern char args_type_signature[]; 
-
-typedef enum {
-    BO_OK,
-    BO_DIFFERENT_TYPES,
-    BO_NOT_SUPPORTED_TYPES,
-    BO_DIVIDE_BY_ZERO,
-} BinaryResult;
+extern char args_type_signature[];
 
 typedef enum {
     OP_LOAD,
@@ -59,21 +53,21 @@ typedef enum {
 } IfCondition;
 
 typedef struct {
-    PrimitiveType value;
+    Value value;
 } PushOP;
 
 typedef struct {
     int index;
-    Type type;
+    Type* type;
 } LoadOP;
 
 typedef struct {
-    Type type;
+    Type* type;
     BinaryOperator op;
 } BinaryOP;
 
 typedef struct {
-    Type type;
+    Type* type;
 } ReturnOP;
 
 typedef struct {
@@ -82,8 +76,9 @@ typedef struct {
 typedef struct {
     char* method_name;
     char* ref_name;
-    Type return_type;
-    Type args[];
+    int args_len;
+    Type** args; // must be freed
+    Type* return_type;
 } InvokeOP;
 
 typedef struct {
@@ -95,7 +90,7 @@ typedef struct {
 } IfOP;
 
 typedef struct {
-    Type type;
+    Type* type;
     int index;
 } StoreOP;
 
@@ -104,8 +99,8 @@ typedef struct {
 } GotoOP;
 
 typedef struct {
-    Type from;
-    Type to;
+    Type* from;
+    Type* to;
 } CastOP;
 
 typedef struct {
@@ -114,15 +109,15 @@ typedef struct {
 
 typedef struct {
     int dim;
-    Type type;
+    Type* type;
 } NewArrayOP;
 
 typedef struct {
-    Type type;
+    Type* type;
 } ArrayStoreOP;
 
 typedef struct {
-    Type type;
+    Type* type;
 } ArrayLoadOP;
 
 typedef struct {
@@ -161,11 +156,11 @@ InstructionTable* instruction_table_build(Method* m, Config* cfg);
 void instruction_table_delete(InstructionTable* instruction_table);
 // void value_print(const Value* value);
 
-BinaryResult value_add(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
-BinaryResult value_mul(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
-BinaryResult value_sub(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
-BinaryResult value_rem(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
-BinaryResult value_div(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result);
+BinaryResult value_add(Value* value1, Value* value2, Value* result);
+BinaryResult value_mul(Value* value1, Value* value2, Value* result);
+BinaryResult value_sub(Value* value1, Value* value2, Value* result);
+BinaryResult value_rem(Value* value1, Value* value2, Value* result);
+BinaryResult value_div(Value* value1, Value* value2, Value* result);
 
 const char* opcode_print(Opcode opcode);
 

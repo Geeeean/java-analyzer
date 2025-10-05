@@ -1,65 +1,61 @@
 #include "type.h"
 
-// todo use return as status code
-// Value value_deep_copy(const Value* src)
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct Type {
+    TypeKind kind;
+    union {
+        struct {
+            struct Type* element_type;
+        } array;
+
+        // struct {
+        //     const char* class_name;
+        //     int field_count;
+        //     struct Type** field_types;
+        // } class;
+    };
+    struct Type* next;
+};
+
+Type type_int = { .kind = TK_INT };
+Type type_boolean = { .kind = TK_BOOLEAN };
+Type type_reference = { .kind = TK_REFERENCE };
+Type type_char = { .kind = TK_CHAR };
+Type type_void = { .kind = TK_VOID };
+
+Type* type_table = NULL;
+
+Type* make_array_type(Type* element_type)
+{
+    for (Type* t = type_table; t != NULL; t = t->next) {
+        if (t->kind == TK_ARRAY && t->array.element_type == element_type)
+            return t;
+    }
+
+    Type* t = malloc(sizeof(Type));
+    t->kind = TK_ARRAY;
+    t->array.element_type = element_type;
+    t->next = type_table;
+    type_table = t;
+
+    return t;
+}
+
+// Type* make_class_type(const char* name)
 //{
-//    Value dst;
-//    dst.type = -1;
+//     for (Type* t = type_table; t != NULL; t = t->next) {
+//         if (t->kind == TYPE_CLASS && strcmp(t->class.class_name, name) == 0)
+//             return t;
+//     }
 //
-//    if (!src)
-//        return dst;
+//     Type* t = malloc(sizeof(Type));
+//     t->kind = TYPE_CLASS;
+//     t->class.class_name = name;
+//     t->next = type_table;
+//     type_table = t;
 //
-//    dst.type = src->type;
-//
-//    switch (src->type) {
-//    case TYPE_INT:
-//        dst.data.int_value = src->data.int_value;
-//        break;
-//
-//    case TYPE_BOOLEAN:
-//        dst.data.bool_value = src->data.bool_value;
-//        break;
-//
-//    case TYPE_CHAR:
-//        dst.data.char_value = src->data.char_value;
-//        break;
-//
-//    case TYPE_ARRAY:
-//        if (src->data.array_value) {
-//            int count = 0;
-//            while (src->data.array_value[count].type != TYPE_VOID) {
-//                count++;
-//            }
-//
-//            dst.data.array_value = malloc((count + 1) * sizeof(Value));
-//            if (!dst.data.array_value) {
-//                LOG_ERROR("Failed to allocate array");
-//                dst.type = TYPE_VOID;
-//                break;
-//            }
-//
-//            for (int i = 0; i < count; i++) {
-//                dst.data.array_value[i] = value_deep_copy(&src->data.array_value[i]);
-//            }
-//
-//            dst.data.array_value[count].type = TYPE_VOID;
-//        } else {
-//            dst.data.array_value = NULL;
-//        }
-//        break;
-//
-//    case TYPE_REFERENCE:
-//        dst.data.ref_value = src->data.ref_value;
-//        break;
-//
-//    case TYPE_VOID:
-//        break;
-//
-//    default:
-//        LOG_ERROR("Unknown value type: %d", src->type);
-//        dst.type = TYPE_VOID;
-//        break;
-//    }
-//
-//    return dst;
-//}
+//     return t;
+// }

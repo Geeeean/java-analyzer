@@ -4,41 +4,30 @@
 #include <stdbool.h>
 
 typedef enum {
-    TYPE_INT,
-    TYPE_BOOLEAN,
-    TYPE_REFERENCE,
-    TYPE_CLASS,
-    TYPE_CHAR,
-    TYPE_ARRAY,
-    TYPE_VOID,
-} Type;
+    TK_INT,
+    TK_BOOLEAN,
+    TK_REFERENCE,
+    TK_CLASS,
+    TK_CHAR,
+    TK_ARRAY,
+    TK_VOID,
+} TypeKind;
 
-typedef struct {
-    Type type;
-    union {
-        int int_value;
-        bool bool_value;
-        char char_value;
-        struct ObjectType* ref;
-    } data;
-} PrimitiveType;
+typedef struct Type Type;
 
-typedef struct {
-    Type type;
-    union {
-        struct {
-            Type* element_type;
-            void* elements;
-        } array;
+extern Type type_int;
+extern Type type_boolean;
+extern Type type_reference;
+extern Type type_char;
+extern Type type_void;
 
-        struct {
-            char* class_name;
-            //...
-        } class;
-    };
-} ObjectType;
+#define TYPE_INT &type_int
+#define TYPE_BOOLEAN &type_boolean
+#define TYPE_REFERENCE &type_reference
+#define TYPE_CHAR &type_char
+#define TYPE_VOID &type_void
 
-
-// Value value_deep_copy(const Value* src);
+Type* make_array_type(Type* element_type);
+Type* make_class_type(const char* name);
 
 #endif

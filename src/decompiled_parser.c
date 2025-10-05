@@ -7,10 +7,10 @@
 #include <string.h>
 
 char args_type_signature[] = {
-    [TYPE_INT] = 'I',
-    [TYPE_CHAR] = 'C',
-    [TYPE_ARRAY] = '[',
-    [TYPE_BOOLEAN] = 'Z',
+    [TK_INT] = 'I',
+    [TK_CHAR] = 'C',
+    [TK_ARRAY] = '[',
+    [TK_BOOLEAN] = 'Z',
 };
 
 typedef enum {
@@ -43,39 +43,40 @@ static const char* opcode_signature[] = {
 };
 
 static const char* load_type_signature[] = {
-    [TYPE_INT] = "int",
-    [TYPE_BOOLEAN] = "boolean",
-    [TYPE_REFERENCE] = "ref",
+    [TK_INT] = "int",
+    [TK_BOOLEAN] = "boolean",
+    [TK_REFERENCE] = "ref",
 };
 
 static const char* push_type_signature[] = {
-    [TYPE_INT] = "integer",
-    [TYPE_BOOLEAN] = "boolean",
-    [TYPE_ARRAY] = "string",
+    [TK_INT] = "integer",
+    [TK_BOOLEAN] = "boolean",
+    [TK_ARRAY] = "string",
 };
 
 static const char* binary_type_signature[] = {
-    [TYPE_INT] = "int",
+    [TK_INT] = "int",
 };
 
 static const char* store_type_signature[] = {
-    [TYPE_INT] = "int",
+    [TK_INT] = "int",
 };
 
 static const char* array_type_signature[] = {
-    [TYPE_INT] = "int",
+    [TK_INT] = "int",
 };
 
 static const char* return_type_signature[] = {
-    [TYPE_INT] = "int",
-    [TYPE_VOID] = "null",
+    [TK_INT] = "int",
+    [TK_VOID] = "null",
 };
 
 static const char* invoke_args_type_signature[] = {
-    [TYPE_INT] = "int",
+    [TK_INT] = "int",
+    [TK_BOOLEAN] = "boolean",
 };
 
-static const char* binary_operatore_signature[]
+static const char* binary_operator_signature[]
     = {
           [BO_ADD] = "add",
           [BO_SUB] = "sub",
@@ -152,11 +153,11 @@ static InstructionParseResult parse_load(LoadOP* load, cJSON* instruction_json)
 
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(type, load_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, load_type_signature[TK_INT]) == 0) {
         load->type = TYPE_INT;
-    } else if (strcmp(type, load_type_signature[TYPE_BOOLEAN]) == 0) {
+    } else if (strcmp(type, load_type_signature[TK_BOOLEAN]) == 0) {
         load->type = TYPE_BOOLEAN;
-    } else if (strcmp(type, load_type_signature[TYPE_REFERENCE]) == 0) {
+    } else if (strcmp(type, load_type_signature[TK_REFERENCE]) == 0) {
         load->type = TYPE_REFERENCE;
     } else {
         LOG_ERROR("Unknown type in load instruction: %s", type);
@@ -188,7 +189,7 @@ static InstructionParseResult parse_push(PushOP* push, cJSON* instruction_json)
     }
     char* inside_value = cJSON_GetStringValue(inside_TYPE_obj);
 
-    if (strcmp(type, push_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, push_type_signature[TK_INT]) == 0) {
         push->value.type = TYPE_INT;
         if (!cJSON_IsNumber(inside_TYPE_obj)) {
             LOG_ERROR("Push instruction invalid int number inside value, 'value' field");
@@ -214,7 +215,7 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
 
     binary->op = -1;
     for (int i = 0; i < BO_COUNT; i++) {
-        if (strcmp(operant, binary_operatore_signature[i]) == 0) {
+        if (strcmp(operant, binary_operator_signature[i]) == 0) {
             binary->op = i;
             break;
         }
@@ -232,7 +233,7 @@ static InstructionParseResult parse_binary(BinaryOP* binary, cJSON* instruction_
     }
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(binary_type_signature[TYPE_INT], type) == 0) {
+    if (strcmp(binary_type_signature[TK_INT], type) == 0) {
         binary->type = TYPE_INT;
     } else {
         LOG_ERROR("Binary instruction unknown type: %s", type);
@@ -257,9 +258,9 @@ static InstructionParseResult parse_return(ReturnOP* ret, cJSON* instruction_jso
         type = cJSON_GetStringValue(type_obj);
     }
 
-    if (strcmp(return_type_signature[TYPE_INT], type) == 0) {
+    if (strcmp(return_type_signature[TK_INT], type) == 0) {
         ret->type = TYPE_INT;
-    } else if (strcmp(return_type_signature[TYPE_VOID], type) == 0) {
+    } else if (strcmp(return_type_signature[TK_VOID], type) == 0) {
         ret->type = TYPE_VOID;
     } else {
         LOG_ERROR("Binary instruction unknown type: %s", type);
@@ -307,78 +308,100 @@ static InstructionParseResult parse_get(GetOP* get, cJSON* instruction_json)
     return IPR_OK;
 }
 
-// static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_json)
-//{
-//     cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
-//     if (!method_obj || !cJSON_IsObject(method_obj)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'method' field");
-//         return IPR_MALFORMED;
-//     }
-//
-//     cJSON* name_obj = cJSON_GetObjectItem(method_obj, "name");
-//     if (!name_obj || !cJSON_IsString(name_obj)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'name' field");
-//         return IPR_MALFORMED;
-//     }
-//     invoke->method_name = cJSON_GetStringValue(name_obj);
-//
-//     cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
-//     if (!ref_obj || !cJSON_IsObject(ref_obj)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'ref' field");
-//         return IPR_MALFORMED;
-//     }
-//     cJSON* ref_name_obj = cJSON_GetObjectItem(method_obj, "name");
-//     if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'name' field in 'ref'");
-//         return IPR_MALFORMED;
-//     }
-//     invoke->ref_name = cJSON_GetStringValue(ref_name_obj);
-//
-//     cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
-//     if (!args_obj || !cJSON_IsArray(args_obj)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'args' field");
-//         return IPR_MALFORMED;
-//     }
-//
-//     // todo: handle args dynamically
-//     char args[256] = "";
-//     int args_len = 0;
-//
-//     cJSON* buffer;
-//     cJSON_ArrayForEach(buffer, args_obj)
-//     {
-//         if (!cJSON_IsString(buffer)) {
-//LOG_ERROR("Invoke instruction missing or invalid 'args' field");
-//             return IPR_MALFORMED;
-//         }
-//
-//         char* type = cJSON_GetStringValue(buffer);
-//
-//         if (strcmp(type, invoke_args_type_signature[TYPE_INT]) == 0) {
-//             args[args_len] = args_type_signature[TYPE_INT];
-//             args_len++;
-//         } else {
-//LOG_ERROR("Invoke instruction not supported type in 'args' field");
-//             return IPR_MALFORMED;
-//         }
-//     }
-//
-//     args[args_len] = '\0';
-//
-//     // todo: free after use while deleting instruction table
-//     invoke->args = strdup(args);
-//
-//     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
-//     if (!returns_obj) {
-//LOG_ERROR("Invoke instruction missing or invalid 'returns' field");
-//         return IPR_MALFORMED;
-//     }
-//
-//     if (cJSON_IsNull(returns_obj)) {
-//     }
-//
-//     return IPR_OK;
-// }
+static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_json)
+{
+    cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
+    if (!method_obj || !cJSON_IsObject(method_obj)) {
+        LOG_ERROR("Invoke instruction missing or invalid 'method' field");
+        return IPR_MALFORMED;
+    }
+
+    cJSON* name_obj = cJSON_GetObjectItem(method_obj, "name");
+    if (!name_obj || !cJSON_IsString(name_obj)) {
+        LOG_ERROR("Invoke instruction missing or invalid 'name' field");
+        return IPR_MALFORMED;
+    }
+    invoke->method_name = cJSON_GetStringValue(name_obj);
+
+    cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
+    if (!ref_obj || !cJSON_IsObject(ref_obj)) {
+        LOG_ERROR("Invoke instruction missing or invalid 'ref' field");
+        return IPR_MALFORMED;
+    }
+    cJSON* ref_name_obj = cJSON_GetObjectItem(method_obj, "name");
+    if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
+        LOG_ERROR("Invoke instruction missing or invalid 'name' field in 'ref'");
+        return IPR_MALFORMED;
+    }
+    invoke->ref_name = cJSON_GetStringValue(ref_name_obj);
+
+    cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
+    if (!args_obj || !cJSON_IsArray(args_obj)) {
+        LOG_ERROR("Invoke instruction missing or invalid 'args' field");
+        return IPR_MALFORMED;
+    }
+
+    int capacity = 10;
+    invoke->args = malloc(sizeof(Type*) * capacity);
+    invoke->args_len = 0;
+
+    cJSON* buffer;
+    cJSON_ArrayForEach(buffer, args_obj)
+    {
+        if (!cJSON_IsString(buffer)) {
+            LOG_ERROR("Invoke instruction missing or invalid 'args' field");
+            return IPR_MALFORMED;
+        }
+
+        char* type = cJSON_GetStringValue(buffer);
+
+        Type* to_add;
+
+        if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
+            to_add = TYPE_INT;
+        } else if (strcmp(type, invoke_args_type_signature[TK_BOOLEAN]) == 0) {
+            to_add = TYPE_BOOLEAN;
+        } else {
+            LOG_ERROR("Invoke instruction not supported type in 'args' field: %s", type);
+            return IPR_MALFORMED;
+        }
+
+        if (capacity <= invoke->args_len) {
+            capacity *= 2;
+            invoke->args = realloc(invoke->args, sizeof(Type*) * capacity);
+        }
+
+        invoke->args[invoke->args_len] = to_add;
+        invoke->args_len++;
+    }
+
+    cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
+    if (!returns_obj) {
+        LOG_ERROR("Invoke instruction missing or invalid 'returns' field");
+        return IPR_MALFORMED;
+    }
+
+    if (cJSON_IsNull(returns_obj)) {
+        invoke->return_type = TYPE_VOID;
+    } else if (cJSON_IsString(returns_obj)) {
+        char* type = cJSON_GetStringValue(returns_obj);
+        if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
+            invoke->return_type = TYPE_INT;
+        } else {
+            LOG_ERROR("Unable to handle invoke instruction 'returns' type");
+            return IPR_MALFORMED;
+        }
+    } else if (cJSON_IsObject(returns_obj)) {
+        // todo
+        LOG_ERROR("TODO in parse invoke: %s", cJSON_Print(returns_obj));
+        return IPR_MALFORMED;
+    } else {
+        LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
+        return IPR_MALFORMED;
+    }
+
+    return IPR_OK;
+}
 
 static InstructionParseResult parse_throw(ThrowOP* trw, cJSON* instruction_json)
 {
@@ -413,7 +436,7 @@ static InstructionParseResult parse_store(StoreOP* store, cJSON* instruction_jso
     }
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(type, store_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, store_type_signature[TK_INT]) == 0) {
         store->type = TYPE_INT;
     } else {
         LOG_ERROR("Unknown type in store instruction: %s", type);
@@ -472,7 +495,7 @@ static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* inst
     }
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         new_array->type = TYPE_INT;
     } else {
         LOG_ERROR("Unknown type in newarray instruction: %s", type);
@@ -491,7 +514,7 @@ static InstructionParseResult parse_array_load(ArrayLoadOP* load, cJSON* instruc
     }
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         load->type = TYPE_INT;
     } else {
         LOG_ERROR("Unknown type in newarray instruction: %s", type);
@@ -510,7 +533,7 @@ static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* inst
     }
     char* type = cJSON_GetStringValue(type_obj);
 
-    if (strcmp(type, array_type_signature[TYPE_INT]) == 0) {
+    if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         store->type = TYPE_INT;
     } else {
         LOG_ERROR("Unknown type in newarray instruction: %s", type);
@@ -539,6 +562,7 @@ parse_instruction(cJSON* instruction_json)
 
     LOG_DEBUG("Parsing opcode: %s", opcode_print(instruction->opcode));
 
+    // todo: use array signature for functions
     switch (instruction->opcode) {
     case OP_LOAD:
         if (parse_load(&instruction->data.load, instruction_json)) {
@@ -587,8 +611,12 @@ parse_instruction(cJSON* instruction_json)
             goto cleanup;
         }
         break;
-    case OP_NEW:
     case OP_INVOKE:
+        if (parse_invoke(&instruction->data.invoke, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+    case OP_NEW:
     case OP_THROW:
         if (parse_throw(&instruction->data.trw, instruction_json)) {
             goto cleanup;
@@ -752,138 +780,4 @@ const char* opcode_print(Opcode opcode)
     }
 
     return opcode_signature[opcode];
-}
-
-// void value_print(const Value* value)
-//{
-//     if (value == NULL) {
-//         printf("NULL");
-//         return;
-//     }
-//
-//     switch (value->type) {
-//     case TYPE_INT:
-//         printf("%d", value->data.int_value);
-//         break;
-//     case TYPE_BOOLEAN:
-//         printf("%s", value->data.bool_value ? "true" : "false");
-//         break;
-//     case TYPE_ARRAY:
-//         printf("[");
-//         if (value->data.array_value != NULL) {
-//             Value* arr = value->data.array_value;
-//             for (int i = 0; arr[i].type != TYPE_VOID; i++) {
-//                 if (i > 0)
-//                     printf(", ");
-//                 value_print(&arr[i]);
-//             }
-//         }
-//         printf("]");
-//         break;
-//     case TYPE_VOID:
-//         printf("void");
-//         break;
-//     default:
-//         printf("unknown_value");
-//         break;
-//     }
-// }
-
-BinaryResult value_add(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
-{
-    if (value1->type != value2->type) {
-        return BO_DIFFERENT_TYPES;
-    }
-
-    switch (value1->type) {
-    case TYPE_INT:
-        result->type = TYPE_INT;
-        result->data.int_value = value1->data.int_value + value2->data.int_value;
-        break;
-    default:
-        LOG_ERROR("Dont know handle this type add");
-        return BO_NOT_SUPPORTED_TYPES;
-    }
-
-    return BO_OK;
-}
-
-BinaryResult value_mul(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
-{
-    if (value1->type != value2->type) {
-        return BO_DIFFERENT_TYPES;
-    }
-
-    switch (value1->type) {
-    case TYPE_INT:
-        result->type = TYPE_INT;
-        result->data.int_value = value1->data.int_value * value2->data.int_value;
-        break;
-    default:
-        LOG_ERROR("Dont know handle this type mul");
-        return BO_NOT_SUPPORTED_TYPES;
-    }
-
-    return BO_OK;
-}
-
-BinaryResult value_sub(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
-{
-    if (value1->type != value2->type) {
-        return BO_DIFFERENT_TYPES;
-    }
-
-    switch (value1->type) {
-    case TYPE_INT:
-        result->type = TYPE_INT;
-        result->data.int_value = value1->data.int_value - value2->data.int_value;
-        break;
-    default:
-        LOG_ERROR("Dont know handle this type sub");
-        return BO_NOT_SUPPORTED_TYPES;
-    }
-
-    return BO_OK;
-}
-
-BinaryResult value_rem(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
-{
-    if (value1->type != value2->type) {
-        return BO_DIFFERENT_TYPES;
-    }
-
-    switch (value1->type) {
-    case TYPE_INT:
-        result->type = TYPE_INT;
-        result->data.int_value = value1->data.int_value % value2->data.int_value;
-        break;
-    default:
-        LOG_ERROR("Dont know handle this type sub");
-        return BO_NOT_SUPPORTED_TYPES;
-    }
-
-    return BO_OK;
-}
-
-BinaryResult value_div(PrimitiveType* value1, PrimitiveType* value2, PrimitiveType* result)
-{
-    if (value1->type != value2->type) {
-        return BO_DIFFERENT_TYPES;
-    }
-
-    switch (value1->type) {
-    case TYPE_INT:
-        result->type = TYPE_INT;
-        if (value2->data.int_value == 0) {
-            return BO_DIVIDE_BY_ZERO;
-        }
-
-        result->data.int_value = value1->data.int_value / value2->data.int_value;
-        break;
-    default:
-        LOG_ERROR("Dont know handle this type div");
-        return BO_NOT_SUPPORTED_TYPES;
-    }
-
-    return BO_OK;
 }

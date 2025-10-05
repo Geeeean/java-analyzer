@@ -4,7 +4,7 @@
 
 typedef struct Item Item;
 struct Item {
-    PrimitiveType value;
+    Value value;
     Item* next;
 };
 
@@ -13,7 +13,7 @@ struct Stack {
     Item* top;
 };
 
-int stack_push(Stack* stack, PrimitiveType value)
+int stack_push(Stack* stack, Value value)
 {
     Item* to_push = malloc(sizeof(Item));
     if (!to_push) {
@@ -30,7 +30,7 @@ int stack_push(Stack* stack, PrimitiveType value)
     return 0;
 }
 
-PrimitiveType* stack_peek(Stack* stack)
+Value* stack_peek(Stack* stack)
 {
     if (stack->size == 0) {
         return NULL;
@@ -39,7 +39,7 @@ PrimitiveType* stack_peek(Stack* stack)
     return &stack->top->value;
 }
 
-int stack_pop(Stack* stack, PrimitiveType* value)
+int stack_pop(Stack* stack, Value* value)
 {
     if (stack->size == 0) {
         value->type = TYPE_VOID;
@@ -65,8 +65,8 @@ static bool stack_same_type_on_top(Stack* stack)
         return false;
     }
 
-    Type type1 = stack->top->value.type;
-    Type type2 = stack->top->next->value.type;
+    Type* type1 = stack->top->value.type;
+    Type* type2 = stack->top->next->value.type;
 
     return type1 == type2;
 }

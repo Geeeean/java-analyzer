@@ -48,4 +48,4 @@ $(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o: %.c $(DEPS)
 .PHONY: clean
 
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR) $(BUILD_DEBUG_DIR)
+	rm -rf $(BUILD_DIR) $(BIN_DIR) 
