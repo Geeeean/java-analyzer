@@ -152,7 +152,7 @@ typedef struct {
     int capacity;
 } InstructionTable;
 
-InstructionTable* instruction_table_build(Method* m, Config* cfg);
+InstructionTable* instruction_table_build(const Method* m, const Config* cfg);
 void instruction_table_delete(InstructionTable* instruction_table);
 // void value_print(const Value* value);
 

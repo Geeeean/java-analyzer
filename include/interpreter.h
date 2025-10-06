@@ -1,6 +1,7 @@
 #ifndef INTERPRETER_H
 #define INTERPRETER_H
 
+#include "cli.h"
 #include "decompiled_parser.h"
 #include "method.h"
 
@@ -14,6 +15,10 @@ typedef enum {
     RT_UNKNOWN_ERROR,
 } RuntimeResult;
 
-RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method* m, const char* parameters);
+typedef struct CallStack CallStack;
+
+// RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method* m, const char* parameters);
+CallStack* interpreter_setup(const Method* m, const Options* opts, const Config* cfg);
+RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg);
 
 #endif

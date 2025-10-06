@@ -321,19 +321,19 @@ static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_
         LOG_ERROR("Invoke instruction missing or invalid 'name' field");
         return IPR_MALFORMED;
     }
-    invoke->method_name = cJSON_GetStringValue(name_obj);
+    invoke->method_name = strdup(cJSON_GetStringValue(name_obj));
 
     cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
     if (!ref_obj || !cJSON_IsObject(ref_obj)) {
         LOG_ERROR("Invoke instruction missing or invalid 'ref' field");
         return IPR_MALFORMED;
     }
-    cJSON* ref_name_obj = cJSON_GetObjectItem(method_obj, "name");
+    cJSON* ref_name_obj = cJSON_GetObjectItem(ref_obj, "name");
     if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
         LOG_ERROR("Invoke instruction missing or invalid 'name' field in 'ref'");
         return IPR_MALFORMED;
     }
-    invoke->ref_name = cJSON_GetStringValue(ref_name_obj);
+    invoke->ref_name = strdup(cJSON_GetStringValue(ref_name_obj));
 
     cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
     if (!args_obj || !cJSON_IsArray(args_obj)) {
@@ -374,6 +374,8 @@ static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_
         invoke->args[invoke->args_len] = to_add;
         invoke->args_len++;
     }
+
+    invoke->args = realloc(invoke->args, invoke->args_len * sizeof(Type*));
 
     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
     if (!returns_obj) {
@@ -720,7 +722,7 @@ cleanup:
     return NULL;
 }
 
-InstructionTable* instruction_table_build(Method* m, Config* cfg)
+InstructionTable* instruction_table_build(const Method* m, const Config* cfg)
 {
     if (!m || !cfg) {
         return NULL;
@@ -744,7 +746,7 @@ InstructionTable* instruction_table_build(Method* m, Config* cfg)
         goto cleanup;
     }
 
-    cJSON* method = get_method(m, methods);
+    cJSON* method = get_method((Method*)m, methods);
     if (!method) {
         goto cleanup;
     }

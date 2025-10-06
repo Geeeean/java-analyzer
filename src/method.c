@@ -26,6 +26,7 @@ typedef enum {
 } MethodParseResult;
 
 struct Method {
+    char* method_id;
     char* class;
     char* name;
     char* arguments;
@@ -107,30 +108,14 @@ static MethodParseResult method_parse(Method* m, char* method_id)
     return MPR_OK;
 }
 
-static MethodParseResult method_parse_from_invoke(
-    Method* m,
-    char* ref_name,
-    char* method_name,
-    char* args_type,
-    char* return_type)
-{
-    char* method_id;
-    replace_char(ref_name, '/', '.');
-
-    // todo: parse the method directly, avoid overhead
-    if (asprintf(&method_id, "%s.%s:(%s)%s", ref_name, method_name, args_type, return_type) < 0) {
-        return MPR_INTERNAL_ERROR;
-    }
-
-    return method_parse(m, method_id);
-}
-
 Method* method_create(char* method_id)
 {
     Method* m = calloc(1, sizeof(Method));
     if (m == NULL) {
         return NULL;
     }
+
+    m->method_id = strdup(method_id);
 
     if (method_parse(m, method_id)) {
         method_delete(m);
@@ -147,6 +132,7 @@ void method_delete(Method* m)
         free(m->name);
         free(m->arguments);
         free(m->return_type);
+        free(m->method_id);
     }
 
     free(m);
@@ -210,6 +196,11 @@ cleanup:
     return source;
 }
 
+char* method_get_class(const Method* m)
+{
+    return m->class;
+}
+
 char* method_get_name(const Method* m)
 {
     return m->name;
@@ -219,4 +210,9 @@ char* method_get_name(const Method* m)
 char* method_get_arguments(const Method* m)
 {
     return m->arguments;
+}
+
+char* method_get_id(const Method* m)
+{
+    return m->method_id;
 }

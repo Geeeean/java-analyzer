@@ -67,14 +67,10 @@ int main(int argc, char** argv)
     }
 
     /*** INTERPRETER ***/
-    instruction_table = instruction_table_build(m, cfg);
-    if (!instruction_table) {
-        LOG_ERROR("Error while building instruction table");
-        result = 6;
-        goto cleanup;
-    }
+    CallStack* call_stack = interpreter_setup(m, &opts, cfg);
+    LOG_DEBUG("CALL STACK CREATED: %p", call_stack);
 
-    RuntimeResult interpreter_result = interpreter_run(instruction_table, m, opts.parameters);
+    RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
     if (opts.interpreter_only) {
         switch (interpreter_result) {
         case RT_OK:
@@ -109,6 +105,7 @@ cleanup:
 
 /*
  * TODO
+ * 0 -> make dynamic array structure
  * 1 -> handle array instructions
  * 2 -> handle function calls
  * 3 -> go from interpreting to evaluation

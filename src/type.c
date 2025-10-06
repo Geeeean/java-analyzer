@@ -4,22 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct Type {
-    TypeKind kind;
-    union {
-        struct {
-            struct Type* element_type;
-        } array;
-
-        // struct {
-        //     const char* class_name;
-        //     int field_count;
-        //     struct Type** field_types;
-        // } class;
-    };
-    struct Type* next;
-};
-
 Type type_int = { .kind = TK_INT };
 Type type_boolean = { .kind = TK_BOOLEAN };
 Type type_reference = { .kind = TK_REFERENCE };

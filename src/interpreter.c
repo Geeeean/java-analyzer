@@ -1,13 +1,42 @@
 // todo handle pop error
 #include "interpreter.h"
+#include "cli.h"
 #include "log.h"
 #include "stack.h"
 #include "string.h"
+#include "utils.h"
 #include "value.h"
 
 #include <stdlib.h>
 
 #define ITERATION 1000
+
+// todo: use hashmap
+typedef struct ITItem ITItem;
+struct ITItem {
+    char* method_id;
+    InstructionTable* instruction_table;
+    ITItem* next;
+};
+
+// to be freed
+ITItem* it_map = NULL;
+
+InstructionTable* get_instruction_table(const Method* m, const Config* cfg)
+{
+    for (ITItem* it = it_map; it != NULL; it = it->next) {
+        if (strcmp(method_get_id(m), it->method_id) == 0) {
+            return it->instruction_table;
+        }
+    }
+
+    ITItem* it = malloc(sizeof(ITItem));
+    it->instruction_table = instruction_table_build(m, cfg);
+    it->next = it_map;
+    it->method_id = strdup(method_get_id(m));
+
+    return it->instruction_table;
+}
 
 // todo: reason about splitting in specific code for each op
 typedef enum {
@@ -47,8 +76,9 @@ static const char* step_result_signature[] = {
 
 typedef struct {
     Value* locals;
-    int locals_count;
     Stack* stack;
+    InstructionTable* instruction_table;
+    int locals_count;
     int pc;
 } Frame;
 
@@ -57,10 +87,10 @@ typedef struct CallStackNode {
     struct CallStackNode* next;
 } CallStackNode;
 
-typedef struct {
+struct CallStack {
     CallStackNode* top;
     int count;
-} CallStack;
+};
 
 typedef struct {
     CallStack* call_stack;
@@ -241,62 +271,77 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
     return 0;
 }
 
-static Frame* build_frame(char* arguments, char* parameters)
+static Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
 {
-    Frame* frame = malloc(sizeof(Frame));
-    if (!frame) {
-        goto cleanup;
-    }
-
-    frame->pc = 0;
-    frame->stack = stack_new();
-    frame->locals_count = 0;
+    char* arguments = strdup(method_get_arguments(m));
+    char* arguments_pointer = arguments;
 
     int capacity = 10;
-    frame->locals = malloc(capacity * sizeof(Value));
+    Value* locals = malloc(capacity * sizeof(Value));
 
     parameter_fix(parameters);
     char* strtok_state = NULL;
     char* token = strtok_r(parameters, "(), ", &strtok_state);
     while (token != NULL) {
-        if (frame->locals_count >= capacity) {
+        if (*locals_count >= capacity) {
             capacity *= 2;
-            frame->locals = realloc(frame->locals, capacity * sizeof(Value));
-            if (!frame->locals) {
-                // MEMORY LEAK
-                // todo cleanup locals in case of error
-                frame = NULL;
-                goto cleanup;
+            locals = realloc(locals, capacity * sizeof(Value));
+            if (!locals) {
+                return NULL;
             }
         }
 
         Value value;
         if (parse_next_parameter(&arguments, token, &value)) {
-            // MEMORY LEAK
-            // todo cleanup locals in case of error
-            frame = NULL;
-            goto cleanup;
+            return NULL;
         }
 
         // todo check for int, ref, float
-        frame->locals[frame->locals_count] = value;
+        locals[*locals_count] = value;
 
         token = strtok_r(NULL, "), ", &strtok_state);
-        frame->locals_count++;
+        (*locals_count)++;
     }
 
-    frame->locals = realloc(frame->locals, frame->locals_count * sizeof(Value));
-    if (!frame->locals) {
-        // MEMORY LEAK
-        // todo cleanup locals in case of error
-        frame = NULL;
-        goto cleanup;
+    locals = realloc(locals, *locals_count * sizeof(Value));
+    return locals;
+}
+
+// todo: make it better
+static Value* build_locals_from_frame(const Method* m, Frame* frame, int* locals_count)
+{
+    char* arguments = strdup(method_get_arguments(m));
+    char* arguments_pointer = arguments;
+
+    int args_len = strlen(arguments);
+    Value* locals = malloc(args_len * sizeof(Value));
+
+    *locals_count = args_len;
+
+    for (int i = strlen(arguments) - 1; i >= 0; i--) {
+        stack_pop(frame->stack, &locals[i]);
     }
+
+    free(arguments);
+
+    return locals;
+}
+
+static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int locals_count)
+{
+
+    Frame* frame = malloc(sizeof(Frame));
+    if (!frame) {
+        return NULL;
+    }
+
+    frame->pc = 0;
+    frame->stack = stack_new();
+    frame->locals_count = locals_count;
+    frame->locals = locals;
+    frame->instruction_table = get_instruction_table(m, cfg);
 
     return frame;
-
-cleanup:
-    return NULL;
 }
 
 static StepResult handle_load(Frame* frame, LoadOP* load)
@@ -407,7 +452,13 @@ static StepResult handle_return(Frame* frame, CallStack* call_stack)
 {
     Value value;
     stack_pop(frame->stack, &value);
+
     call_stack_pop(call_stack);
+
+    if (call_stack->count > 0) {
+        Frame* frame = call_stack_peek(call_stack);
+        stack_push(frame->stack, value);
+    }
 
     return SR_OK;
 }
@@ -469,6 +520,7 @@ static StepResult handle_ift(Frame* frame, IfOP* ift)
     Type* type = value1.type;
 
     if (value1.type != value2.type) {
+        LOG_DEBUG("TYPE: %d", type->kind);
         return SR_INVALID_TYPE;
     }
 
@@ -529,18 +581,99 @@ static StepResult handle_dup(Frame* frame, DupOP* dup)
     return SR_OK;
 }
 
+// todo: handle array
+static char* get_method_signature(InvokeOP* invoke)
+{
+    char* ref_name = strdup(invoke->ref_name);
+    replace_char(ref_name, '/', '.');
+
+    int capacity = 10;
+    int args_len = 0;
+    char* args = malloc(sizeof(char) * capacity);
+
+    for (int i = 0; i < invoke->args_len; i++) {
+        TypeKind tk = invoke->args[i]->kind;
+        if (capacity <= args_len) {
+            capacity *= 2;
+            args = realloc(args, sizeof(char) * capacity);
+        }
+
+        switch (tk) {
+        case TK_INT:
+            args[args_len] = 'I';
+            break;
+        case TK_BOOLEAN:
+            args[args_len] = 'Z';
+            break;
+        default:
+            LOG_ERROR("Unable to handle type: %d, in get_method_signature", tk);
+            return NULL;
+        }
+
+        args_len++;
+    }
+
+    char return_type;
+    switch (invoke->return_type->kind) {
+    case TK_INT:
+        return_type = 'I';
+        break;
+    case TK_BOOLEAN:
+        return_type = 'Z';
+        break;
+    case TK_VOID:
+        return_type = 'V';
+        break;
+    default:
+        LOG_ERROR("Unable to handle type: %d, in get_method_signature", invoke->return_type->kind);
+        return NULL;
+    }
+
+    char* res;
+    asprintf(&res, "%s.%s:(%s)%c", ref_name, invoke->method_name, args, return_type);
+
+    free(args);
+    free(ref_name);
+
+    return res;
+}
+
+static StepResult handle_invoke(CallStack* call_stack, Frame* frame, const Config* cfg, InvokeOP* invoke)
+{
+    char* method_id = get_method_signature(invoke);
+    Method* m = method_create(method_id);
+    char* root = strtok(method_id, ".");
+    LOG_DEBUG("INVOKE METHOD ROOT: %s", root);
+
+    if (strcmp(root, "jpamb") == 0) {
+        int locals_count;
+        Value* locals = build_locals_from_frame(m, frame, &locals_count);
+        Frame* new_frame = build_frame(m, cfg, locals, locals_count);
+
+        call_stack_push(call_stack, new_frame);
+    }
+
+    free(method_id);
+
+    frame->pc++;
+
+    return SR_OK;
+}
+
 static StepResult handle_new_array(Frame* frame, NewArrayOP* new_array)
 {
 
     return SR_OK;
 }
 
-static StepResult step(CallStack* call_stack, InstructionTable* instruction_table)
+static StepResult step(CallStack* call_stack, const Config* cfg)
 {
     Frame* frame = call_stack_peek(call_stack);
     if (!frame) {
         return 1;
     }
+
+    InstructionTable* instruction_table = frame->instruction_table;
 
     Instruction* instruction = instruction_table->instructions[frame->pc];
 
@@ -579,11 +712,16 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
     case OP_DUP:
         result = handle_dup(frame, &instruction->data.dup);
         break;
-    case OP_CAST:
-    case OP_NEW:
+
     case OP_INVOKE:
+        result = handle_invoke(call_stack, frame, cfg, &instruction->data.invoke);
+        break;
+
+    case OP_NEW:
+    case OP_CAST:
         frame->pc++;
         break;
+
     case OP_THROW:
         result = SR_ASSERTION_ERR;
         break;
@@ -607,31 +745,42 @@ static StepResult step(CallStack* call_stack, InstructionTable* instruction_tabl
     return result;
 }
 
-RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method* m, const char* parameters)
+CallStack* interpreter_setup(const Method* m, const Options* opts, const Config* cfg)
 {
-    RuntimeResult result = RT_OK;
-
-    if (!instruction_table || !m || !parameters) {
-        result = RT_NULL_PARAMETERS;
-        goto cleanup;
+    if (!m || !opts || !cfg) {
+        return NULL;
     }
 
-    char* arguments = strdup(method_get_arguments(m));
-    char* params = strdup(parameters);
+    char* parameters = strdup(opts->parameters);
 
-    Frame* frame = build_frame(arguments, params);
+    LOG_DEBUG("BUILDING FRAME...");
+    int locals_count;
+    Value* locals = build_locals_from_str(m, parameters, &locals_count);
+    Frame* frame = build_frame(m, cfg, locals, locals_count);
+    LOG_DEBUG("LOCALS COUNT: %d", locals_count);
+
     if (!frame) {
-        result = RT_CANT_BUILD_FRAME;
-        goto cleanup;
+        return NULL;
     }
 
     CallStack* call_stack = malloc(sizeof(CallStack));
     call_stack_push(call_stack, frame);
 
+    return call_stack;
+}
+
+RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
+{
+    RuntimeResult result = RT_OK;
+
+    if (!call_stack) {
+        LOG_ERROR("CIAO");
+    }
+
     int i = 0;
     for (; i < ITERATION; i++) {
         if (call_stack->count > 0) {
-            StepResult step_result = step(call_stack, instruction_table);
+            StepResult step_result = step(call_stack, cfg);
             switch (step_result) {
             case SR_OK:
                 continue;
@@ -656,11 +805,6 @@ RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method*
     }
 
 cleanup:
-    // todo: deallocate call_stack, frame, ...
-
-    free(arguments);
-    free(params);
-
     if (result) {
         return result;
     }
@@ -669,5 +813,70 @@ cleanup:
         return RT_INFINITE;
     }
 
-    return RT_OK;
+    // todo free memory
+    return result;
 }
+
+// RuntimeResult interpreter_run(const Method* m, const char* parameters)
+// {
+//     RuntimeResult result = RT_OK;
+//
+//     if (!instruction_table || !m || !parameters) {
+//         result = RT_NULL_PARAMETERS;
+//         goto cleanup;
+//     }
+//
+//     char* params = strdup(parameters);
+//
+//     Frame* frame = build_frame(arguments, params);
+//     if (!frame) {
+//         result = RT_CANT_BUILD_FRAME;
+//         goto cleanup;
+//     }
+//
+//     CallStack* call_stack = malloc(sizeof(CallStack));
+//     call_stack_push(call_stack, frame);
+//
+//     int i = 0;
+//     for (; i < ITERATION; i++) {
+//         if (call_stack->count > 0) {
+//             StepResult step_result = step(call_stack, instruction_table);
+//             switch (step_result) {
+//             case SR_OK:
+//                 continue;
+//             case SR_BO_DIV_DBZ:
+//                 result = RT_DIVIDE_BY_ZERO;
+//                 break;
+//             case SR_ASSERTION_ERR:
+//                 result = RT_ASSERTION_ERR;
+//                 break;
+//             default:
+//                 result = RT_UNKNOWN_ERROR;
+//                 break;
+//             }
+//
+//             LOG_ERROR("%s", step_result_signature[step_result]);
+//
+//             goto cleanup;
+//         } else {
+//             result = RT_OK;
+//             goto cleanup;
+//         }
+//     }
+//
+// cleanup:
+//     // todo: deallocate call_stack, frame, ...
+//
+//     free(arguments);
+//     free(params);
+//
+//     if (result) {
+//         return result;
+//     }
+//
+//     if (i == ITERATION) {
+//         return RT_INFINITE;
+//     }
+//
+//     return RT_OK;
+// }

@@ -14,6 +14,21 @@ typedef enum {
 } TypeKind;
 
 typedef struct Type Type;
+struct Type {
+    TypeKind kind;
+    union {
+        struct {
+            struct Type* element_type;
+        } array;
+
+        // struct {
+        //     const char* class_name;
+        //     int field_count;
+        //     struct Type** field_types;
+        // } class;
+    };
+    Type* next;
+};
 
 extern Type type_int;
 extern Type type_boolean;
