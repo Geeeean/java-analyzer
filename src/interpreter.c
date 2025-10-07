@@ -1,6 +1,7 @@
 // todo handle pop error
 #include "interpreter.h"
 #include "cli.h"
+#include "heap.h"
 #include "log.h"
 #include "stack.h"
 #include "string.h"
@@ -43,6 +44,7 @@ typedef enum {
     SR_OK,
     SR_OUT_OF_BOUNDS,
     SR_NULL_INSTRUCTION,
+    SR_NULL_POINTER,
     SR_EMPTY_STACK,
     SR_DIVIDE_BY_ZERO,
     SR_BO_UNKNOWN,
@@ -61,6 +63,7 @@ static const char* step_result_signature[] = {
     [SR_OK] = "SR_OK",
     [SR_OUT_OF_BOUNDS] = "SR_OUT_OF_BOUNDS",
     [SR_NULL_INSTRUCTION] = "SR_NULL_INSTRUCTION",
+    [SR_NULL_POINTER] = "SR_NULL_POINTER",
     [SR_EMPTY_STACK] = "SR_EMPTY_STACK",
     [SR_DIVIDE_BY_ZERO] = "SR_DIVIDE_BY_ZERO",
     [SR_BO_UNKNOWN] = "SR_BO_UNKNOWN",
@@ -178,55 +181,55 @@ static void parameter_fix(char* parameters)
     }
 }
 
-// todo: embed count inside array structure
-static Value* parse_array(Type* type, char* to_parse_array)
+// todo: handle any dimensional array
+static int parse_array(char** arguments, char* token, ObjectValue* array)
 {
-    return NULL;
-    //    if (type < 0 /* || todo */ || !to_parse_array) {
-    //        return NULL;
-    //    }
-    //
-    //    char* token = strtok(to_parse_array, "[:_;]");
-    //    if (!token) {
-    //        return NULL;
-    //    }
-    //
-    //    if (type != get_type(*token)) {
-    //        return NULL;
-    //    }
-    //
-    //    int count = 0;
-    //    int capacity = 10;
-    //
-    //    Value* array = malloc(capacity * sizeof(Value));
-    //
-    //    while (token != NULL) {
-    //        if (count >= capacity) {
-    //            capacity *= 2;
-    //            array = realloc(array, capacity * sizeof(Value));
-    //        }
-    //
-    //        if (type == TYPE_INT) {
-    //            array[count].type = TYPE_INT;
-    //            array[count].data.int_value = strtol(token, NULL, 10);
-    //        }
-    //        // todo:
-    //        /* else if (other types) {...} */
-    //        else {
-    //            goto cleanup;
-    //        }
-    //
-    //        token = strtok(NULL, "[:_;]");
-    //        count++;
-    //    }
-    //
-    //    array = realloc(array, count * sizeof(Value) + 1);
-    //    array[count].type = TYPE_VOID;
-    //    return array;
-    //
-    // cleanup:
-    //    free(array);
-    //    return NULL;
+    char* values = strtok(token, ":_;[]");
+    int capacity = 10;
+    int* len = &array->array.elements_count;
+    array->array.elements = malloc(sizeof(Value) * capacity);
+
+    TypeKind tk = get_tk(**arguments);
+    if (tk == TK_INT) {
+        array->type = make_array_type(TYPE_INT);
+
+        while ((values = strtok(NULL, ";[]_")) != NULL) {
+            if (*len >= capacity) {
+                capacity *= 2;
+                array->array.elements = realloc(array->array.elements, sizeof(Value) * capacity);
+            }
+
+            Value value = { .type = TYPE_INT, .data.int_value = strtol(values, NULL, 10) };
+            array->array.elements[(*len)] = value;
+
+            (*len)++;
+        }
+
+        array->array.elements = realloc(array->array.elements, sizeof(Value) * (*len));
+    } else if (tk == TK_CHAR) {
+        array->type = make_array_type(TYPE_CHAR);
+
+        while ((values = strtok(NULL, ";[]_'\"")) != NULL) {
+            if (*len >= capacity) {
+                capacity *= 2;
+                array->array.elements = realloc(array->array.elements, sizeof(Value) * capacity);
+            }
+
+            // LOG_DEBUG("PARSING VALUE: %s", values);
+
+            Value value = { .type = TYPE_CHAR, .data.char_value = values[0] };
+            array->array.elements[(*len)] = value;
+
+            (*len)++;
+        }
+
+        array->array.elements = realloc(array->array.elements, sizeof(Value) * (*len));
+    } else {
+        LOG_ERROR("Dont know how to handle this array type interpreter.c: %s", token);
+        return 1;
+    }
+
+    return 0;
 }
 
 static int parse_next_parameter(char** arguments, char* token, Value* value)
@@ -244,11 +247,19 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
     (*arguments)++;
 
     if (tk == TK_ARRAY) {
-        TypeKind array_tk = get_tk(**arguments);
-        (*arguments)++;
-        // todo: recursive build type
-        LOG_ERROR("TODO parse array type in interpreter.c: %s", token);
-        return 4;
+        ObjectValue* array = malloc(sizeof(ObjectValue));
+
+        if (parse_array(arguments, token, array)) {
+            LOG_ERROR("While handling parse array");
+            return 10;
+        }
+
+        value->type = TYPE_REFERENCE;
+
+        if (heap_insert(array, &value->data.ref_value)) {
+            LOG_ERROR("While inserting array into heap");
+            return 11;
+        }
     } else if (tk == TK_INT) {
         value->type = TYPE_INT;
         value->data.int_value = (int)strtol(token, NULL, 10);
@@ -517,24 +528,28 @@ static StepResult handle_ift(Frame* frame, IfOP* ift)
     stack_pop(frame->stack, &value2);
     stack_pop(frame->stack, &value1);
 
-    Type* type = value1.type;
-
-    if (value1.type != value2.type) {
-        LOG_DEBUG("TYPE: %d", type->kind);
-        return SR_INVALID_TYPE;
-    }
-
-    bool result;
-
-    if (type == TYPE_INT) {
-        result = handle_ift_aux(ift->condition, value1.data.int_value, value2.data.int_value);
-    } else if (type == TYPE_CHAR) {
-        result = handle_ift_aux(ift->condition, value1.data.char_value, value2.data.char_value);
-    } else if (type == TYPE_BOOLEAN) {
-        result = handle_ift_aux(ift->condition, value1.data.bool_value, value2.data.bool_value);
+    int a, b;
+    if (value1.type == TYPE_INT) {
+        a = value1.data.int_value;
+    } else if (value1.type == TYPE_BOOLEAN) {
+        a = (int)value1.data.bool_value;
+    } else if (value1.type == TYPE_CHAR) {
+        a = (int)value1.data.char_value;
     } else {
         return SR_INVALID_TYPE;
     }
+
+    if (value2.type == TYPE_INT) {
+        b = value2.data.int_value;
+    } else if (value2.type == TYPE_BOOLEAN) {
+        b = (int)value2.data.bool_value;
+    } else if (value2.type == TYPE_CHAR) {
+        b = (int)value2.data.char_value;
+    } else {
+        return SR_INVALID_TYPE;
+    }
+
+    bool result = handle_ift_aux(ift->condition, a, b);
 
     if (result) {
         frame->pc = ift->target;
@@ -660,12 +675,169 @@ static StepResult handle_invoke(CallStack* call_stack, Frame* frame, const Confi
     return SR_OK;
 }
 
+// todo: handle multi dimensional arrays
+static StepResult handle_array_length(Frame* frame, ArrayLengthOP* array_length)
+{
+    Value value;
+    if (stack_pop(frame->stack, &value)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (value.type != TYPE_REFERENCE) {
+        return SR_INVALID_TYPE;
+    }
+
+    ObjectValue* array = heap_get(value.data.ref_value);
+    if (!array) {
+        return SR_NULL_POINTER; 
+    }
+
+    if (array->type->kind != TK_ARRAY) {
+        return SR_INVALID_TYPE;
+    }
+
+    Value to_push = { .type = TYPE_INT };
+    to_push.data.int_value = array->array.elements_count;
+
+    stack_push(frame->stack, to_push);
+
+    frame->pc++;
+    return SR_OK;
+}
+
 static StepResult handle_new_array(Frame* frame, NewArrayOP* new_array)
 {
+    Value size;
+    if (stack_pop(frame->stack, &size)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (size.type != TYPE_INT) {
+        return SR_INVALID_TYPE;
+    }
+
+    if (new_array->type == TYPE_INT) {
+        ObjectValue* array = malloc(sizeof(ObjectValue));
+        array->type = make_array_type(TYPE_INT);
+        array->array.elements = malloc(sizeof(Value) * size.data.int_value);
+        array->array.elements_count = size.data.int_value;
+
+        Value ref = { .type = TYPE_REFERENCE };
+        if (heap_insert(array, &ref.data.ref_value)) {
+            // todo: heap should be dynamic
+            return SR_OUT_OF_BOUNDS;
+        }
+
+        stack_push(frame->stack, ref);
+    } else {
+        return SR_INVALID_TYPE;
+    }
+
+    frame->pc++;
 
     return SR_OK;
 }
 
+static StepResult handle_array_store(Frame* frame, ArrayStoreOP* array_store)
+{
+    Value index;
+    Value value;
+    Value ref;
+
+    if (stack_pop(frame->stack, &value)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (stack_pop(frame->stack, &index)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (stack_pop(frame->stack, &ref)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (index.type != TYPE_INT) {
+        return SR_INVALID_TYPE;
+    }
+
+    ObjectValue* array = heap_get(ref.data.ref_value);
+    if (!array) {
+        return SR_NULL_POINTER;
+    }
+
+    if (array->type != make_array_type(array_store->type) || array->type != make_array_type(value.type)) {
+        return SR_INVALID_TYPE;
+    }
+
+    LOG_DEBUG("ELEMS COUNT: %d, INDEX: %d, VALUE: %d", array->array.elements_count, index.data.int_value, value.data.int_value);
+
+    if (array->array.elements_count <= index.data.int_value) {
+        return SR_OUT_OF_BOUNDS;
+    }
+
+    array->array.elements[index.data.int_value] = value;
+    frame->pc++;
+
+    return SR_OK;
+}
+
+static StepResult handle_array_load(Frame* frame, ArrayLoadOP* array_load)
+{
+
+    Value index;
+    Value ref;
+
+    if (stack_pop(frame->stack, &index)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (stack_pop(frame->stack, &ref)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (index.type != TYPE_INT) {
+        return SR_INVALID_TYPE;
+    }
+
+    ObjectValue* array = heap_get(ref.data.ref_value);
+    if (!array) {
+        return SR_NULL_POINTER;
+    }
+
+    if (array->type != make_array_type(array_load->type)) {
+        return SR_INVALID_TYPE;
+    }
+
+    if (array->array.elements_count <= index.data.int_value) {
+        return SR_OUT_OF_BOUNDS;
+    }
+
+    Value value = array->array.elements[index.data.int_value];
+    stack_push(frame->stack, value);
+
+    frame->pc++;
+
+    return SR_OK;
+}
+
+static StepResult handle_incr(Frame* frame, IncrOP* incr)
+{
+    if (incr->index < 0 || incr->index >= frame->locals_count) {
+        return SR_OUT_OF_BOUNDS;
+    }
+
+    Value* value = &(frame->locals[incr->index]);
+
+    if (value->type == TYPE_INT) {
+        value->data.int_value += incr->amount;
+    } else {
+        return SR_INVALID_TYPE;
+    }
+
+    frame->pc++;
+
+    return SR_OK;
+}
 static StepResult step(CallStack* call_stack, const Config* cfg)
 {
     Frame* frame = call_stack_peek(call_stack);
@@ -734,6 +906,26 @@ static StepResult step(CallStack* call_stack, const Config* cfg)
         result = handle_goto(frame, &instruction->data.go2);
         break;
 
+    case OP_NEW_ARRAY:
+        result = handle_new_array(frame, &instruction->data.new_array);
+        break;
+
+    case OP_ARRAY_LENGTH:
+        result = handle_array_length(frame, &instruction->data.array_length);
+        break;
+
+    case OP_ARRAY_STORE:
+        result = handle_array_store(frame, &instruction->data.array_store);
+        break;
+
+    case OP_ARRAY_LOAD:
+        result = handle_array_load(frame, &instruction->data.array_load);
+        break;
+
+    case OP_INCR:
+        result = handle_incr(frame, &instruction->data.incr);
+        break;
+
     case OP_COUNT:
         break;
 
@@ -790,6 +982,12 @@ RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
             case SR_ASSERTION_ERR:
                 result = RT_ASSERTION_ERR;
                 break;
+            case SR_OUT_OF_BOUNDS:
+                result = RT_OUT_OF_BOUNDS;
+                break;
+            case SR_NULL_POINTER:
+                result = RT_NULL_POINTER;
+                break;
             default:
                 result = RT_UNKNOWN_ERROR;
                 break;
@@ -816,67 +1014,3 @@ cleanup:
     // todo free memory
     return result;
 }
-
-// RuntimeResult interpreter_run(const Method* m, const char* parameters)
-// {
-//     RuntimeResult result = RT_OK;
-//
-//     if (!instruction_table || !m || !parameters) {
-//         result = RT_NULL_PARAMETERS;
-//         goto cleanup;
-//     }
-//
-//     char* params = strdup(parameters);
-//
-//     Frame* frame = build_frame(arguments, params);
-//     if (!frame) {
-//         result = RT_CANT_BUILD_FRAME;
-//         goto cleanup;
-//     }
-//
-//     CallStack* call_stack = malloc(sizeof(CallStack));
-//     call_stack_push(call_stack, frame);
-//
-//     int i = 0;
-//     for (; i < ITERATION; i++) {
-//         if (call_stack->count > 0) {
-//             StepResult step_result = step(call_stack, instruction_table);
-//             switch (step_result) {
-//             case SR_OK:
-//                 continue;
-//             case SR_BO_DIV_DBZ:
-//                 result = RT_DIVIDE_BY_ZERO;
-//                 break;
-//             case SR_ASSERTION_ERR:
-//                 result = RT_ASSERTION_ERR;
-//                 break;
-//             default:
-//                 result = RT_UNKNOWN_ERROR;
-//                 break;
-//             }
-//
-//             LOG_ERROR("%s", step_result_signature[step_result]);
-//
-//             goto cleanup;
-//         } else {
-//             result = RT_OK;
-//             goto cleanup;
-//         }
-//     }
-//
-// cleanup:
-//     // todo: deallocate call_stack, frame, ...
-//
-//     free(arguments);
-//     free(params);
-//
-//     if (result) {
-//         return result;
-//     }
-//
-//     if (i == ITERATION) {
-//         return RT_INFINITE;
-//     }
-//
-//     return RT_OK;
-// }

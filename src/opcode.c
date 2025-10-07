@@ -1,4 +1,4 @@
-#include "decompiled_parser.h"
+#include "opcode.h"
 #include "log.h"
 
 #include "cJSON/cJSON.h"
@@ -40,6 +40,7 @@ static const char* opcode_signature[] = {
     [OP_ARRAY_LOAD] = "array_load",
     [OP_ARRAY_STORE] = "array_store",
     [OP_ARRAY_LENGTH] = "arraylength",
+    [OP_INCR] = "incr",
 };
 
 static const char* load_type_signature[] = {
@@ -51,7 +52,8 @@ static const char* load_type_signature[] = {
 static const char* push_type_signature[] = {
     [TK_INT] = "integer",
     [TK_BOOLEAN] = "boolean",
-    [TK_ARRAY] = "string",
+    [TK_VOID] = "null",
+    //[TK_ARRAY] = "string",
 };
 
 static const char* binary_type_signature[] = {
@@ -60,10 +62,13 @@ static const char* binary_type_signature[] = {
 
 static const char* store_type_signature[] = {
     [TK_INT] = "int",
+    [TK_CHAR] = "char",
+    [TK_REFERENCE] = "ref",
 };
 
 static const char* array_type_signature[] = {
     [TK_INT] = "int",
+    [TK_CHAR] = "char",
 };
 
 static const char* return_type_signature[] = {
@@ -169,33 +174,40 @@ static InstructionParseResult parse_load(LoadOP* load, cJSON* instruction_json)
 
 static InstructionParseResult parse_push(PushOP* push, cJSON* instruction_json)
 {
-    cJSON* value = cJSON_GetObjectItem(instruction_json, "value");
-    if (!value) {
+    cJSON* value_obj = cJSON_GetObjectItem(instruction_json, "value");
+    if (!value_obj) {
         LOG_ERROR("Load instruction missing or invalid 'value' field");
         return IPR_MALFORMED;
     }
 
-    cJSON* type_obj = cJSON_GetObjectItem(value, "type");
-    if (!type_obj || !cJSON_IsString(type_obj)) {
-        LOG_ERROR("Push instruction missing or invalid 'type' field");
+    cJSON* type_obj = cJSON_GetObjectItem(value_obj, "type");
+    char* type;
+    if (!type_obj) {
+        type = "null";
+    } else if (cJSON_IsString(type_obj)) {
+        type = cJSON_GetStringValue(type_obj);
+    } else {
+        LOG_ERROR("Push instruction missing or invalid 'type' field: %s", cJSON_Print(type_obj));
         return IPR_MALFORMED;
     }
-    char* type = cJSON_GetStringValue(type_obj);
-
-    cJSON* inside_TYPE_obj = cJSON_GetObjectItem(value, "value");
-    if (!inside_TYPE_obj) {
-        LOG_ERROR("Push instruction missing or invalid inside value, 'value' field");
-        return IPR_MALFORMED;
-    }
-    char* inside_value = cJSON_GetStringValue(inside_TYPE_obj);
 
     if (strcmp(type, push_type_signature[TK_INT]) == 0) {
+        cJSON* inside_value_obj = cJSON_GetObjectItem(value_obj, "value");
+        if (!inside_value_obj || !cJSON_IsNumber(inside_value_obj)) {
+            LOG_ERROR("Push instruction missing or invalid inside value, 'value' field");
+            return IPR_MALFORMED;
+        }
+        char* inside_value = cJSON_GetStringValue(inside_value_obj);
+
         push->value.type = TYPE_INT;
-        if (!cJSON_IsNumber(inside_TYPE_obj)) {
+        if (!cJSON_IsNumber(inside_value_obj)) {
             LOG_ERROR("Push instruction invalid int number inside value, 'value' field");
             return IPR_MALFORMED;
         }
-        push->value.data.int_value = cJSON_GetNumberValue(inside_TYPE_obj);
+        push->value.data.int_value = cJSON_GetNumberValue(inside_value_obj);
+    } else if (strcmp(type, push_type_signature[TK_VOID]) == 0) {
+        push->value.type = TYPE_REFERENCE;
+        push->value.data.ref_value = 0;
     } else {
         LOG_ERROR("Unknown type in push instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -440,6 +452,10 @@ static InstructionParseResult parse_store(StoreOP* store, cJSON* instruction_jso
 
     if (strcmp(type, store_type_signature[TK_INT]) == 0) {
         store->type = TYPE_INT;
+    } else if (strcmp(type, store_type_signature[TK_CHAR]) == 0) {
+        store->type = TYPE_CHAR;
+    } else if (strcmp(type, store_type_signature[TK_REFERENCE]) == 0) {
+        store->type = TYPE_REFERENCE;
     } else {
         LOG_ERROR("Unknown type in store instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -497,8 +513,13 @@ static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* inst
     }
     char* type = cJSON_GetStringValue(type_obj);
 
+    // LOG_DEBUG("CIAO: %d, %s, %s", strcmp(type, array_type_signature[TK_CHAR]) == 0, type, array_type_signature[TK_CHAR]);
+
+    // todo: handle multi dimensional array
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         new_array->type = TYPE_INT;
+    } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
+        new_array->type = TYPE_CHAR;
     } else {
         LOG_ERROR("Unknown type in newarray instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -518,8 +539,10 @@ static InstructionParseResult parse_array_load(ArrayLoadOP* load, cJSON* instruc
 
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         load->type = TYPE_INT;
+    } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
+        load->type = TYPE_CHAR;
     } else {
-        LOG_ERROR("Unknown type in newarray instruction: %s", type);
+        LOG_ERROR("Unknown type in array load instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -537,8 +560,10 @@ static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* inst
 
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
         store->type = TYPE_INT;
+    } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
+        store->type = TYPE_CHAR;
     } else {
-        LOG_ERROR("Unknown type in newarray instruction: %s", type);
+        LOG_ERROR("Unknown type in array store instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -547,6 +572,25 @@ static InstructionParseResult parse_array_store(ArrayStoreOP* store, cJSON* inst
 
 static InstructionParseResult parse_array_length(ArrayLengthOP* array_length, cJSON* instruction_json)
 {
+    return IPR_OK;
+}
+
+static InstructionParseResult parse_incr(IncrOP* incr, cJSON* instruction_json)
+{
+    cJSON* index_obj = cJSON_GetObjectItem(instruction_json, "index");
+    if (!index_obj || !cJSON_IsNumber(index_obj)) {
+        LOG_ERROR("Parse instruction missing or invalid 'index' field");
+        return IPR_MALFORMED;
+    }
+    incr->index = cJSON_GetNumberValue(index_obj);
+
+    cJSON* amount_obj = cJSON_GetObjectItem(instruction_json, "amount");
+    if (!amount_obj || !cJSON_IsNumber(amount_obj)) {
+        LOG_ERROR("Parse instruction missing or invalid 'amount' field");
+        return IPR_MALFORMED;
+    }
+    incr->amount = cJSON_GetNumberValue(amount_obj);
+
     return IPR_OK;
 }
 
@@ -663,6 +707,12 @@ parse_instruction(cJSON* instruction_json)
 
     case OP_ARRAY_LENGTH:
         if (parse_array_length(&instruction->data.array_length, instruction_json)) {
+            goto cleanup;
+        }
+        break;
+
+    case OP_INCR:
+        if (parse_incr(&instruction->data.incr, instruction_json)) {
             goto cleanup;
         }
         break;

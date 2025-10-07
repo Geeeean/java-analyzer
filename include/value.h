@@ -16,7 +16,7 @@ typedef struct {
         int int_value;
         bool bool_value;
         char char_value;
-        struct ObjectValue* ref;
+        int ref_value;
     } data;
 } Value;
 
@@ -25,7 +25,7 @@ typedef struct {
     union {
         struct {
             int elements_count;
-            struct Value* elements;
+            Value* elements;
         } array;
 
         // struct {

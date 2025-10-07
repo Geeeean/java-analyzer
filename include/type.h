@@ -19,6 +19,7 @@ struct Type {
     union {
         struct {
             struct Type* element_type;
+            int array_len;
         } array;
 
         // struct {

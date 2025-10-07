@@ -30,6 +30,7 @@ typedef enum {
     OP_ARRAY_LOAD,
     OP_ARRAY_STORE,
     OP_ARRAY_LENGTH,
+    OP_INCR,
     OP_COUNT
 } Opcode;
 
@@ -124,6 +125,11 @@ typedef struct {
 } ArrayLengthOP;
 
 typedef struct {
+    int index;
+    int amount;
+} IncrOP;
+
+typedef struct {
     Opcode opcode;
     int seq;
     union {
@@ -143,6 +149,7 @@ typedef struct {
         ArrayStoreOP array_store;
         ArrayLoadOP array_load;
         ArrayLengthOP array_length;
+        IncrOP incr;
     } data;
 } Instruction;
 

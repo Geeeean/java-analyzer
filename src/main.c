@@ -1,6 +1,6 @@
 #include "cli.h"
 #include "config.h"
-#include "decompiled_parser.h"
+#include "opcode.h"
 #include "info.h"
 #include "interpreter.h"
 #include "log.h"
@@ -84,6 +84,12 @@ int main(int argc, char** argv)
             break;
         case RT_INFINITE:
             print_interpreter_outcome(OC_INFINITE_LOOP);
+            break;
+        case RT_OUT_OF_BOUNDS:
+            print_interpreter_outcome(OC_OUT_OF_BOUNDS);
+            break;
+        case RT_NULL_POINTER:
+            print_interpreter_outcome(OC_NULL_POINTER);
             break;
         case RT_CANT_BUILD_FRAME:
         case RT_NULL_PARAMETERS:
