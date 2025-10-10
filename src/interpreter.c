@@ -10,7 +10,7 @@
 
 #include <stdlib.h>
 
-#define ITERATION 1000
+#define ITERATION 1000000
 
 // todo: use hashmap
 typedef struct ITItem ITItem;
@@ -628,24 +628,35 @@ static char* get_method_signature(InvokeOP* invoke)
         args_len++;
     }
 
-    char return_type;
+    char return_type[3];
     switch (invoke->return_type->kind) {
     case TK_INT:
-        return_type = 'I';
+        strcpy(return_type, "I");
         break;
     case TK_BOOLEAN:
-        return_type = 'Z';
+        strcpy(return_type, "Z");
         break;
     case TK_VOID:
-        return_type = 'V';
+        strcpy(return_type, "V");
+        break;
+    case TK_ARRAY:
+        if (invoke->return_type == make_array_type(TYPE_INT)) {
+            strcpy(return_type, "[I");
+        } else if (invoke->return_type == make_array_type(TYPE_BOOLEAN)) {
+            strcpy(return_type, "[Z");
+        } else {
+            LOG_ERROR("Unable to handle array return type in get_method_signature");
+            return NULL;
+        }
+
         break;
     default:
-        LOG_ERROR("Unable to handle type: %d, in get_method_signature", invoke->return_type->kind);
+        LOG_ERROR("Unable to handle return type: %d, in get_method_signature", invoke->return_type->kind);
         return NULL;
     }
 
     char* res;
-    asprintf(&res, "%s.%s:(%s)%c", ref_name, invoke->method_name, args, return_type);
+    asprintf(&res, "%s.%s:(%s)%s", ref_name, invoke->method_name, args, return_type);
 
     free(args);
     free(ref_name);
@@ -689,7 +700,7 @@ static StepResult handle_array_length(Frame* frame, ArrayLengthOP* array_length)
 
     ObjectValue* array = heap_get(value.data.ref_value);
     if (!array) {
-        return SR_NULL_POINTER; 
+        return SR_NULL_POINTER;
     }
 
     if (array->type->kind != TK_ARRAY) {

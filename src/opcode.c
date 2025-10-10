@@ -53,7 +53,6 @@ static const char* push_type_signature[] = {
     [TK_INT] = "integer",
     [TK_BOOLEAN] = "boolean",
     [TK_VOID] = "null",
-    //[TK_ARRAY] = "string",
 };
 
 static const char* binary_type_signature[] = {
@@ -74,11 +73,13 @@ static const char* array_type_signature[] = {
 static const char* return_type_signature[] = {
     [TK_INT] = "int",
     [TK_VOID] = "null",
+    [TK_REFERENCE] = "ref",
 };
 
 static const char* invoke_args_type_signature[] = {
     [TK_INT] = "int",
     [TK_BOOLEAN] = "boolean",
+    [TK_ARRAY] = "array",
 };
 
 static const char* binary_operator_signature[]
@@ -274,8 +275,10 @@ static InstructionParseResult parse_return(ReturnOP* ret, cJSON* instruction_jso
         ret->type = TYPE_INT;
     } else if (strcmp(return_type_signature[TK_VOID], type) == 0) {
         ret->type = TYPE_VOID;
+    } else if (strcmp(return_type_signature[TK_REFERENCE], type) == 0) {
+        ret->type = TYPE_REFERENCE;
     } else {
-        LOG_ERROR("Binary instruction unknown type: %s", type);
+        LOG_ERROR("Return instruction unknown type: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
     }
 
@@ -406,9 +409,27 @@ static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_
             return IPR_MALFORMED;
         }
     } else if (cJSON_IsObject(returns_obj)) {
-        // todo
-        LOG_ERROR("TODO in parse invoke: %s", cJSON_Print(returns_obj));
-        return IPR_MALFORMED;
+        cJSON* return_kind = cJSON_GetObjectItem(returns_obj, "kind");
+        cJSON* return_type = cJSON_GetObjectItem(returns_obj, "type");
+        if (!return_kind || !return_type || !cJSON_IsString(return_kind) || !cJSON_IsString(return_type)) {
+            LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
+            return IPR_MALFORMED;
+        }
+
+        char* kind = cJSON_GetStringValue(return_kind);
+        char* type = cJSON_GetStringValue(return_type);
+
+        if (strcmp(kind, invoke_args_type_signature[TK_ARRAY]) == 0) {
+            if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
+                invoke->return_type = make_array_type(TYPE_INT);
+            } else {
+                LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
+                return IPR_MALFORMED;
+            }
+        } else {
+            LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
+            return IPR_MALFORMED;
+        }
     } else {
         LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
         return IPR_MALFORMED;
@@ -512,8 +533,6 @@ static InstructionParseResult parse_new_array(NewArrayOP* new_array, cJSON* inst
         return IPR_MALFORMED;
     }
     char* type = cJSON_GetStringValue(type_obj);
-
-    // LOG_DEBUG("CIAO: %d, %s, %s", strcmp(type, array_type_signature[TK_CHAR]) == 0, type, array_type_signature[TK_CHAR]);
 
     // todo: handle multi dimensional array
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
