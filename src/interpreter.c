@@ -1,4 +1,4 @@
-// todo handle pop error
+// todo handle pop error, use vector
 #include "interpreter.h"
 #include "cli.h"
 #include "heap.h"
@@ -10,7 +10,7 @@
 
 #include <stdlib.h>
 
-#define ITERATION 1000000
+#define ITERATION 100000
 
 // todo: use hashmap
 typedef struct ITItem ITItem;
@@ -143,21 +143,6 @@ static Frame* call_stack_peek(CallStack* call_stack)
     return call_stack->top->frame;
 }
 
-static TypeKind get_tk(char c)
-{
-    if (c == args_type_signature[TK_INT]) {
-        return TK_INT;
-    } else if (c == args_type_signature[TK_CHAR]) {
-        return TK_CHAR;
-    } else if (c == args_type_signature[TK_ARRAY]) {
-        return TK_ARRAY;
-    } else if (c == args_type_signature[TK_BOOLEAN]) {
-        return TK_BOOLEAN;
-    }
-
-    return -1;
-}
-
 static void parameter_fix(char* parameters)
 {
     bool open = false;
@@ -182,17 +167,16 @@ static void parameter_fix(char* parameters)
 }
 
 // todo: handle any dimensional array
-static int parse_array(char** arguments, char* token, ObjectValue* array)
+static int parse_array(Type* type, char* token, ObjectValue* array)
 {
     char* values = strtok(token, ":_;[]");
     int capacity = 10;
     int* len = &array->array.elements_count;
     array->array.elements = malloc(sizeof(Value) * capacity);
 
-    TypeKind tk = get_tk(**arguments);
-    if (tk == TK_INT) {
-        array->type = make_array_type(TYPE_INT);
+    array->type = type;
 
+    if (type == make_array_type(TYPE_INT)) {
         while ((values = strtok(NULL, ";[]_")) != NULL) {
             if (*len >= capacity) {
                 capacity *= 2;
@@ -206,16 +190,12 @@ static int parse_array(char** arguments, char* token, ObjectValue* array)
         }
 
         array->array.elements = realloc(array->array.elements, sizeof(Value) * (*len));
-    } else if (tk == TK_CHAR) {
-        array->type = make_array_type(TYPE_CHAR);
-
+    } else if (type == make_array_type(TYPE_CHAR)) {
         while ((values = strtok(NULL, ";[]_'\"")) != NULL) {
             if (*len >= capacity) {
                 capacity *= 2;
                 array->array.elements = realloc(array->array.elements, sizeof(Value) * capacity);
             }
-
-            // LOG_DEBUG("PARSING VALUE: %s", values);
 
             Value value = { .type = TYPE_CHAR, .data.char_value = values[0] };
             array->array.elements[(*len)] = value;
@@ -238,18 +218,19 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
         return 1;
     }
 
-    TypeKind tk = get_tk(**arguments);
-    if (tk < 0) {
+    Type* type = get_type(arguments);
+    // TypeKind tk = get_tk(**arguments);
+    if (!type) {
         LOG_ERROR("Unknown arg type in method signature: %c", **arguments);
         return 2;
     }
 
     (*arguments)++;
 
-    if (tk == TK_ARRAY) {
+    if (type_is_array(type)) {
         ObjectValue* array = malloc(sizeof(ObjectValue));
 
-        if (parse_array(arguments, token, array)) {
+        if (parse_array(type, token, array)) {
             LOG_ERROR("While handling parse array");
             return 10;
         }
@@ -260,11 +241,11 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
             LOG_ERROR("While inserting array into heap");
             return 11;
         }
-    } else if (tk == TK_INT) {
-        value->type = TYPE_INT;
+    } else if (type == TYPE_INT) {
+        value->type = type;
         value->data.int_value = (int)strtol(token, NULL, 10);
-    } else if (tk == TK_BOOLEAN) {
-        value->type = TYPE_BOOLEAN;
+    } else if (type == TYPE_BOOLEAN) {
+        value->type = type;
 
         if (strcmp(token, "false") == 0) {
             value->data.bool_value = false;
@@ -294,6 +275,7 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
     char* strtok_state = NULL;
     char* token = strtok_r(parameters, "(), ", &strtok_state);
     while (token != NULL) {
+
         if (*locals_count >= capacity) {
             capacity *= 2;
             locals = realloc(locals, capacity * sizeof(Value));
@@ -849,6 +831,7 @@ static StepResult handle_incr(Frame* frame, IncrOP* incr)
 
     return SR_OK;
 }
+
 static StepResult step(CallStack* call_stack, const Config* cfg)
 {
     Frame* frame = call_stack_peek(call_stack);
@@ -955,9 +938,10 @@ CallStack* interpreter_setup(const Method* m, const Options* opts, const Config*
     }
 
     char* parameters = strdup(opts->parameters);
-
     LOG_DEBUG("BUILDING FRAME...");
-    int locals_count;
+    LOG_DEBUG("PARAMETERS: %s", parameters);
+
+    int locals_count = 0;
     Value* locals = build_locals_from_str(m, parameters, &locals_count);
     Frame* frame = build_frame(m, cfg, locals, locals_count);
     LOG_DEBUG("LOCALS COUNT: %d", locals_count);
@@ -977,7 +961,8 @@ RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
     RuntimeResult result = RT_OK;
 
     if (!call_stack) {
-        LOG_ERROR("CIAO");
+        LOG_ERROR("CallStack is null");
+        goto cleanup;
     }
 
     int i = 0;
@@ -1004,7 +989,7 @@ RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
                 break;
             }
 
-            LOG_ERROR("%s", step_result_signature[step_result]);
+            LOG_DEBUG("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

@@ -1,5 +1,6 @@
 #include "method.h"
 #include "log.h"
+#include "type.h"
 #include "utils.h"
 
 #include <stdio.h>
@@ -41,7 +42,7 @@ static const char* format[] = {
 // all until the last .
 static char* method_parse_class(char** method_id)
 {
-    if (!*method_id) {
+    if (!(*method_id)) {
         return NULL;
     }
 
@@ -117,7 +118,9 @@ Method* method_create(char* method_id)
 
     m->method_id = strdup(method_id);
 
-    if (method_parse(m, method_id)) {
+    int parse = method_parse(m, method_id);
+    if (parse) {
+        LOG_ERROR("While parsing %s: %d", method_id, parse);
         method_delete(m);
         return NULL;
     }
@@ -210,6 +213,35 @@ char* method_get_name(const Method* m)
 char* method_get_arguments(const Method* m)
 {
     return m->arguments;
+}
+
+Vector* method_get_arguments_as_types(const Method* m)
+{
+    if (!m->arguments) {
+        return NULL;
+    }
+
+    Vector* v = vector_new(sizeof(Type*));
+
+    char* arguments = strdup(m->arguments);
+    char* arguments_consume = arguments;
+
+    while (*arguments_consume != '\0') {
+        Type* type = get_type(&arguments_consume);
+        LOG_DEBUG("TYPE");
+
+        if (!type || vector_push(v, &type)) {
+            vector_delete(v);
+            v = NULL;
+        }
+
+        arguments_consume++;
+    }
+
+cleanup:
+    free(arguments);
+
+    return v;
 }
 
 char* method_get_id(const Method* m)

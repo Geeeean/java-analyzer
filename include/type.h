@@ -44,6 +44,11 @@ extern Type type_void;
 #define TYPE_VOID &type_void
 
 Type* make_array_type(Type* element_type);
+bool type_is_array(const Type* type);
+
 Type* make_class_type(const char* name);
+
+Type* get_type(char** t);
+// TypeKind get_tk(char c);
 
 #endif

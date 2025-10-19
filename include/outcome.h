@@ -1,6 +1,7 @@
 #ifndef OUTCOME_H
 #define OUTCOME_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {
@@ -12,7 +13,17 @@ typedef enum {
     OC_INFINITE_LOOP,
 } outcome;
 
-void print_outcome(const outcome oc, const uint8_t percentage);
+typedef struct {
+    int oc_ok;
+    int oc_divide_by_zero;
+    int oc_assertion_error;
+    int oc_out_of_bounds;
+    int oc_null_pointer;
+    int oc_infinite_loop;
+} Outcome;
+
+Outcome new_outcome();
+void print_outcome(Outcome oc);
 void print_interpreter_outcome(const outcome oc);
 
 #endif

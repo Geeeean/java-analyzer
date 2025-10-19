@@ -1,4 +1,5 @@
 #include "type.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +12,64 @@ Type type_char = { .kind = TK_CHAR };
 Type type_void = { .kind = TK_VOID };
 
 Type* type_table = NULL;
+
+static char args_type_signature[] = {
+    [TK_INT] = 'I',
+    [TK_CHAR] = 'C',
+    [TK_ARRAY] = '[',
+    [TK_BOOLEAN] = 'Z',
+};
+
+TypeKind get_tk(char c)
+{
+    if (c == args_type_signature[TK_INT]) {
+        return TK_INT;
+    } else if (c == args_type_signature[TK_CHAR]) {
+        return TK_CHAR;
+    } else if (c == args_type_signature[TK_ARRAY]) {
+        return TK_ARRAY;
+    } else if (c == args_type_signature[TK_BOOLEAN]) {
+        return TK_BOOLEAN;
+    }
+
+    return -1;
+}
+
+Type* get_type(char** t)
+{
+    Type* type = NULL;
+
+    TypeKind tk = get_tk(**t);
+    switch (tk) {
+    case TK_INT:
+        type = TYPE_INT;
+        break;
+    case TK_BOOLEAN:
+        type = TYPE_BOOLEAN;
+        break;
+    case TK_REFERENCE:
+        type = TYPE_REFERENCE;
+        break;
+    case TK_CLASS:
+        LOG_ERROR("TODO: get type class in type.c: 'get_type'");
+        break;
+    case TK_CHAR:
+        type = TYPE_CHAR;
+        break;
+    case TK_ARRAY:
+        (*t)++;
+        type = make_array_type(get_type(t));
+        break;
+    case TK_VOID:
+        type = TYPE_VOID;
+        break;
+    default:
+        LOG_ERROR("Unknown type kind while getting type");
+        break;
+    }
+
+    return type;
+}
 
 Type* make_array_type(Type* element_type)
 {
@@ -26,6 +85,11 @@ Type* make_array_type(Type* element_type)
     type_table = t;
 
     return t;
+}
+
+bool type_is_array(const Type* type)
+{
+    return type->kind == TK_ARRAY;
 }
 
 // Type* make_class_type(const char* name)

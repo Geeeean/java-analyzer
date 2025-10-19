@@ -1,18 +1,21 @@
 #include "cli.h"
 #include "config.h"
-#include "opcode.h"
+#include "fuzzer.h"
 #include "info.h"
 #include "interpreter.h"
 #include "log.h"
 #include "method.h"
 #include "outcome.h"
 #include "syntax.h"
+#include "vector.h"
 
 #include "tree_sitter/api.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 int main(int argc, char** argv)
 {
@@ -20,7 +23,6 @@ int main(int argc, char** argv)
     Config* cfg = NULL;
     Method* m = NULL;
     TSTree* tree = NULL;
-    InstructionTable* instruction_table = NULL;
 
     /*** OPTIONS ***/
     Options opts;
@@ -67,11 +69,10 @@ int main(int argc, char** argv)
     }
 
     /*** INTERPRETER ***/
-    CallStack* call_stack = interpreter_setup(m, &opts, cfg);
-    LOG_DEBUG("CALL STACK CREATED: %p", call_stack);
-
-    RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
     if (opts.interpreter_only) {
+        CallStack* call_stack = interpreter_setup(m, &opts, cfg);
+        RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
+
         switch (interpreter_result) {
         case RT_OK:
             print_interpreter_outcome(OC_OK);
@@ -97,10 +98,52 @@ int main(int argc, char** argv)
         default:
             LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
         }
+    } else {
+        int run = 1000;
+        Outcome outcome = new_outcome();
+
+        for (int i = 0; i < run; i++) {
+            if (!opts.interpreter_only) {
+                Vector* v = method_get_arguments_as_types(m);
+                opts.parameters = fuzzer_random_parameters(v);
+                // LOG_ERROR("%s", opts.parameters);
+                vector_delete(v);
+            }
+
+            CallStack* call_stack = interpreter_setup(m, &opts, cfg);
+            RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
+
+            switch (interpreter_result) {
+            case RT_OK:
+                outcome.oc_ok = 100;
+                break;
+            case RT_DIVIDE_BY_ZERO:
+                outcome.oc_divide_by_zero = 100;
+                break;
+            case RT_ASSERTION_ERR:
+                outcome.oc_assertion_error = 100;
+                break;
+            case RT_INFINITE:
+                outcome.oc_infinite_loop = 75;
+                break;
+            case RT_OUT_OF_BOUNDS:
+                outcome.oc_out_of_bounds = 100;
+                break;
+            case RT_NULL_POINTER:
+                outcome.oc_null_pointer = 100;
+                break;
+            case RT_CANT_BUILD_FRAME:
+            case RT_NULL_PARAMETERS:
+            case RT_UNKNOWN_ERROR:
+            default:
+                LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+            }
+        }
+
+        print_outcome(outcome);
     }
 
 cleanup:
-    instruction_table_delete(instruction_table);
     ts_tree_delete(tree);
     method_delete(m);
     config_delete(cfg);

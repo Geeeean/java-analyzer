@@ -6,13 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-char args_type_signature[] = {
-    [TK_INT] = 'I',
-    [TK_CHAR] = 'C',
-    [TK_ARRAY] = '[',
-    [TK_BOOLEAN] = 'Z',
-};
-
 typedef enum {
     IPR_OK,
     IPR_MALFORMED,
@@ -838,7 +831,6 @@ void instruction_table_delete(InstructionTable* instruction_table)
         for (int i = 0; i < INSTRUCTION_TABLE_SIZE; i++) {
             free(instruction_table->instructions[i]);
         }
-        // free(instruction_table->offsetmap);
     }
 
     free(instruction_table);

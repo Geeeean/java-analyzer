@@ -1,5 +1,6 @@
 #include "info.h"
 
+#include <log.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,7 +20,7 @@ static void info_print_aux(char* name, char* version, char* group, bool for_scie
     printf("%s\n", tags);
 
     if (for_science) {
-        // TODO
+        LOG_TODO("for science in info print (info.c)");
     } else {
         printf("no\n");
     }
