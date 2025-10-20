@@ -3,7 +3,6 @@
 
 #include "cli.h"
 #include "method.h"
-#include "opcode.h"
 
 typedef enum {
     RT_OK,
@@ -17,10 +16,9 @@ typedef enum {
     RT_UNKNOWN_ERROR,
 } RuntimeResult;
 
-typedef struct CallStack CallStack;
+typedef struct VMContext VMContext;
 
-// RuntimeResult interpreter_run(InstructionTable* instruction_table, const Method* m, const char* parameters);
-CallStack* interpreter_setup(const Method* m, const Options* opts, const Config* cfg);
-RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg);
+VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg);
+RuntimeResult interpreter_run(VMContext* vm_context);
 
 #endif

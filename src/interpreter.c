@@ -3,6 +3,7 @@
 #include "cli.h"
 #include "heap.h"
 #include "log.h"
+#include "opcode.h"
 #include "stack.h"
 #include "string.h"
 #include "utils.h"
@@ -85,19 +86,23 @@ typedef struct {
     int pc;
 } Frame;
 
+typedef StepResult (*OpHandler)(VMContext*, Instruction*);
+
 typedef struct CallStackNode {
     Frame* frame;
     struct CallStackNode* next;
 } CallStackNode;
 
-struct CallStack {
+typedef struct {
     CallStackNode* top;
     int count;
-};
+} CallStack;
 
-typedef struct {
+struct VMContext {
     CallStack* call_stack;
-} Interpreter;
+    const Config* cfg;
+    Frame* frame;
+};
 
 static void call_stack_push(CallStack* call_stack, Frame* frame)
 {
@@ -300,7 +305,7 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
     return locals;
 }
 
-// todo: make it better
+// todo: handle pop error
 static Value* build_locals_from_frame(const Method* m, Frame* frame, int* locals_count)
 {
     char* arguments = strdup(method_get_arguments(m));
@@ -322,7 +327,6 @@ static Value* build_locals_from_frame(const Method* m, Frame* frame, int* locals
 
 static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int locals_count)
 {
-
     Frame* frame = malloc(sizeof(Frame));
     if (!frame) {
         return NULL;
@@ -337,12 +341,14 @@ static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int
     return frame;
 }
 
-static StepResult handle_load(Frame* frame, LoadOP* load)
+static StepResult handle_load(VMContext* vm_context, Instruction* instruction)
 {
+    LoadOP* load = &instruction->data.load;
     if (!load) {
         return SR_NULL_INSTRUCTION;
     }
 
+    Frame* frame = vm_context->frame;
     int index = load->index;
     if (index >= frame->locals_count) {
         return SR_OUT_OF_BOUNDS;
@@ -355,12 +361,14 @@ static StepResult handle_load(Frame* frame, LoadOP* load)
     return SR_OK;
 }
 
-static StepResult handle_push(Frame* frame, PushOP* push)
+static StepResult handle_push(VMContext* vm_context, Instruction* instruction)
 {
+    PushOP* push = &instruction->data.push;
     if (!push) {
         return SR_NULL_INSTRUCTION;
     }
 
+    Frame* frame = vm_context->frame;
     Value value = push->value;
     stack_push(frame->stack, value);
     frame->pc++;
@@ -368,8 +376,14 @@ static StepResult handle_push(Frame* frame, PushOP* push)
     return SR_OK;
 }
 
-static StepResult handle_binary(Frame* frame, BinaryOP* binary)
+static StepResult handle_binary(VMContext* vm_context, Instruction* instruction)
 {
+    BinaryOP* binary = &instruction->data.binary;
+    if (!binary) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value value1, value2, result;
     if (stack_pop(frame->stack, &value2)) {
         return SR_EMPTY_STACK;
@@ -407,7 +421,6 @@ static StepResult handle_binary(Frame* frame, BinaryOP* binary)
         if (value_sub(&value1, &value2, &result)) {
             return SR_BO_SUB_GEN_ERR;
         }
-
         break;
 
     case BO_REM:
@@ -424,12 +437,14 @@ static StepResult handle_binary(Frame* frame, BinaryOP* binary)
     return SR_OK;
 }
 
-static StepResult handle_get(Frame* frame, GetOP* get)
+static StepResult handle_get(VMContext* vm_context, Instruction* instruction)
 {
+    GetOP* get = &instruction->data.get;
     if (!get) {
         return SR_NULL_INSTRUCTION;
     }
 
+    Frame* frame = vm_context->frame;
     Value value;
     value.type = TYPE_BOOLEAN;
     value.data.bool_value = false;
@@ -440,9 +455,11 @@ static StepResult handle_get(Frame* frame, GetOP* get)
     return SR_OK;
 }
 
-// todo push into the stack of the next frame
-static StepResult handle_return(Frame* frame, CallStack* call_stack)
+static StepResult handle_return(VMContext* vm_context, Instruction* instruction)
 {
+    Frame* frame = vm_context->frame;
+    CallStack* call_stack = vm_context->call_stack;
+
     Value value;
     stack_pop(frame->stack, &value);
 
@@ -450,6 +467,10 @@ static StepResult handle_return(Frame* frame, CallStack* call_stack)
 
     if (call_stack->count > 0) {
         Frame* frame = call_stack_peek(call_stack);
+        if (!frame) {
+            // todo..
+        }
+
         stack_push(frame->stack, value);
     }
 
@@ -478,8 +499,14 @@ static bool handle_ift_aux(IfCondition condition, int value1, int value2)
     return false;
 }
 
-static StepResult handle_ifz(Frame* frame, IfOP* ift)
+static StepResult handle_ifz(VMContext* vm_context, Instruction* instruction)
 {
+    IfOP* ift = &instruction->data.ift;
+    if (!ift) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value value;
     stack_pop(frame->stack, &value);
 
@@ -504,8 +531,14 @@ static StepResult handle_ifz(Frame* frame, IfOP* ift)
     return SR_OK;
 }
 
-static StepResult handle_ift(Frame* frame, IfOP* ift)
+static StepResult handle_ift(VMContext* vm_context, Instruction* instruction)
 {
+    IfOP* ift = &instruction->data.ift;
+    if (!ift) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value value1, value2;
     stack_pop(frame->stack, &value2);
     stack_pop(frame->stack, &value1);
@@ -542,8 +575,14 @@ static StepResult handle_ift(Frame* frame, IfOP* ift)
     return SR_OK;
 }
 
-static StepResult handle_store(Frame* frame, StoreOP* store)
+static StepResult handle_store(VMContext* vm_context, Instruction* instruction)
 {
+    StoreOP* store = &instruction->data.store;
+    if (!store) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value value1;
     stack_pop(frame->stack, &value1);
 
@@ -559,18 +598,26 @@ static StepResult handle_store(Frame* frame, StoreOP* store)
     return SR_OK;
 }
 
-static StepResult handle_goto(Frame* frame, GotoOP* go2)
+static StepResult handle_goto(VMContext* vm_context, Instruction* instruction)
 {
+    GotoOP* go2 = &instruction->data.go2;
+    if (!go2) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     frame->pc = go2->target;
     return SR_OK;
 }
 
-static StepResult handle_dup(Frame* frame, DupOP* dup)
+static StepResult handle_dup(VMContext* vm_context, Instruction* instruction)
 {
+    Frame* frame = vm_context->frame;
     Value* value = stack_peek(frame->stack);
-
-    // todo: handle this case
-    if (value) {
+    if (!value) {
+        // todo: handle this case
+        // return SR_EMPTY_STACK;
+    } else {
         stack_push(frame->stack, *value);
     }
 
@@ -646,8 +693,17 @@ static char* get_method_signature(InvokeOP* invoke)
     return res;
 }
 
-static StepResult handle_invoke(CallStack* call_stack, Frame* frame, const Config* cfg, InvokeOP* invoke)
+static StepResult handle_invoke(VMContext* vm_context, Instruction* instruction)
 {
+    InvokeOP* invoke = &instruction->data.invoke;
+    if (!invoke) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
+    CallStack* call_stack = vm_context->call_stack;
+    const Config* cfg = vm_context->cfg;
+
     char* method_id = get_method_signature(invoke);
     Method* m = method_create(method_id);
     char* root = strtok(method_id, ".");
@@ -669,8 +725,14 @@ static StepResult handle_invoke(CallStack* call_stack, Frame* frame, const Confi
 }
 
 // todo: handle multi dimensional arrays
-static StepResult handle_array_length(Frame* frame, ArrayLengthOP* array_length)
+static StepResult handle_array_length(VMContext* vm_context, Instruction* instruction)
 {
+    ArrayLengthOP* array_length = &instruction->data.array_length;
+    if (!array_length) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value value;
     if (stack_pop(frame->stack, &value)) {
         return SR_EMPTY_STACK;
@@ -698,8 +760,14 @@ static StepResult handle_array_length(Frame* frame, ArrayLengthOP* array_length)
     return SR_OK;
 }
 
-static StepResult handle_new_array(Frame* frame, NewArrayOP* new_array)
+static StepResult handle_new_array(VMContext* vm_context, Instruction* instruction)
 {
+    NewArrayOP* new_array = &instruction->data.new_array;
+    if (!new_array) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     Value size;
     if (stack_pop(frame->stack, &size)) {
         return SR_EMPTY_STACK;
@@ -731,8 +799,15 @@ static StepResult handle_new_array(Frame* frame, NewArrayOP* new_array)
     return SR_OK;
 }
 
-static StepResult handle_array_store(Frame* frame, ArrayStoreOP* array_store)
+static StepResult handle_array_store(VMContext* vm_context, Instruction* instruction)
 {
+    ArrayStoreOP* array_store = &instruction->data.array_store;
+    if (!array_store) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
+
     Value index;
     Value value;
     Value ref;
@@ -774,9 +849,14 @@ static StepResult handle_array_store(Frame* frame, ArrayStoreOP* array_store)
     return SR_OK;
 }
 
-static StepResult handle_array_load(Frame* frame, ArrayLoadOP* array_load)
+static StepResult handle_array_load(VMContext* vm_context, Instruction* instruction)
 {
+    ArrayLoadOP* array_load = &instruction->data.array_load;
+    if (!array_load) {
+        return SR_NULL_INSTRUCTION;
+    }
 
+    Frame* frame = vm_context->frame;
     Value index;
     Value ref;
 
@@ -813,8 +893,14 @@ static StepResult handle_array_load(Frame* frame, ArrayLoadOP* array_load)
     return SR_OK;
 }
 
-static StepResult handle_incr(Frame* frame, IncrOP* incr)
+static StepResult handle_incr(VMContext* vm_context, Instruction* instruction)
 {
+    IncrOP* incr = &instruction->data.incr;
+    if (!incr) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
     if (incr->index < 0 || incr->index >= frame->locals_count) {
         return SR_OUT_OF_BOUNDS;
     }
@@ -832,106 +918,67 @@ static StepResult handle_incr(Frame* frame, IncrOP* incr)
     return SR_OK;
 }
 
-static StepResult step(CallStack* call_stack, const Config* cfg)
+static StepResult handle_skip(VMContext* vm_context, Instruction* instruction)
 {
-    Frame* frame = call_stack_peek(call_stack);
-    if (!frame) {
-        return 1;
-    }
+    Frame* frame = vm_context->frame;
+    frame->pc++;
 
-    InstructionTable* instruction_table = frame->instruction_table;
-
-    Instruction* instruction = instruction_table->instructions[frame->pc];
-
-    LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
-    StepResult result = SR_OK;
-
-    switch (instruction->opcode) {
-    case OP_LOAD:
-        result = handle_load(frame, &instruction->data.load);
-        break;
-
-    case OP_PUSH:
-        result = handle_push(frame, &instruction->data.push);
-        break;
-
-    case OP_BINARY:
-        result = handle_binary(frame, &instruction->data.binary);
-        break;
-
-    case OP_GET:
-        result = handle_get(frame, &instruction->data.get);
-        break;
-
-    case OP_RETURN:
-        result = handle_return(frame, call_stack);
-        break;
-
-    case OP_IF_ZERO:
-        result = handle_ifz(frame, &instruction->data.ift);
-        break;
-
-    case OP_IF:
-        result = handle_ift(frame, &instruction->data.ift);
-        break;
-
-    case OP_DUP:
-        result = handle_dup(frame, &instruction->data.dup);
-        break;
-
-    case OP_INVOKE:
-        result = handle_invoke(call_stack, frame, cfg, &instruction->data.invoke);
-        break;
-
-    case OP_NEW:
-    case OP_CAST:
-        frame->pc++;
-        break;
-
-    case OP_THROW:
-        result = SR_ASSERTION_ERR;
-        break;
-
-    case OP_STORE:
-        result = handle_store(frame, &instruction->data.store);
-        break;
-
-    case OP_GOTO:
-        result = handle_goto(frame, &instruction->data.go2);
-        break;
-
-    case OP_NEW_ARRAY:
-        result = handle_new_array(frame, &instruction->data.new_array);
-        break;
-
-    case OP_ARRAY_LENGTH:
-        result = handle_array_length(frame, &instruction->data.array_length);
-        break;
-
-    case OP_ARRAY_STORE:
-        result = handle_array_store(frame, &instruction->data.array_store);
-        break;
-
-    case OP_ARRAY_LOAD:
-        result = handle_array_load(frame, &instruction->data.array_load);
-        break;
-
-    case OP_INCR:
-        result = handle_incr(frame, &instruction->data.incr);
-        break;
-
-    case OP_COUNT:
-        break;
-
-    default:
-        result = SR_UNKNOWN_OPCODE;
-        break;
-    }
-
-    return result;
+    return SR_OK;
 }
 
-CallStack* interpreter_setup(const Method* m, const Options* opts, const Config* cfg)
+static StepResult handle_throw(VMContext* vm_context, Instruction* instruction)
+{
+    return SR_ASSERTION_ERR;
+}
+
+static Instruction* get_instruction(VMContext* vm_context)
+{
+    Frame* frame = vm_context->frame;
+    InstructionTable* instruction_table = frame->instruction_table;
+    return instruction_table->instructions[frame->pc];
+}
+
+static OpHandler opcode_table[OP_COUNT] = {
+    [OP_LOAD] = handle_load,
+    [OP_PUSH] = handle_push,
+    [OP_BINARY] = handle_binary,
+    [OP_GET] = handle_get,
+    [OP_RETURN] = handle_return,
+    [OP_IF_ZERO] = handle_ifz,
+    [OP_IF] = handle_ift,
+    [OP_DUP] = handle_dup,
+    [OP_INVOKE] = handle_invoke,
+    [OP_NEW] = handle_skip,
+    [OP_CAST] = handle_skip,
+    [OP_THROW] = handle_throw,
+    [OP_STORE] = handle_store,
+    [OP_GOTO] = handle_goto,
+    [OP_NEW_ARRAY] = handle_new_array,
+    [OP_ARRAY_LENGTH] = handle_array_length,
+    [OP_ARRAY_STORE] = handle_array_store,
+    [OP_ARRAY_LOAD] = handle_array_load,
+    [OP_INCR] = handle_incr,
+};
+
+static StepResult step(VMContext* vm_context)
+{
+    vm_context->frame = call_stack_peek(vm_context->call_stack);
+    if (!vm_context->frame) {
+        return SR_EMPTY_STACK;
+    }
+
+    Instruction* instruction = get_instruction(vm_context);
+    LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
+
+    Opcode opcode = instruction->opcode;
+    if (opcode < 0 || opcode >= OP_COUNT) {
+        return SR_UNKNOWN_OPCODE;
+    }
+
+    return opcode_table[instruction->opcode](vm_context, instruction);
+}
+
+VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg)
 {
     if (!m || !opts || !cfg) {
         return NULL;
@@ -953,13 +1000,19 @@ CallStack* interpreter_setup(const Method* m, const Options* opts, const Config*
     CallStack* call_stack = malloc(sizeof(CallStack));
     call_stack_push(call_stack, frame);
 
-    return call_stack;
+    VMContext* vm_context = malloc(sizeof(VMContext));
+    vm_context->call_stack = call_stack;
+    vm_context->frame = frame;
+    vm_context->cfg = cfg;
+
+    return vm_context;
 }
 
-RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
+RuntimeResult interpreter_run(VMContext* vm_context)
 {
     RuntimeResult result = RT_OK;
 
+    CallStack* call_stack = vm_context->call_stack;
     if (!call_stack) {
         LOG_ERROR("CallStack is null");
         goto cleanup;
@@ -968,7 +1021,7 @@ RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
     int i = 0;
     for (; i < ITERATION; i++) {
         if (call_stack->count > 0) {
-            StepResult step_result = step(call_stack, cfg);
+            StepResult step_result = step(vm_context);
             switch (step_result) {
             case SR_OK:
                 continue;
@@ -989,7 +1042,7 @@ RuntimeResult interpreter_run(CallStack* call_stack, const Config* cfg)
                 break;
             }
 
-            LOG_DEBUG("%s", step_result_signature[step_result]);
+            LOG_ERROR("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

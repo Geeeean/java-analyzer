@@ -11,7 +11,6 @@
 
 #include "tree_sitter/api.h"
 
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,8 +69,8 @@ int main(int argc, char** argv)
 
     /*** INTERPRETER ***/
     if (opts.interpreter_only) {
-        CallStack* call_stack = interpreter_setup(m, &opts, cfg);
-        RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
+        VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+        RuntimeResult interpreter_result = interpreter_run(vm_context);
 
         switch (interpreter_result) {
         case RT_OK:
@@ -106,12 +105,11 @@ int main(int argc, char** argv)
             if (!opts.interpreter_only) {
                 Vector* v = method_get_arguments_as_types(m);
                 opts.parameters = fuzzer_random_parameters(v);
-                // LOG_ERROR("%s", opts.parameters);
                 vector_delete(v);
             }
 
-            CallStack* call_stack = interpreter_setup(m, &opts, cfg);
-            RuntimeResult interpreter_result = interpreter_run(call_stack, cfg);
+            VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+            RuntimeResult interpreter_result = interpreter_run(vm_context);
 
             switch (interpreter_result) {
             case RT_OK:
