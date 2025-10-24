@@ -11,6 +11,7 @@
 
 #include "tree_sitter/api.h"
 
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,43 +99,71 @@ int main(int argc, char** argv)
             LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
         }
     } else {
-        int run = 1000;
+        int run = 100;
         Outcome outcome = new_outcome();
 
-        for (int i = 0; i < run; i++) {
-            if (!opts.interpreter_only) {
-                Vector* v = method_get_arguments_as_types(m);
-                opts.parameters = fuzzer_random_parameters(v);
-                vector_delete(v);
+#pragma omp parallel
+        {
+            Outcome private = new_outcome();
+
+#pragma omp for
+            for (int i = 0; i < run; i++) {
+                if (!opts.interpreter_only) {
+                    Vector* v = method_get_arguments_as_types(m);
+                    opts.parameters = fuzzer_random_parameters(v);
+                    vector_delete(v);
+                }
+
+                VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+                RuntimeResult interpreter_result = interpreter_run(vm_context);
+
+                switch (interpreter_result) {
+                case RT_OK:
+                    private.oc_ok = 100;
+                    break;
+                case RT_DIVIDE_BY_ZERO:
+                    private.oc_divide_by_zero = 100;
+                    break;
+                case RT_ASSERTION_ERR:
+                    private.oc_assertion_error = 100;
+                    break;
+                case RT_INFINITE:
+                    private.oc_infinite_loop = 75;
+                    break;
+                case RT_OUT_OF_BOUNDS:
+                    private.oc_out_of_bounds = 100;
+                    break;
+                case RT_NULL_POINTER:
+                    private.oc_null_pointer = 100;
+                    break;
+                case RT_CANT_BUILD_FRAME:
+                case RT_NULL_PARAMETERS:
+                case RT_UNKNOWN_ERROR:
+                default:
+                    LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+                }
             }
 
-            VMContext* vm_context = interpreter_setup(m, &opts, cfg);
-            RuntimeResult interpreter_result = interpreter_run(vm_context);
-
-            switch (interpreter_result) {
-            case RT_OK:
-                outcome.oc_ok = 100;
-                break;
-            case RT_DIVIDE_BY_ZERO:
-                outcome.oc_divide_by_zero = 100;
-                break;
-            case RT_ASSERTION_ERR:
-                outcome.oc_assertion_error = 100;
-                break;
-            case RT_INFINITE:
-                outcome.oc_infinite_loop = 75;
-                break;
-            case RT_OUT_OF_BOUNDS:
-                outcome.oc_out_of_bounds = 100;
-                break;
-            case RT_NULL_POINTER:
-                outcome.oc_null_pointer = 100;
-                break;
-            case RT_CANT_BUILD_FRAME:
-            case RT_NULL_PARAMETERS:
-            case RT_UNKNOWN_ERROR:
-            default:
-                LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+#pragma omp critical
+            {
+                if (private.oc_assertion_error != 50) {
+                    outcome.oc_assertion_error = private.oc_assertion_error;
+                }
+                if (private.oc_divide_by_zero != 50) {
+                    outcome.oc_divide_by_zero = private.oc_divide_by_zero;
+                }
+                if (private.oc_infinite_loop != 50) {
+                    outcome.oc_infinite_loop = private.oc_infinite_loop;
+                }
+                if (private.oc_null_pointer != 50) {
+                    outcome.oc_null_pointer = private.oc_null_pointer;
+                }
+                if (private.oc_ok != 50) {
+                    outcome.oc_ok = private.oc_ok;
+                }
+                if (private.oc_out_of_bounds != 50) {
+                    outcome.oc_out_of_bounds = private.oc_out_of_bounds;
+                }
             }
         }
 
