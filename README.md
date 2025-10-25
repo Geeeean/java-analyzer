@@ -7,7 +7,7 @@ Compatibility with Windows is not guaranteed.
 
 - `gcc` version 14
 
-Ensure your system compiler is set to use GCC 14, or specify it explicitly in your build environment.
+Ensure your system has GCC 14 installed, or specify another explicitly in the Makefile.
 
 ## Installing Dependencies
 
@@ -19,7 +19,7 @@ chmod +x install_deps.sh
 ./install_deps.sh
 ```
 
-This script will download, compile, and place the necessary files in the lib/ directory.
+This script will download, compile, and place the necessary files in the `lib` directory.
 
 # Building the Project
 ```sh
