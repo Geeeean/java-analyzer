@@ -56,7 +56,7 @@ int main(int argc, char** argv)
     /*** SYNTAX TREE ***/
     tree = syntax_tree_build(m, cfg);
     if (!tree) {
-        LOG_ERROR("Error while parsing code");
+        LOG_ERROR("While parsing code");
         result = 4;
         goto cleanup;
     }

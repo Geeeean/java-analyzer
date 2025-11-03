@@ -186,6 +186,7 @@ char* method_read(const Method* m, const Config* cfg, SourceType src)
 
     struct stat buf;
     if (stat(path, &buf) < 0) {
+        LOG_ERROR("Unable to access %s or not found", path);
         goto cleanup;
     }
 

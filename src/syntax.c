@@ -1,4 +1,5 @@
 #include "syntax.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -12,10 +13,12 @@ TSTree* syntax_tree_build(Method* m, Config* cfg)
 
     TSParser* parser = ts_parser_new();
     if (!ts_parser_set_language(parser, tree_sitter_java())) {
+        LOG_ERROR("Unable to set parser language");
         return NULL;
     }
 
     if (!parser) {
+        LOG_ERROR("Parser is not valid");
         return NULL;
     }
 

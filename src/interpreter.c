@@ -1103,7 +1103,7 @@ RuntimeResult interpreter_run(VMContext* vm_context)
                 break;
             }
 
-            LOG_ERROR("%s", step_result_signature[step_result]);
+            // LOG_ERROR("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

@@ -10,7 +10,7 @@
 #endif
 
 #define LOG_TODO(msg, ...) fprintf(stderr, "[TODO] " msg "\n", ##__VA_ARGS__)
-#define LOG_INFO(msg, ...) fprintf(stdout, "[INFO] " msg "\n", ##__VA_ARGS__)
+#define LOG_INFO(msg, ...) fprintf(stderr, "[INFO] " msg "\n", ##__VA_ARGS__)
 #define LOG_ERROR(msg, ...) fprintf(stderr, "[ERROR] " msg "\n", ##__VA_ARGS__)
 
 #endif
