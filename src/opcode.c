@@ -384,9 +384,13 @@ static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_
         invoke->args_len++;
     }
 
-    invoke->args = realloc(invoke->args, invoke->args_len * sizeof(Type*));
-    if (!invoke->args) {
-        return IPR_ALLOC_ERROR;
+    if (invoke->args_len) {
+        invoke->args = realloc(invoke->args, invoke->args_len * sizeof(Type*));
+        if (!invoke->args) {
+            return IPR_ALLOC_ERROR;
+        }
+    } else {
+        invoke->args = NULL;
     }
 
     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
