@@ -58,6 +58,7 @@ typedef enum {
     SR_UNKNOWN_OPCODE,
     SR_ASSERTION_ERR,
     SR_INVALID_TYPE,
+    SR_INTERNAL_NULL_ERR,
 } StepResult;
 
 static const char* step_result_signature[] = {
@@ -634,6 +635,7 @@ static StepResult handle_dup(VMContext* vm_context, Instruction* instruction)
 // todo: handle array
 static char* get_method_signature(InvokeOP* invoke)
 {
+    char* res = NULL;
     char* ref_name = strdup(invoke->ref_name);
     replace_char(ref_name, '/', '.');
 
@@ -646,6 +648,10 @@ static char* get_method_signature(InvokeOP* invoke)
         if (capacity <= args_len) {
             capacity *= 2;
             args = realloc(args, sizeof(char) * capacity);
+            if (!args) {
+                res = NULL;
+                goto cleanup;
+            }
         }
 
         switch (tk) {
@@ -662,6 +668,13 @@ static char* get_method_signature(InvokeOP* invoke)
 
         args_len++;
     }
+
+    args = realloc(args, sizeof(char) * args_len + 1);
+    if (!args) {
+        res = NULL;
+        goto cleanup;
+    }
+    args[args_len] = '\0';
 
     char return_type[3];
     switch (invoke->return_type->kind) {
@@ -690,9 +703,9 @@ static char* get_method_signature(InvokeOP* invoke)
         return NULL;
     }
 
-    char* res;
     asprintf(&res, "%s.%s:(%s)%s", ref_name, invoke->method_name, args, return_type);
 
+cleanup:
     free(args);
     free(ref_name);
 
@@ -701,19 +714,31 @@ static char* get_method_signature(InvokeOP* invoke)
 
 static StepResult handle_invoke(VMContext* vm_context, Instruction* instruction)
 {
+    StepResult result = SR_OK;
+
     InvokeOP* invoke = &instruction->data.invoke;
     if (!invoke) {
         return SR_NULL_INSTRUCTION;
     }
 
     Frame* frame = vm_context->frame;
+
     CallStack* call_stack = vm_context->call_stack;
     const Config* cfg = vm_context->cfg;
 
     char* method_id = get_method_signature(invoke);
+    if (!method_id) {
+        result = SR_INTERNAL_NULL_ERR;
+        goto cleanup;
+    }
+
     Method* m = method_create(method_id);
+    if (!m) {
+        result = SR_INTERNAL_NULL_ERR;
+        goto cleanup;
+    }
+
     char* root = strtok(method_id, ".");
-    LOG_DEBUG("INVOKE METHOD ROOT: %s", root);
 
     if (strcmp(root, "jpamb") == 0) {
         int locals_count;
@@ -723,11 +748,13 @@ static StepResult handle_invoke(VMContext* vm_context, Instruction* instruction)
         call_stack_push(call_stack, new_frame);
     }
 
+cleanup:
+    method_delete(m);
     free(method_id);
 
     frame->pc++;
 
-    return SR_OK;
+    return result;
 }
 
 // todo: handle multi dimensional arrays
@@ -974,6 +1001,14 @@ static OpHandler opcode_table[OP_COUNT] = {
 
 static StepResult step(VMContext* vm_context)
 {
+    if (!vm_context->cfg) {
+        return SR_INTERNAL_NULL_ERR;
+    }
+
+    if (!vm_context->call_stack) {
+        return SR_EMPTY_STACK;
+    }
+
     vm_context->frame = call_stack_peek(vm_context->call_stack);
     if (!vm_context->frame) {
         return SR_EMPTY_STACK;
@@ -983,7 +1018,7 @@ static StepResult step(VMContext* vm_context)
     if (!instruction) {
         return SR_NULL_INSTRUCTION;
     }
-    LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
+    // LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
 
     Opcode opcode = instruction->opcode;
     if (opcode < 0 || opcode >= OP_COUNT) {
