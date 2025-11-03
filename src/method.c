@@ -208,6 +208,8 @@ char* method_read(const Method* m, const Config* cfg, SourceType src)
         goto cleanup;
     }
 
+    source[nitems] = '\0';
+
 cleanup:
     if (f) {
         fclose(f);
