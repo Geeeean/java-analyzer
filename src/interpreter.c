@@ -304,7 +304,13 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
         (*locals_count)++;
     }
 
-    locals = realloc(locals, *locals_count * sizeof(Value));
+    if (!(*locals_count)) {
+        free(locals);
+        locals = NULL;
+    } else {
+        locals = realloc(locals, *locals_count * sizeof(Value));
+    }
+
     return locals;
 }
 
