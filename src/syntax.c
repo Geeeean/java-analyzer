@@ -15,6 +15,10 @@ TSTree* syntax_tree_build(Method* m, Config* cfg)
         return NULL;
     }
 
+    if (!parser) {
+        return NULL;
+    }
+
     char* source = method_read(m, cfg, SRC_SOURCE);
     if (!source) {
         ts_parser_delete(parser);
