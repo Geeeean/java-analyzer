@@ -7,7 +7,7 @@ Compatibility with Windows is not guaranteed.
 
 - `gcc`
 
-The code has been tested with GCC 14 https://gcc.gnu.org/gcc-14/ feel free to use specify another explicitly in the Makefile.
+The code has been tested with GCC 14 https://gcc.gnu.org/gcc-14/ feel free to use another one by specifying it explicitly in the Makefile.
 
 ## Installing Dependencies
 
