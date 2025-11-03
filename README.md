@@ -5,9 +5,9 @@ Compatibility with Windows is not guaranteed.
 
 ## Prerequisites
 
-- `gcc` version 14
+- `gcc`
 
-Ensure your system has GCC 14 installed, or specify another explicitly in the Makefile.
+The code has been tested with GCC 14 https://gcc.gnu.org/gcc-14/ feel free to use another one by specifying it explicitly in the Makefile.
 
 ## Installing Dependencies
 
