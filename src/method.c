@@ -23,6 +23,7 @@ typedef enum {
     MPR_CLASS_MALFORMED,
     MPR_NAME_MALFORMED,
     MPR_RT_MALFORMED,
+    MPR_ALLOC_ERROR,
     MPR_INTERNAL_ERROR,
 } MethodParseResult;
 
@@ -89,22 +90,38 @@ static MethodParseResult method_parse(Method* m, char* method_id)
     if (!buffer) {
         return MPR_CLASS_MALFORMED;
     }
+
     m->class = strdup(buffer);
+    if (!m->class) {
+        return MPR_ALLOC_ERROR;
+    }
 
     buffer = method_parse_name(&method_id);
     if (!buffer) {
         return MPR_NAME_MALFORMED;
     }
+
     m->name = strdup(buffer);
+    if (!m->name) {
+        return MPR_ALLOC_ERROR;
+    }
 
     buffer = method_parse_arguments(&method_id);
+
     m->arguments = strdup(buffer);
+    if (!m->arguments) {
+        return MPR_ALLOC_ERROR;
+    }
 
     buffer = method_parse_return_type(method_id);
     if (!buffer) {
         return MPR_RT_MALFORMED;
     }
+
     m->return_type = strdup(buffer);
+    if (!m->return_type) {
+        return MPR_ALLOC_ERROR;
+    }
 
     return MPR_OK;
 }
