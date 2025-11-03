@@ -1,7 +1,7 @@
-CC = gcc-14
+CC = gcc
 IFLAGS = -I$(INCLUDE_DIR) -I$(LIBRARY_DIR) -fopenmp 
 LFLAGS = -L$(LIBRARY_DIR) -Llib/tree_sitter -fopenmp
-DEBUG_FLAGS = -O0 -DDEBUG=1 #-g 
+DEBUG_FLAGS = -O0 -DDEBUG=1 -g 
 
 SRC_DIR = src
 INCLUDE_DIR = include

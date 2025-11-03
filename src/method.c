@@ -153,6 +153,7 @@ char* method_read(const Method* m, const Config* cfg, SourceType src)
 {
     char path[SRC_PATH_MAX];
     char* source = NULL;
+    FILE* f = NULL;
 
     char* class_path = strdup(m->class);
     if (!class_path) {
@@ -171,7 +172,7 @@ char* method_read(const Method* m, const Config* cfg, SourceType src)
         goto cleanup;
     }
 
-    FILE* f = fopen(path, "r");
+    f = fopen(path, "r");
     if (!f) {
         goto cleanup;
     }
