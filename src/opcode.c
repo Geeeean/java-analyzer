@@ -9,6 +9,7 @@
 typedef enum {
     IPR_OK,
     IPR_MALFORMED,
+    IPR_ALLOC_ERROR,
     IPR_UNABLE_TO_HANDLE_TYPE,
     IPR_IF_COND_NOW_KNOWN,
     IPR_BO_UNKNOWN_OP,
@@ -384,6 +385,9 @@ static InstructionParseResult parse_invoke(InvokeOP* invoke, cJSON* instruction_
     }
 
     invoke->args = realloc(invoke->args, invoke->args_len * sizeof(Type*));
+    if (!invoke->args) {
+        return IPR_ALLOC_ERROR;
+    }
 
     cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
     if (!returns_obj) {
