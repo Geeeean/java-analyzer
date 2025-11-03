@@ -74,7 +74,7 @@ static int set_field(Config* cfg, char* line)
     } else if (strcmp(key, "group") == 0) {
         cfg->group = strdup(value);
     } else if (strcmp(key, "for_science") == 0) {
-        cfg->for_science = strcmp(key, "1") == 0;
+        cfg->for_science = (strcmp(value, "1") == 0) || (strcmp(value, "true") == 0);
     } else if (strcmp(key, "tags") == 0) {
         cfg->tags = strdup(value);
     } else if (strcmp(key, "jpamb_source_path") == 0) {
@@ -139,19 +139,26 @@ Config* config_load()
 {
     char* path = get_user_config_path(APP_NAME, CONFIG_FILE);
     if (!path) {
+        LOG_ERROR("Could not resolve config directory: neither XDG_CONFIG_HOME nor HOME is set. Expected %s/%s under one of those.", APP_NAME, CONFIG_FILE);
         return NULL;
     }
 
     FILE* f = fopen(path, "r");
     if (f == NULL) {
+        LOG_ERROR("Could not open config file at: %s", path);
         return NULL;
     }
 
-    Config* cfg = malloc(sizeof(Config));
+    LOG_INFO("Config file found at: %s", path);
+
+    Config* cfg = calloc(1, sizeof(Config));
 
     char buffer[LINE_SIZE];
+    int line_no = 0;
     while (fgets(buffer, sizeof(buffer), f) != NULL) {
+        line_no++;
         if (set_field(cfg, buffer)) {
+            LOG_ERROR("Invalid configuration at line %d in %s", line_no, path);
             config_delete(cfg);
             fclose(f);
             return NULL;
@@ -162,7 +169,16 @@ Config* config_load()
 
     int check = sanity_check(cfg);
     if (check) {
-        LOG_ERROR("Error while checking config structure: %d", check);
+        const char* missing = "unknown";
+        switch (check) {
+        case 1: missing = "name"; break;
+        case 2: missing = "version"; break;
+        case 3: missing = "group"; break;
+        case 5: missing = "tags"; break;
+        case 6: missing = "jpamb_source_path or jpamb_decompiled_path"; break;
+        default: break;
+        }
+        LOG_ERROR("Invalid configuration: missing or invalid field '%s' (code %d) in %s", missing, check, path);
         config_delete(cfg);
         return NULL;
     }
@@ -178,6 +194,7 @@ void config_delete(Config* cfg)
         free(cfg->group);
         free(cfg->tags);
         free(cfg->jpamb_source_path);
+        free(cfg->jpamb_decompiled_path);
     }
 
     free(cfg);

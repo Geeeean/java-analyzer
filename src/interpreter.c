@@ -141,7 +141,7 @@ static Frame* call_stack_pop(CallStack* call_stack)
 
 static Frame* call_stack_peek(CallStack* call_stack)
 {
-    if (!call_stack) {
+    if (!call_stack || !call_stack->top) {
         return NULL;
     }
 
@@ -337,6 +337,12 @@ static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int
     frame->locals_count = locals_count;
     frame->locals = locals;
     frame->instruction_table = get_instruction_table(m, cfg);
+    if (!frame->instruction_table) {
+        LOG_ERROR("Failed to build instruction table for method: %s", method_get_id(m));
+        free(frame->stack);
+        free(frame);
+        return NULL;
+    }
 
     return frame;
 }
@@ -935,6 +941,12 @@ static Instruction* get_instruction(VMContext* vm_context)
 {
     Frame* frame = vm_context->frame;
     InstructionTable* instruction_table = frame->instruction_table;
+    if (!instruction_table) {
+        return NULL;
+    }
+    if (frame->pc < 0 || frame->pc >= instruction_table->count) {
+        return NULL;
+    }
     return instruction_table->instructions[frame->pc];
 }
 
@@ -968,6 +980,9 @@ static StepResult step(VMContext* vm_context)
     }
 
     Instruction* instruction = get_instruction(vm_context);
+    if (!instruction) {
+        return SR_NULL_INSTRUCTION;
+    }
     LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
 
     Opcode opcode = instruction->opcode;
@@ -984,7 +999,8 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
         return NULL;
     }
 
-    char* parameters = strdup(opts->parameters);
+    const char* raw_params = opts->parameters ? opts->parameters : "";
+    char* parameters = strdup(raw_params);
     LOG_DEBUG("BUILDING FRAME...");
     LOG_DEBUG("PARAMETERS: %s", parameters);
 
@@ -997,7 +1013,9 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
         return NULL;
     }
 
-    CallStack* call_stack = malloc(sizeof(CallStack));
+    CallStack* call_stack = calloc(1, sizeof(CallStack));
+    call_stack->top = NULL;
+    call_stack->count = 0;
     call_stack_push(call_stack, frame);
 
     VMContext* vm_context = malloc(sizeof(VMContext));

@@ -35,7 +35,7 @@ int main(int argc, char** argv)
     /*** CONFIG ***/
     cfg = config_load();
     if (!cfg) {
-        LOG_ERROR("Config file is wrongly formatted or not exist");
+        LOG_ERROR("Failed to load configuration. See detailed messages above for exact reason and location.");
         result = 2;
         goto cleanup;
     }
@@ -71,6 +71,11 @@ int main(int argc, char** argv)
     /*** INTERPRETER ***/
     if (opts.interpreter_only) {
         VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+        if (!vm_context) {
+            LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
+            result = 6;
+            goto cleanup;
+        }
         RuntimeResult interpreter_result = interpreter_run(vm_context);
 
         switch (interpreter_result) {
@@ -115,6 +120,10 @@ int main(int argc, char** argv)
                 }
 
                 VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+                if (!vm_context) {
+                    LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
+                    continue;
+                }
                 RuntimeResult interpreter_result = interpreter_run(vm_context);
 
                 switch (interpreter_result) {
