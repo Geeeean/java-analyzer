@@ -3,6 +3,7 @@
 #include "cli.h"
 #include "heap.h"
 #include "ir_function.h"
+#include "ir_program.h"
 #include "log.h"
 #include "opcode.h"
 #include "stack.h"
@@ -319,7 +320,7 @@ static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int
     frame->stack = stack_new();
     frame->locals_count = locals_count;
     frame->locals = locals;
-    frame->ir_function = get_ir_function(m, cfg);
+    frame->ir_function = ir_program_get_function(m, cfg);
     if (!frame->ir_function) {
         LOG_ERROR("Failed to build instruction table for method: %s", method_get_id(m));
         free(frame->stack);

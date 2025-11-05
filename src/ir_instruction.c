@@ -3,6 +3,7 @@
 #include "log.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 typedef enum {
     IPR_OK,
@@ -499,7 +500,7 @@ static IrInstructionParseResult parse_new_array(IrInstruction* ir_instruction, c
 
 static IrInstructionParseResult parse_array_load(IrInstruction* ir_instruction, cJSON* instruction_json)
 {
-    ArrayLoadOP* load = &ir_instruction->data.load;
+    ArrayLoadOP* array_load = &ir_instruction->data.array_load;
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
         LOG_ERROR("Parse instruction missing or invalid 'type' field");
@@ -508,9 +509,9 @@ static IrInstructionParseResult parse_array_load(IrInstruction* ir_instruction, 
     char* type = cJSON_GetStringValue(type_obj);
 
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
-        load->type = TYPE_INT;
+        array_load->type = TYPE_INT;
     } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
-        load->type = TYPE_CHAR;
+        array_load->type = TYPE_CHAR;
     } else {
         LOG_ERROR("Unknown type in array load instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -521,7 +522,7 @@ static IrInstructionParseResult parse_array_load(IrInstruction* ir_instruction, 
 
 static IrInstructionParseResult parse_array_store(IrInstruction* ir_instruction, cJSON* instruction_json)
 {
-    ArrayStoreOP* store = &ir_instruction->data.store;
+    ArrayStoreOP* array_store = &ir_instruction->data.array_store;
     cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
     if (!type_obj || !cJSON_IsString(type_obj)) {
         LOG_ERROR("Parse instruction missing or invalid 'type' field");
@@ -530,9 +531,9 @@ static IrInstructionParseResult parse_array_store(IrInstruction* ir_instruction,
     char* type = cJSON_GetStringValue(type_obj);
 
     if (strcmp(type, array_type_signature[TK_INT]) == 0) {
-        store->type = TYPE_INT;
+        array_store->type = TYPE_INT;
     } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
-        store->type = TYPE_CHAR;
+        array_store->type = TYPE_CHAR;
     } else {
         LOG_ERROR("Unknown type in array store instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
