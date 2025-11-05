@@ -32,20 +32,21 @@ IrFunction* ir_program_get_function(const Method* m, const Config* cfg)
         for (IRItem* it = it_map; it != NULL; it = it->next) {
             if (strcmp(id, it->method_id) == 0) {
                 result = it->ir_function;
-                goto done;
+                break;
             }
         }
 
-        IRItem* it = malloc(sizeof(IRItem));
-        it->method_id = strdup(id);
-        it->ir_function = ir_function_build(m, cfg);
+        if (!result) {
+            IRItem* it = malloc(sizeof(IRItem));
+            it->method_id = strdup(id);
+            it->ir_function = ir_function_build(m, cfg);
 
-        it->next = it_map;
-        it_map = it;
+            it->next = it_map;
+            it_map = it;
 
-        result = it->ir_function;
+            result = it->ir_function;
+        }
     }
 
-done:
     return result;
 }

@@ -3,7 +3,10 @@
 
 #include "value.h"
 
-int heap_insert(ObjectValue* obj, int* index);
-ObjectValue* heap_get(int index);
+typedef struct Heap Heap;
+
+Heap* heap_create();
+int heap_insert(Heap* heap, ObjectValue* obj, int* index);
+ObjectValue* heap_get(Heap* heap, int index);
 
 #endif

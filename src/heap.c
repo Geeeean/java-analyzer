@@ -3,33 +3,41 @@
 
 #define HEAP_SIZE 100
 
-typedef struct {
+struct Heap {
     ObjectValue* fields[HEAP_SIZE];
     int len;
-} Heap;
+};
 
-static Heap heap = { .len = 1, .fields = { NULL } };
-
-int heap_insert(ObjectValue* obj, int* index)
+Heap* heap_create()
 {
-    if (heap.len >= HEAP_SIZE) {
+    Heap* heap = malloc(sizeof(Heap));
+    if (heap) {
+        heap->len = 0;
+    }
+
+    return heap;
+}
+
+int heap_insert(Heap* heap, ObjectValue* obj, int* index)
+{
+    if (heap->len >= HEAP_SIZE) {
         return 1;
     }
 
-    *index = heap.len;
+    *index = heap->len;
 
-    heap.fields[heap.len] = obj;
+    heap->fields[heap->len] = obj;
 
-    heap.len++;
+    heap->len++;
 
     return 0;
 }
 
-ObjectValue* heap_get(int index)
+ObjectValue* heap_get(Heap* heap, int index)
 {
-    if (index < 0 || index >= heap.len) {
+    if (index < 0 || index >= heap->len) {
         return NULL;
     }
 
-    return heap.fields[index];
+    return heap->fields[index];
 }

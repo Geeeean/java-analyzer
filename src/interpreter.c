@@ -77,6 +77,7 @@ typedef struct {
 } CallStack;
 
 struct VMContext {
+    Heap* heap;
     CallStack* call_stack;
     const Config* cfg;
     Frame* frame;
@@ -195,14 +196,13 @@ static int parse_array(Type* type, char* token, ObjectValue* array)
     return 0;
 }
 
-static int parse_next_parameter(char** arguments, char* token, Value* value)
+static int parse_next_parameter(Heap* heap, char** arguments, char* token, Value* value)
 {
     if (!arguments || !(*arguments) || !token || !value) {
         return 1;
     }
 
     Type* type = get_type(arguments);
-    // TypeKind tk = get_tk(**arguments);
     if (!type) {
         LOG_ERROR("Unknown arg type in method signature: %c", **arguments);
         return 2;
@@ -220,7 +220,7 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
 
         value->type = TYPE_REFERENCE;
 
-        if (heap_insert(array, &value->data.ref_value)) {
+        if (heap_insert(heap, array, &value->data.ref_value)) {
             LOG_ERROR("While inserting array into heap");
             return 11;
         }
@@ -246,7 +246,7 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
     return 0;
 }
 
-static Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
+static Value* build_locals_from_str(Heap* heap, const Method* m, char* parameters, int* locals_count)
 {
     char* arguments = strdup(method_get_arguments(m));
     char* arguments_pointer = arguments;
@@ -268,7 +268,7 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
         }
 
         Value value;
-        if (parse_next_parameter(&arguments, token, &value)) {
+        if (parse_next_parameter(heap, &arguments, token, &value)) {
             return NULL;
         }
 
@@ -758,7 +758,7 @@ static StepResult handle_array_length(VMContext* vm_context, IrInstruction* ir_i
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(value.data.ref_value);
+    ObjectValue* array = heap_get(vm_context->heap, value.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -800,7 +800,7 @@ static StepResult handle_new_array(VMContext* vm_context, IrInstruction* ir_inst
         array->array.elements_count = size.data.int_value;
 
         Value ref = { .type = TYPE_REFERENCE };
-        if (heap_insert(array, &ref.data.ref_value)) {
+        if (heap_insert(vm_context->heap, array, &ref.data.ref_value)) {
             // todo: heap should be dynamic
             return SR_OUT_OF_BOUNDS;
         }
@@ -844,7 +844,7 @@ static StepResult handle_array_store(VMContext* vm_context, IrInstruction* ir_in
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(ref.data.ref_value);
+    ObjectValue* array = heap_get(vm_context->heap, ref.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -888,7 +888,7 @@ static StepResult handle_array_load(VMContext* vm_context, IrInstruction* ir_ins
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(ref.data.ref_value);
+    ObjectValue* array = heap_get(vm_context->heap, ref.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -1017,21 +1017,32 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
         return NULL;
     }
 
+    Frame* frame = NULL;
+    CallStack* call_stack = NULL;
+
+    Heap* heap = heap_create();
+    if (!heap) {
+        goto cleanup;
+    }
+
     const char* raw_params = opts->parameters ? opts->parameters : "";
     char* parameters = strdup(raw_params);
     LOG_DEBUG("BUILDING FRAME...");
     LOG_DEBUG("PARAMETERS: %s", parameters);
 
     int locals_count = 0;
-    Value* locals = build_locals_from_str(m, parameters, &locals_count);
-    Frame* frame = build_frame(m, cfg, locals, locals_count);
-    LOG_DEBUG("LOCALS COUNT: %d", locals_count);
+    Value* locals = build_locals_from_str(heap, m, parameters, &locals_count);
+    frame = build_frame(m, cfg, locals, locals_count);
 
     if (!frame) {
-        return NULL;
+        goto cleanup;
     }
 
-    CallStack* call_stack = calloc(1, sizeof(CallStack));
+    call_stack = calloc(1, sizeof(CallStack));
+    if (!call_stack) {
+        goto cleanup;
+    }
+
     call_stack->top = NULL;
     call_stack->count = 0;
     call_stack_push(call_stack, frame);
@@ -1040,8 +1051,13 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     vm_context->call_stack = call_stack;
     vm_context->frame = frame;
     vm_context->cfg = cfg;
+    vm_context->heap = heap_create();
 
     return vm_context;
+
+cleanup:
+    // todo: free objects
+    return NULL;
 }
 
 RuntimeResult interpreter_run(VMContext* vm_context)
