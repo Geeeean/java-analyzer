@@ -29,7 +29,7 @@ make
 If the build completes successfully, the compiled binaries will be located in the `bin` directory.
 
 # Running the project
-Create a file named `java-analyzer.conf` in `$HOME/config/java-analyzer`and specify some configurations options.
+Create a file named `java-analyzer.conf` in `$HOME/.config/java-analyzer`and specify some configurations options.
 The file should look like this:
 ```
 name                  a_cool_name.c
