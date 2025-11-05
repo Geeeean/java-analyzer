@@ -27,6 +27,9 @@ SOURCES := $(LOCAL_SOURCES) $(LIB_SOURCES)
 OBJ = $(patsubst %.c,$(BUILD_DIR)/$(BUILD_RELEASE_DIR)/%.o, $(SOURCES))
 DEBUG_OBJ = $(patsubst %.c,$(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o, $(SOURCES))
 
+all: $(TARGET)
+
+
 $(TARGET): $(OBJ)
 	@mkdir -p $(BIN_DIR)
 	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS)
