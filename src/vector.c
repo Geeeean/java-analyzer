@@ -89,3 +89,23 @@ size_t vector_length(const Vector* v)
 {
     return v->length;
 }
+
+void vector_reverse(Vector* v)
+{
+    if (!v || v->length <= 1) {
+        return;
+    }
+
+    size_t elem_size = v->element_size;
+    char* data = (char*)v->data;
+
+    for (int i = 0; i < v->length / 2; i++) {
+        int j = v->length - 1 - i;
+
+        char tmp[elem_size];
+        memcpy(tmp, data + i * elem_size, elem_size);
+        memcpy(data + i * elem_size, data + j * elem_size, elem_size);
+        memcpy(data + j * elem_size, tmp, elem_size);
+    }
+}
+

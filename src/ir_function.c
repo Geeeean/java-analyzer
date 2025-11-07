@@ -12,7 +12,7 @@ parse_bytecode(cJSON* method)
 
     ir_function->capacity = IR_FUNCTION_SIZE;
     ir_function->count = 0;
-;
+
     cJSON* code = cJSON_GetObjectItem(method, "code");
     if (!code) {
         goto cleanup;
