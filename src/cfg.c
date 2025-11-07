@@ -58,13 +58,15 @@ Cfg* cfg_build(IrFunction* ir_function)
         goto cleanup;
     }
 
-    is_leader = calloc(ir_function->count, sizeof(int8_t));
+    int len = vector_length(ir_function->ir_instructions);
+
+    is_leader = calloc(len, sizeof(int8_t));
     if (!is_leader) {
         result = FAILURE;
         goto cleanup;
     }
 
-    block_map = calloc(ir_function->count, sizeof(BasicBlock*));
+    block_map = calloc(len, sizeof(BasicBlock*));
     if (!block_map) {
         result = FAILURE;
         goto cleanup;
@@ -72,15 +74,19 @@ Cfg* cfg_build(IrFunction* ir_function)
 
     // leaders assignment
     is_leader[0] = 1;
-    for (int i = 0; i < ir_function->count; i++) {
-        IrInstruction* ir_instruction = ir_function->ir_instructions[i];
+    for (int i = 0; i < len; i++) {
+        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, i);
+        if (!ir_instruction) {
+            result = FAILURE;
+            goto cleanup;
+        }
 
         switch (ir_instruction->opcode) {
         case OP_IF_ZERO:
         case OP_IF: {
             int target = ir_instruction->data.ift.target;
             is_leader[target] = 1;
-            if (i + 1 < ir_function->count) {
+            if (i + 1 < len) {
                 is_leader[i + 1] = 1;
             }
             break;
@@ -111,8 +117,13 @@ Cfg* cfg_build(IrFunction* ir_function)
     BasicBlock* last = NULL;
 
     // basic blocks build
-    for (int i = 0; i < ir_function->count; i++) {
-        IrInstruction* ir_instruction = ir_function->ir_instructions[i];
+    for (int i = 0; i < len; i++) {
+        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, i);
+        if (!ir_instruction) {
+            result = FAILURE;
+            goto cleanup;
+        }
+
         Opcode opcode = ir_instruction->opcode;
 
         int8_t is_terminator = opcode == OP_THROW
@@ -162,7 +173,7 @@ Cfg* cfg_build(IrFunction* ir_function)
     }
 
     if (last) {
-        last->ip_end = ir_function->count - 1;
+        last->ip_end = len - 1;
         block_map[last->ip_start] = last;
         vector_push(cfg->blocks, &last);
 
@@ -177,7 +188,7 @@ Cfg* cfg_build(IrFunction* ir_function)
             goto cleanup;
         }
 
-        IrInstruction* ir_instruction = ir_function->ir_instructions[block->ip_end];
+        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, block->ip_end);
         if (!ir_instruction) {
             result = FAILURE;
             goto cleanup;
@@ -243,6 +254,7 @@ cleanup:
     free(block_map);
     free(is_leader);
     if (result) {
+        vector_delete(cfg->blocks);
         free(cfg);
         cfg = NULL;
     }

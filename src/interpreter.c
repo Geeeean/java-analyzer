@@ -3,6 +3,7 @@
 #include "cli.h"
 #include "heap.h"
 #include "ir_function.h"
+#include "ir_instruction.h"
 #include "ir_program.h"
 #include "log.h"
 #include "opcode.h"
@@ -954,10 +955,10 @@ static IrInstruction* get_ir_instruction(VMContext* vm_context)
     if (!ir_function) {
         return NULL;
     }
-    if (frame->pc < 0 || frame->pc >= ir_function->count) {
+    if (frame->pc < 0 || frame->pc >= vector_length(ir_function->ir_instructions)) {
         return NULL;
     }
-    return ir_function->ir_instructions[frame->pc];
+    return vector_get(ir_function->ir_instructions, frame->pc);
 }
 
 static OpHandler opcode_table[OP_COUNT] = {

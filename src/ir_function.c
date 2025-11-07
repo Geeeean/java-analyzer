@@ -1,5 +1,6 @@
 #include "ir_function.h"
 #include "cJSON/cJSON.h"
+#include "ir_instruction.h"
 #include "method.h"
 
 static IrFunction*
@@ -10,8 +11,10 @@ parse_bytecode(cJSON* method)
         goto cleanup;
     }
 
-    ir_function->capacity = IR_FUNCTION_SIZE;
-    ir_function->count = 0;
+    ir_function->ir_instructions = vector_new(sizeof(IrInstruction*));
+    if (!ir_function->ir_instructions) {
+        goto cleanup;
+    }
 
     cJSON* code = cJSON_GetObjectItem(method, "code");
     if (!code) {
@@ -28,13 +31,12 @@ parse_bytecode(cJSON* method)
     cJSON_ArrayForEach(buffer, bytecode)
     {
         IrInstruction* ir_instruction = ir_instruction_parse(buffer);
-        ir_function->count++;
         ir_instruction->seq = i;
         if (!ir_instruction) {
             goto cleanup;
         }
 
-        ir_function->ir_instructions[i] = ir_instruction;
+        vector_push(ir_function->ir_instructions, &ir_instruction);
         i++;
     }
 
@@ -88,10 +90,7 @@ cleanup:
 void ir_function_delete(IrFunction* ir_function)
 {
     if (ir_function) {
-        for (int i = 0; i < IR_FUNCTION_SIZE; i++) {
-            free(ir_function->ir_instructions[i]);
-        }
+        vector_delete(ir_function->ir_instructions);
+        free(ir_function);
     }
-
-    free(ir_function);
 }
