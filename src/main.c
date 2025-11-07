@@ -19,6 +19,10 @@
 
 int main(int argc, char** argv)
 {
+#ifdef DEBUG
+    omp_set_num_threads(1);
+#endif
+
     int result = 0;
     Config* cfg = NULL;
     Method* m = NULL;

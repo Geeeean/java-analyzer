@@ -3,6 +3,7 @@
 
 #define HEAP_SIZE 100
 
+// todo make dynamic
 struct Heap {
     ObjectValue* fields[HEAP_SIZE];
     int len;
@@ -25,9 +26,7 @@ int heap_insert(Heap* heap, ObjectValue* obj, int* index)
     }
 
     *index = heap->len;
-
     heap->fields[heap->len] = obj;
-
     heap->len++;
 
     return 0;
@@ -40,4 +39,9 @@ ObjectValue* heap_get(Heap* heap, int index)
     }
 
     return heap->fields[index];
+}
+
+int heap_length(Heap* heap)
+{
+    return heap->len;
 }

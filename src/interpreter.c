@@ -228,7 +228,7 @@ static int parse_next_parameter(Heap* heap, char** arguments, char* token, Value
         }
 
         value->type = TYPE_REFERENCE;
-
+        
         if (heap_insert(heap, array, &value->data.ref_value)) {
             LOG_ERROR("While inserting array into heap");
             return 11;
@@ -768,6 +768,7 @@ static StepResult handle_array_length(VMContext* vm_context, IrInstruction* ir_i
     }
 
     ObjectValue* array = heap_get(vm_context->heap, value.data.ref_value);
+
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -963,10 +964,12 @@ static IrInstruction* get_ir_instruction(VMContext* vm_context)
     if (!ir_function) {
         return NULL;
     }
+
     if (frame->pc < 0 || frame->pc >= vector_length(ir_function->ir_instructions)) {
         return NULL;
     }
-    return vector_get(ir_function->ir_instructions, frame->pc);
+
+    return *(IrInstruction**)vector_get(ir_function->ir_instructions, frame->pc);
 }
 
 static OpHandler opcode_table[OP_COUNT] = {
@@ -1010,10 +1013,11 @@ static StepResult step(VMContext* vm_context)
     if (!ir_instruction) {
         return SR_NULL_INSTRUCTION;
     }
-    // LOG_DEBUG("Interpreting: %s", opcode_print(ir_instruction->opcode));
 
     Opcode opcode = ir_instruction->opcode;
+    LOG_DEBUG("Interpreting %s", opcode_print(opcode));
     if (opcode < 0 || opcode >= OP_COUNT) {
+        LOG_ERROR("Opcode: %d", opcode);
         return SR_UNKNOWN_OPCODE;
     }
 
@@ -1060,7 +1064,7 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     vm_context->call_stack = call_stack;
     vm_context->frame = frame;
     vm_context->cfg = cfg;
-    vm_context->heap = heap_create();
+    vm_context->heap = heap;
 
     return vm_context;
 
@@ -1100,10 +1104,9 @@ RuntimeResult interpreter_run(VMContext* vm_context)
                 break;
             default:
                 result = RT_UNKNOWN_ERROR;
+                LOG_ERROR("%s", step_result_signature[step_result]);
                 break;
             }
-
-            // LOG_ERROR("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

@@ -1,6 +1,7 @@
 #include "ir_function.h"
 #include "cJSON/cJSON.h"
 #include "ir_instruction.h"
+#include "log.h"
 #include "method.h"
 
 static IrFunction*
@@ -37,6 +38,8 @@ parse_bytecode(cJSON* method)
         }
 
         vector_push(ir_function->ir_instructions, &ir_instruction);
+        ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
+
         i++;
     }
 

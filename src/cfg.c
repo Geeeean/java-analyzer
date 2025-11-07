@@ -35,7 +35,7 @@ static void compute_rpo(BasicBlock* block, int8_t* visited, Vector* rpo)
         visited[block->id] = 1;
 
         for (int i = 0; i < vector_length(block->successors); i++) {
-            BasicBlock* next = vector_get(block->successors, i);
+            BasicBlock* next = *(BasicBlock**)vector_get(block->successors, i);
             if (next && !visited[next->id]) {
                 compute_rpo(next, visited, rpo);
             }
@@ -75,7 +75,7 @@ Cfg* cfg_build(IrFunction* ir_function)
     // leaders assignment
     is_leader[0] = 1;
     for (int i = 0; i < len; i++) {
-        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, i);
+        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
         if (!ir_instruction) {
             result = FAILURE;
             goto cleanup;
@@ -118,7 +118,7 @@ Cfg* cfg_build(IrFunction* ir_function)
 
     // basic blocks build
     for (int i = 0; i < len; i++) {
-        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, i);
+        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
         if (!ir_instruction) {
             result = FAILURE;
             goto cleanup;
@@ -182,13 +182,13 @@ Cfg* cfg_build(IrFunction* ir_function)
 
     // assign successors
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
-        BasicBlock* block = vector_get(cfg->blocks, i);
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
         if (!block) {
             result = FAILURE;
             goto cleanup;
         }
 
-        IrInstruction* ir_instruction = vector_get(ir_function->ir_instructions, block->ip_end);
+        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, block->ip_end);
         if (!ir_instruction) {
             result = FAILURE;
             goto cleanup;
@@ -217,14 +217,14 @@ Cfg* cfg_build(IrFunction* ir_function)
             vector_push(block->successors, &target_block);
 
             if (i + 1 < vector_length(cfg->blocks)) {
-                BasicBlock* next_block = vector_get(cfg->blocks, i + 1);
+                BasicBlock* next_block = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
                 vector_push(block->successors, &next_block);
             }
             break;
         }
         default: {
             if (i + 1 < vector_length(cfg->blocks)) {
-                BasicBlock* next_block = vector_get(cfg->blocks, i + 1);
+                BasicBlock* next_block = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
                 vector_push(block->successors, &next_block);
             }
             break;
@@ -244,7 +244,7 @@ Cfg* cfg_build(IrFunction* ir_function)
         goto cleanup;
     }
 
-    compute_rpo(vector_get(cfg->blocks, 0), visited, rpo);
+    compute_rpo(*(BasicBlock**)vector_get(cfg->blocks, 0), visited, rpo);
     vector_reverse(rpo);
 
     cfg->rpo = rpo;
