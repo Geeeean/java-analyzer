@@ -605,7 +605,7 @@ ir_instruction_parse(cJSON* instruction_json)
         goto cleanup;
     }
 
-    LOG_DEBUG("Parsing opcode: %s", opcode_print(instruction->opcode));
+    LOG_DEBUG("Parsing opcode: %s", opcode_print(ir_instruction->opcode));
 
     if (ir_instruction_table[ir_instruction->opcode](ir_instruction, instruction_json)) {
         goto cleanup;
