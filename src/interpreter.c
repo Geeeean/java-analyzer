@@ -154,10 +154,18 @@ static void parameter_fix(char* parameters)
 // todo: handle any dimensional array
 static int parse_array(Type* type, char* token, ObjectValue* array)
 {
+    if (!array) {
+        return 1;
+    }
+
     char* values = strtok(token, ":_;[]");
     int capacity = 10;
+    array->array.elements_count = 0;
     int* len = &array->array.elements_count;
     array->array.elements = malloc(sizeof(Value) * capacity);
+    if (!array->array.elements) {
+        return 1;
+    }
 
     array->type = type;
 
