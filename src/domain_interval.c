@@ -260,19 +260,12 @@ int interval_transfer_div(const IntervalState* in_state, IntervalState* out_stat
     Vector* states1 = in_state->vars;
     Vector* states2 = out_state->vars;
 
-    if (!states1 || !states2 || vector_length(states1) != vector_length(states2)) {
+    if (!states1 || !states2) {
         return FAILURE;
     }
 
-    // Copy entire state
-    for (int i = 0; i < vector_length(states1); i++) {
-        Interval* in_i = (Interval*)vector_get(states1, i);
-        Interval* out_i = (Interval*)vector_get(states2, i);
-        if (!in_i || !out_i) {
-            return FAILURE;
-        }
-        out_i->lower = in_i->lower;
-        out_i->upper = in_i->upper;
+    if (vector_copy(states2, states1)) {
+        return FAILURE;
     }
 
     Interval* interval_out = vector_get(states2, dst);
