@@ -2,7 +2,7 @@
 #include "config.h"
 #include "fuzzer.h"
 #include "info.h"
-#include "interpreter.h"
+#include "interpreter_concrete.h"
 #include "log.h"
 #include "method.h"
 #include "outcome.h"
@@ -74,13 +74,13 @@ int main(int argc, char** argv)
 
     /*** INTERPRETER ***/
     if (opts.interpreter_only) {
-        VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+        VMContext* vm_context = interpreter_concrete_setup(m, &opts, cfg);
         if (!vm_context) {
             LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
             result = 6;
             goto cleanup;
         }
-        RuntimeResult interpreter_result = interpreter_run(vm_context);
+        RuntimeResult interpreter_result = interpreter_concrete_run(vm_context);
 
         switch (interpreter_result) {
         case RT_OK:
@@ -123,12 +123,12 @@ int main(int argc, char** argv)
                     vector_delete(v);
                 }
 
-                VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+                VMContext* vm_context = interpreter_concrete_setup(m, &opts, cfg);
                 if (!vm_context) {
                     LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
                     continue;
                 }
-                RuntimeResult interpreter_result = interpreter_run(vm_context);
+                RuntimeResult interpreter_result = interpreter_concrete_run(vm_context);
 
                 switch (interpreter_result) {
                 case RT_OK:
