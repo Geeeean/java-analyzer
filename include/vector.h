@@ -12,9 +12,9 @@ void vector_delete(Vector* v);
 int vector_push(Vector* v, void* element);
 void* vector_pop(Vector* v);
 void* vector_get(const Vector* v, size_t index);
-void vector_reverse(Vector *v);
+void vector_reverse(Vector* v);
+int vector_copy(Vector* dst, const Vector* src);
 
 size_t vector_length(const Vector* v);
-
 
 #endif

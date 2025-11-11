@@ -1,4 +1,5 @@
 #include "vector.h"
+#include "common.h"
 #include "log.h"
 
 #include <string.h>
@@ -109,3 +110,25 @@ void vector_reverse(Vector* v)
     }
 }
 
+int vector_copy(Vector* dst, const Vector* src)
+{
+    if (!dst || !src) {
+        return FAILURE;
+    }
+
+    if (dst->capacity < src->length) {
+        void* new_data = realloc(dst->data, src->element_size * src->capacity);
+        if (!new_data) {
+            return FAILURE;
+        }
+        dst->data = new_data;
+        dst->capacity = src->capacity;
+    }
+
+    dst->element_size = src->element_size;
+    dst->length = src->length;
+
+    memcpy(dst->data, src->data, src->length * src->element_size);
+
+    return SUCCESS;
+}
