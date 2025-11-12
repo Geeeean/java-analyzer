@@ -1,5 +1,6 @@
 #include "cli.h"
 #include "info.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +11,14 @@
 
 #define INTERPRETER_TAG "i"
 #define INTERPRETER_TAG_F "interpreter"
+
+#define ABSTRACT_TAG "a"
+#define ABSTRACT_TAG_F "abstract"
+
+static bool is_abstract_only(const char* opt)
+{
+    return strcmp(opt, ABSTRACT_TAG) == 0 || strcmp(opt, ABSTRACT_TAG_F) == 0;
+}
 
 static bool is_interpreter_only(const char* opt)
 {
@@ -22,6 +31,7 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
 
     opts->info = false;
     opts->interpreter_only = false;
+    opts->abstract_only = false;
     opts->method_id = NULL;
     opts->parameters = NULL;
 
@@ -36,20 +46,24 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
     if (args_num > MANDATORY_ARGS_NUM) {
         for (int i = 1; i <= OPTIONS_NUM; i++) {
             if (argv[i][0] && argv[i][0] == '-') {
+                LOG_INFO("Option: %s", argv[i]);
                 if (is_interpreter_only(argv[i] + 1)) {
                     opts->interpreter_only = true;
-                }
-                // else if (other options) {...}
-                else {
+                } else if (is_abstract_only(argv[i] + 1)) {
+                    opts->abstract_only = true;
+                } else {
                     return OPT_OPTION_NOT_KNOWN;
                 }
             }
         }
     }
 
+    if (opts->abstract_only && opts->interpreter_only) {
+        return OPT_TOO_MANY_ARGS;
+    }
+
     const char* method_id = NULL;
     const char* parameters = NULL;
-
     if (opts->interpreter_only) {
         method_id = argv[args_num - 1];
         parameters = argv[args_num];
