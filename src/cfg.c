@@ -4,18 +4,6 @@
 #include "stdint.h"
 #include "vector.h"
 
-typedef struct {
-    int id;
-    int ip_start;
-    int ip_end;
-    Vector* successors;
-} BasicBlock;
-
-struct Cfg {
-    Vector* blocks;
-    Vector* rpo;
-};
-
 static BasicBlock* basic_block_new(int id)
 {
     BasicBlock* basic_block = malloc(sizeof(BasicBlock));

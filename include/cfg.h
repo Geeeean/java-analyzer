@@ -3,7 +3,17 @@
 
 #include <ir_function.h>
 
-typedef struct Cfg Cfg;
+typedef struct {
+    int id;
+    int ip_start;
+    int ip_end;
+    Vector* successors;
+} BasicBlock;
+
+typedef struct {
+    Vector* blocks;
+    Vector* rpo;
+} Cfg;
 
 Cfg* cfg_build(IrFunction* ir_function);
 
