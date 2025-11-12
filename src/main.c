@@ -2,6 +2,7 @@
 #include "config.h"
 #include "fuzzer.h"
 #include "info.h"
+#include "interpreter_abstract.h"
 #include "interpreter_concrete.h"
 #include "log.h"
 #include "method.h"
@@ -107,6 +108,9 @@ int main(int argc, char** argv)
         default:
             LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
         }
+    } else if (opts.abstract_only) {
+        AbstractContext* abstract_context = interpreter_abstract_setup(m, &opts, cfg);
+        interpreter_abstract_run(abstract_context);
     } else {
         int run = 100;
         Outcome outcome = new_outcome();
