@@ -1,5 +1,6 @@
 // TODO: handle delete (avoid mem leak)
 #include "ir_program.h"
+#include "log.h"
 
 #include <string.h>
 
@@ -9,31 +10,19 @@ struct IRItem {
     char* method_id;
     IrFunction* ir_function;
     Cfg* cfg;
+    int num_locals;
     IRItem* next;
 };
 
 // to be freed
 IRItem* it_map = NULL;
 
-static IrFunction* find_function(const char* id)
+static IRItem* find_item(const char* id)
 {
-    IrFunction* result = NULL;
+    IRItem* result = NULL;
     for (IRItem* it = it_map; it != NULL; it = it->next) {
         if (strcmp(id, it->method_id) == 0) {
-            result = it->ir_function;
-            break;
-        }
-    }
-
-    return result;
-}
-
-static Cfg* find_cfg(const char* id)
-{
-    Cfg* result = NULL;
-    for (IRItem* it = it_map; it != NULL; it = it->next) {
-        if (strcmp(id, it->method_id) == 0) {
-            result = it->cfg;
+            result = it;
             break;
         }
     }
@@ -60,6 +49,7 @@ static IRItem* build_item(const Method* m, const Config* cfg)
     it->method_id = strdup(method_get_id(m));
     it->ir_function = ir_function_build(m, cfg);
     it->cfg = cfg_build(it->ir_function);
+    it->num_locals = vector_length(method_get_arguments_as_types(m));
 
     it->next = it_map;
 
@@ -71,21 +61,32 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg)
     const char* id = method_get_id(m);
 
     // First check: no lock (fast)
-    IrFunction* result = find_function(id);
-    if (result) {
-        return result;
+    IRItem* item = find_item(id);
+    IrFunction* result = NULL;
+    if (item) {
+        result = item->ir_function;
+        if (result) {
+            return result;
+        }
     }
 
 #pragma omp critical(ir_program_map)
     {
         // Second check: with lock (avoid double creation)
-        result = find_function(id);
-
-        if (!result) {
+        IRItem* item = find_item(id);
+        if (item) {
+            if (item->ir_function) {
+                result = item->ir_function;
+            } else {
+                LOG_ERROR("item is defined but ir_function is not");
+            }
+        } else {
             IRItem* it = build_item(m, cfg);
             if (it) {
                 it_map = it;
                 result = it->ir_function;
+            } else {
+                LOG_ERROR("While building ir_program item");
             }
         }
     }
@@ -98,21 +99,62 @@ Cfg* ir_program_get_cfg(const Method* m, const Config* cfg)
     const char* id = method_get_id(m);
 
     // First check: no lock (fast)
-    Cfg* result = find_cfg(id);
-    if (result) {
-        return result;
+    IRItem* item = find_item(id);
+    Cfg* result = NULL;
+
+    if (item) {
+        result = item->cfg;
+        if (result) {
+            return result;
+        }
     }
 
 #pragma omp critical(ir_program_map)
     {
         // Second check: with lock (avoid double creation)
-        result = find_cfg(id);
-
-        if (!result) {
+        IRItem* item = find_item(id);
+        if (item) {
+            if (item->cfg) {
+                result = item->cfg;
+            } else {
+                LOG_ERROR("item is defined but cfg not");
+            }
+        } else {
             IRItem* it = build_item(m, cfg);
             if (it) {
                 it_map = it;
                 result = it->cfg;
+            } else {
+                LOG_ERROR("While building ir_program item");
+            }
+        }
+    }
+
+    return result;
+}
+
+int ir_program_get_num_locals(const Method* m, const Config* cfg)
+{
+    const char* id = method_get_id(m);
+
+    IRItem* item = find_item(id);
+    if (item) {
+        return item->num_locals;
+    }
+
+    int result = -1;
+
+#pragma omp critical(ir_program_map)
+    {
+        // Second check: with lock (avoid double creation)
+        IRItem* item = find_item(id);
+        if (item) {
+            result = item->num_locals;
+        } else {
+            IRItem* it = build_item(m, cfg);
+            if (it) {
+                it_map = it;
+                result = it->num_locals;
             }
         }
     }

@@ -1,7 +1,6 @@
 #include "ir_function.h"
 #include "cJSON/cJSON.h"
 #include "ir_instruction.h"
-#include "log.h"
 #include "method.h"
 
 static IrFunction*
