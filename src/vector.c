@@ -80,12 +80,6 @@ void* vector_get(const Vector* v, size_t index)
     return (char*)v->data + index * v->element_size;
 }
 
-void* vector_pop(Vector* v)
-{
-    LOG_ERROR("TODO: Vector pop");
-    return NULL;
-}
-
 size_t vector_length(const Vector* v)
 {
     return v->length;
@@ -130,5 +124,22 @@ int vector_copy(Vector* dst, const Vector* src)
 
     memcpy(dst->data, src->data, src->length * src->element_size);
 
+    return SUCCESS;
+}
+
+int vector_pop(Vector* v, void* out)
+{
+    if (!v || v->length == 0) {
+        return FAILURE;
+    }
+
+    size_t index = v->length - 1;
+    void* elem = vector_get(v, index);
+
+    if (out) {
+        memcpy(out, elem, v->element_size);
+    }
+
+    v->length -= 1;
     return SUCCESS;
 }
