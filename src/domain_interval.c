@@ -402,6 +402,20 @@ static int handle_dup(IntervalState* out_state, IrInstruction* ir_instruction)
     return SUCCESS;
 }
 
+static int handle_get(IntervalState* out_state, IrInstruction* ir_instruction)
+{
+    if (!out_state || !ir_instruction) {
+        return FAILURE;
+    }
+
+    Interval interval = { .lower = 0, .upper = 0 };
+    if (interval_stack_push(out_state, interval)) {
+        return FAILURE;
+    }
+
+    return SUCCESS;
+}
+
 static int handle_binary(IntervalState* out_state, IrInstruction* ir_instruction)
 {
     if (!out_state || !ir_instruction) {
@@ -476,6 +490,9 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
     case OP_BINARY:
         result = handle_binary(out_state, ir_instruction);
         break;
+    case OP_GET:
+        result = handle_get(out_state, ir_instruction);
+        break;
     case OP_ARRAY_STORE:
     case OP_NEW_ARRAY:
     case OP_ARRAY_LOAD:
@@ -483,6 +500,199 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
         result = FAILURE;
         break;
     default:
+        break;
+    }
+
+    if (result) {
+        LOG_ERROR("%s", opcode_print(ir_instruction->opcode));
+    }
+
+    return SUCCESS;
+}
+
+static int handle_if_aux(IfCondition condition,
+    Interval x,
+    Interval y,
+    Interval* true_branch,
+    Interval* false_branch)
+{
+    int xL = x.lower;
+    int xU = x.upper;
+    int yL = y.lower;
+    int yU = y.upper;
+
+    Interval bottom = { .lower = 1, .upper = 0 }; // empty interval
+
+    switch (condition) {
+
+    case IF_EQ: {
+        int interL = (xL > yL ? xL : yL);
+        int interU = (xU < yU ? xU : yU);
+
+        if (interL <= interU) {
+            true_branch->lower = interL;
+            true_branch->upper = interU;
+            *false_branch = x;
+        } else {
+            *true_branch = bottom;
+            *false_branch = x;
+        }
+        return SUCCESS;
+    }
+
+    case IF_NE: {
+        int interL = (xL > yL ? xL : yL);
+        int interU = (xU < yU ? xU : yU);
+
+        if (interL <= interU) {
+            *true_branch = x;
+            false_branch->lower = interL;
+            false_branch->upper = interU;
+        } else {
+            *true_branch = x;
+            *false_branch = bottom;
+        }
+        return SUCCESS;
+    }
+
+    case IF_LT: {
+        if (xU < yL) {
+            *true_branch = x;
+            *false_branch = bottom;
+            return SUCCESS;
+        }
+        if (xL >= yU) {
+            *true_branch = bottom;
+            *false_branch = x;
+            return SUCCESS;
+        }
+        *true_branch = x;
+        *false_branch = x;
+        return SUCCESS;
+    }
+
+    case IF_LE: {
+        if (xU <= yL) {
+            *true_branch = x;
+            *false_branch = bottom;
+            return SUCCESS;
+        }
+        if (xL > yU) {
+            *true_branch = bottom;
+            *false_branch = x;
+            return SUCCESS;
+        }
+        *true_branch = x;
+        *false_branch = x;
+        return SUCCESS;
+    }
+
+    case IF_GT: {
+        if (xL > yU) {
+            *true_branch = x;
+            *false_branch = bottom;
+            return SUCCESS;
+        }
+        if (xU <= yL) {
+            *true_branch = bottom;
+            *false_branch = x;
+            return SUCCESS;
+        }
+        *true_branch = x;
+        *false_branch = x;
+        return SUCCESS;
+    }
+
+    case IF_GE: {
+        if (xL >= yU) {
+            *true_branch = x;
+            *false_branch = bottom;
+            return SUCCESS;
+        }
+        if (xU < yL) {
+            *true_branch = bottom;
+            *false_branch = x;
+            return SUCCESS;
+        }
+        *true_branch = x;
+        *false_branch = x;
+        return SUCCESS;
+    }
+
+    default:
+        return FAILURE;
+    }
+}
+
+static int handle_if_zero(IntervalState* out_state_true, IntervalState* out_state_false, IrInstruction* ir_instruction)
+{
+    if (!out_state_true || !out_state_false || !ir_instruction) {
+        return FAILURE;
+    }
+
+    IfOP* ift = &ir_instruction->data.ift;
+    if (!ift) {
+        return FAILURE;
+    }
+
+    Interval interval1, interval2 = { .lower = 0, .upper = 0 };
+    interval_stack_pop(out_state_true, &interval1);
+
+    Interval true_branch, false_branch;
+    handle_if_aux(ift->condition, interval1, interval2, &true_branch, &false_branch);
+
+    interval_stack_pop(out_state_false, &interval1);
+
+    interval_stack_push(out_state_true, true_branch);
+    interval_stack_push(out_state_false, false_branch);
+
+    return SUCCESS;
+}
+
+static int handle_if(IntervalState* out_state_true, IntervalState* out_state_false, IrInstruction* ir_instruction)
+{
+    if (!out_state_true || !out_state_false || !ir_instruction) {
+        return FAILURE;
+    }
+
+    IfOP* ift = &ir_instruction->data.ift;
+    if (!ift) {
+        return FAILURE;
+    }
+
+    Interval interval1, interval2;
+    interval_stack_pop(out_state_true, &interval2);
+    interval_stack_pop(out_state_true, &interval1);
+
+    Interval true_branch, false_branch;
+    handle_if_aux(ift->condition, interval1, interval2, &true_branch, &false_branch);
+
+    interval_stack_pop(out_state_false, &interval2);
+    interval_stack_pop(out_state_false, &interval1);
+
+    interval_stack_push(out_state_true, true_branch);
+    interval_stack_push(out_state_false, false_branch);
+
+    return SUCCESS;
+}
+
+int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* out_state_false, IrInstruction* ir_instruction)
+{
+    if (!out_state_true || !out_state_false || !ir_instruction) {
+        return FAILURE;
+    }
+
+    int result = SUCCESS;
+
+    switch (ir_instruction->opcode) {
+    case OP_IF:
+        result = handle_if(out_state_true, out_state_false, ir_instruction);
+        break;
+    case OP_IF_ZERO:
+        result = handle_if_zero(out_state_true, out_state_false, ir_instruction);
+        break;
+    default:
+        result = FAILURE;
         break;
     }
 

@@ -3,6 +3,7 @@
 #include "domain_interval.h"
 #include "ir_program.h"
 #include "log.h"
+#include "vector.h"
 
 struct AbstractContext {
     IrFunction* ir_function;
@@ -26,7 +27,7 @@ static void interpreter_abstract_print_result(const AbstractContext* ctx)
         IntervalState* in_state = *(IntervalState**)vector_get(ctx->in, i);
         IntervalState* out_state = *(IntervalState**)vector_get(ctx->out, i);
 
-        LOG_INFO("Block %d: [%d, %d]", block->id, block->ip_start, block->ip_end);
+        LOG_INFO("Block %d: [%d, %d] (success len: %ld)", block->id, block->ip_start, block->ip_end, vector_length(block->successors));
         LOG_INFO("IN : ");
         interval_state_print(in_state);
         LOG_INFO("OUT: ");
@@ -96,6 +97,20 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     return abstract_context;
 }
 
+static void join_successor(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
+{
+    BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, index);
+    int id = successor->id;
+    IntervalState* successor_in_state = *(IntervalState**)vector_get(abstract_context->in, id);
+
+    int changed;
+    interval_join(successor_in_state, state, &changed);
+
+    if (changed) {
+        vector_push(worklist, &id);
+    }
+}
+
 void interpreter_abstract_run(AbstractContext* abstract_context)
 {
     if (!abstract_context
@@ -125,22 +140,27 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
 
         // OUT[b] = transfer(IN[b])
         interval_state_copy(out_state, in_state);
-        for (int i = block->ip_start; i <= block->ip_end; i++) {
+        for (int i = block->ip_start; i < block->ip_end; i++) {
             IrInstruction* ir_instruction = *(IrInstruction**)vector_get(abstract_context->ir_function->ir_instructions, i);
             interval_transfer(out_state, ir_instruction);
         }
 
-        // IN[s] = join(IN[s], OUT[b])
-        for (int i = 0; i < vector_length(block->successors); i++) {
-            BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, i);
-            int id = successor->id;
-            IntervalState* successor_in_state = *(IntervalState**)vector_get(abstract_context->in, id);
+        IrInstruction* ir_instruction_last = *(IrInstruction**)vector_get(abstract_context->ir_function->ir_instructions, block->ip_end);
+        if (ir_instruction_is_conditional(ir_instruction_last)) {
+            IntervalState* out_state_true = out_state;
+            IntervalState* out_state_false = interval_new_top_state(vector_length(out_state->locals));
+            interval_state_copy(out_state_false, out_state_true);
 
-            int changed;
-            interval_join(successor_in_state, out_state, &changed);
+            interval_transfer_conditional(out_state, out_state_false, ir_instruction_last);
 
-            if (changed) {
-                vector_push(worklist, &id);
+            join_successor(abstract_context, block, out_state, worklist, 0);
+            join_successor(abstract_context, block, out_state_false, worklist, 1);
+        } else {
+            interval_transfer(out_state, ir_instruction_last);
+
+            // IN[s] = join(IN[s], OUT[b])
+            for (int i = 0; i < vector_length(block->successors); i++) {
+                join_successor(abstract_context, block, out_state, worklist, i);
             }
         }
     }

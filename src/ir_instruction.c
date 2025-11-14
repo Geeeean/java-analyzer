@@ -617,3 +617,8 @@ cleanup:
     free(ir_instruction);
     return NULL;
 }
+
+int ir_instruction_is_conditional(IrInstruction* ir_instruction)
+{
+    return ir_instruction->opcode == OP_IF || ir_instruction->opcode == OP_IF_ZERO;
+}

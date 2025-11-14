@@ -24,6 +24,7 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
 // int interval_narrowing(IntervalState* state_accumulator, IntervalState* state_prev, int* changed);
 
 int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction);
+int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* out_state_false, IrInstruction* ir_instruction);
 
 void interval_state_print(const IntervalState* st);
 // int interval_transfer_assignment(const IntervalState* in_state, IntervalState* out_state, int dst, int src1, int* changed);
