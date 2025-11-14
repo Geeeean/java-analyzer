@@ -97,7 +97,7 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     return abstract_context;
 }
 
-static void intersect_successor(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
+static void intersect(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
 {
     BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, index);
     int id = successor->id;
@@ -111,7 +111,7 @@ static void intersect_successor(AbstractContext* abstract_context, BasicBlock* b
     }
 }
 
-static void join_successor(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
+static void join(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
 {
     BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, index);
     int id = successor->id;
@@ -136,59 +136,139 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
     }
 
     Cfg* cfg = abstract_context->cfg;
-    for (int i = 0; i < vector_length(cfg->blocks); i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        LOG_DEBUG("BLOCK: %d", block->id);
-        for (int j = 0; j < vector_length(block->successors); j++) {
-            BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, j);
-            LOG_DEBUG("SUCC: %d", succ->id);
-        }
-        LOG_DEBUG("");
+    int num_blocks = vector_length(cfg->blocks);
+    int num_locals = abstract_context->num_locals;
+
+    int8_t* visited = calloc(num_blocks, sizeof(int8_t));
+    if (!visited) {
+        return;
     }
 
-    int num_block = vector_length(cfg->blocks);
-
-    // push blocks in rpo order
     Vector* worklist = vector_new(sizeof(int));
-    for (int i = 0; i < vector_length(cfg->rpo); i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(cfg->rpo, i);
-        vector_push(worklist, &block->id);
+    if (!worklist) {
+        free(visited);
+        return;
     }
 
-    int block_index;
-    while (!vector_pop(worklist, &block_index)) {
-        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, block_index);
-        IntervalState* in_state = *(IntervalState**)vector_get(abstract_context->in, block_index);
-        IntervalState* out_state = *(IntervalState**)vector_get(abstract_context->out, block_index);
+    int id = 0;
+    vector_push(worklist, &id);
 
-        // OUT[b] = transfer(IN[b])
-        interval_state_copy(out_state, in_state);
-        for (int i = block->ip_start; i < block->ip_end; i++) {
-            IrInstruction* ir_instruction = *(IrInstruction**)vector_get(abstract_context->ir_function->ir_instructions, i);
-            interval_transfer(out_state, ir_instruction);
+    visited[id] = 1;
+    while (!vector_pop(worklist, &id)) {
+
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, id);
+        if (!block) {
+            continue;
         }
 
-        IrInstruction* ir_instruction_last = *(IrInstruction**)vector_get(abstract_context->ir_function->ir_instructions, block->ip_end);
-        if (ir_instruction_is_conditional(ir_instruction_last)) {
-            IntervalState* out_state_true = interval_new_top_state(0);
-            interval_state_copy(out_state_true, out_state);
+        IntervalState* in_state = *(IntervalState**)vector_get(abstract_context->in, id);
+        IntervalState* out_state = *(IntervalState**)vector_get(abstract_context->out, id);
 
-            IntervalState* out_state_false = interval_new_top_state(0);
-            interval_state_copy(out_state_false, out_state);
+        // ----------------------------------------------------
+        // OUT[block] = transfer(IN[block], instruction)
+        // ----------------------------------------------------
+        interval_state_copy(out_state, in_state);
 
-            interval_transfer_conditional(out_state_true, out_state_false, ir_instruction_last);
+        // all instruction - last
+        for (int ip = block->ip_start; ip < block->ip_end; ip++) {
+            IrInstruction* ir = *(IrInstruction**)vector_get(
+                abstract_context->ir_function->ir_instructions, ip);
+            interval_transfer(out_state, ir);
+        }
 
-            intersect_successor(abstract_context, block, out_state_true, worklist, 0);
-            intersect_successor(abstract_context, block, out_state_false, worklist, 1);
+        // last instr
+        IrInstruction* last_ir = *(IrInstruction**)vector_get(
+            abstract_context->ir_function->ir_instructions, block->ip_end);
+
+        if (ir_instruction_is_conditional(last_ir)) {
+            // ---------------------------------------------
+            // cond branch 
+            // ---------------------------------------------
+            IntervalState* out_true = interval_new_top_state(num_locals);
+            IntervalState* out_false = interval_new_top_state(num_locals);
+
+            interval_state_copy(out_true, out_state);
+            interval_state_copy(out_false, out_state);
+
+            interval_transfer_conditional(out_true, out_false, last_ir);
+
+            if (vector_length(block->successors) != 2) {
+                LOG_ERROR("Conditional block %d without 2 successors", block->id);
+            } else {
+                BasicBlock* succ_true = *(BasicBlock**)vector_get(block->successors, 0);
+                BasicBlock* succ_false = *(BasicBlock**)vector_get(block->successors, 1);
+
+                if (succ_true) {
+                    IntervalState* succ_in = *(IntervalState**)vector_get(
+                        abstract_context->in, succ_true->id);
+
+                    int changed = 0;
+                    if (!visited[succ_true->id]) {
+                        interval_state_copy(succ_in, out_true);
+                        visited[succ_true->id] = 1;
+                        changed = 1;
+                    } else {
+                        interval_join(succ_in, out_true, &changed);
+                    }
+
+                    if (changed) {
+                        int sid = succ_true->id;
+                        vector_push(worklist, &sid);
+                    }
+                }
+
+                if (succ_false) {
+                    IntervalState* succ_in = *(IntervalState**)vector_get(
+                        abstract_context->in, succ_false->id);
+
+                    int changed = 0;
+                    if (!visited[succ_false->id]) {
+                        interval_state_copy(succ_in, out_false);
+                        visited[succ_false->id] = 1;
+                        changed = 1;
+                    } else {
+                        interval_join(succ_in, out_false, &changed);
+                    }
+
+                    if (changed) {
+                        int sid = succ_false->id;
+                        vector_push(worklist, &sid);
+                    }
+                }
+            }
         } else {
-            interval_transfer(out_state, ir_instruction_last);
+            interval_transfer(out_state, last_ir);
 
-            // IN[s] = join(IN[s], OUT[b])
             for (int i = 0; i < vector_length(block->successors); i++) {
-                join_successor(abstract_context, block, out_state, worklist, i);
+                BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, i);
+                if (!succ)
+                    continue;
+
+                IntervalState* succ_in = *(IntervalState**)vector_get(
+                    abstract_context->in, succ->id);
+
+                int changed = 0;
+                if (!visited[succ->id]) {
+                    // prima volta: niente join con TOP, copiamo
+                    interval_state_copy(succ_in, out_state);
+                    visited[succ->id] = 1;
+                    changed = 1;
+                } else {
+                    interval_join(succ_in, out_state, &changed);
+                }
+
+                if (changed) {
+                    int sid = succ->id;
+                    vector_push(worklist, &sid);
+                }
             }
         }
+
+#ifdef DEBUG
+        interpreter_abstract_print_result(abstract_context);
+#endif
     }
 
     interpreter_abstract_print_result(abstract_context);
+    free(visited);
 }
