@@ -1,6 +1,7 @@
 #include "cfg.h"
 #include "common.h"
 #include "ir_instruction.h"
+#include "log.h"
 #include "stdint.h"
 #include "vector.h"
 

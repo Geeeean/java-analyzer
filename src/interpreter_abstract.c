@@ -97,6 +97,20 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     return abstract_context;
 }
 
+static void intersect_successor(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
+{
+    BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, index);
+    int id = successor->id;
+    IntervalState* successor_in_state = *(IntervalState**)vector_get(abstract_context->in, id);
+
+    int changed;
+    interval_intersection(successor_in_state, state, &changed);
+
+    if (changed) {
+        vector_push(worklist, &id);
+    }
+}
+
 static void join_successor(AbstractContext* abstract_context, BasicBlock* block, IntervalState* state, Vector* worklist, int index)
 {
     BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, index);
@@ -122,6 +136,15 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
     }
 
     Cfg* cfg = abstract_context->cfg;
+    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+        LOG_DEBUG("BLOCK: %d", block->id);
+        for (int j = 0; j < vector_length(block->successors); j++) {
+            BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, j);
+            LOG_DEBUG("SUCC: %d", succ->id);
+        }
+        LOG_DEBUG("");
+    }
 
     int num_block = vector_length(cfg->blocks);
 
@@ -147,14 +170,16 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
 
         IrInstruction* ir_instruction_last = *(IrInstruction**)vector_get(abstract_context->ir_function->ir_instructions, block->ip_end);
         if (ir_instruction_is_conditional(ir_instruction_last)) {
-            IntervalState* out_state_true = out_state;
-            IntervalState* out_state_false = interval_new_top_state(vector_length(out_state->locals));
-            interval_state_copy(out_state_false, out_state_true);
+            IntervalState* out_state_true = interval_new_top_state(0);
+            interval_state_copy(out_state_true, out_state);
 
-            interval_transfer_conditional(out_state, out_state_false, ir_instruction_last);
+            IntervalState* out_state_false = interval_new_top_state(0);
+            interval_state_copy(out_state_false, out_state);
 
-            join_successor(abstract_context, block, out_state, worklist, 0);
-            join_successor(abstract_context, block, out_state_false, worklist, 1);
+            interval_transfer_conditional(out_state_true, out_state_false, ir_instruction_last);
+
+            intersect_successor(abstract_context, block, out_state_true, worklist, 0);
+            intersect_successor(abstract_context, block, out_state_false, worklist, 1);
         } else {
             interval_transfer(out_state, ir_instruction_last);
 
