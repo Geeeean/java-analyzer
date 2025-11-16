@@ -1,7 +1,7 @@
 // todo handle pop error, use vector
+#include "interpreter_concrete.h"
 #include "cli.h"
 #include "heap.h"
-#include "interpreter_concrete.h"
 #include "ir_function.h"
 #include "ir_instruction.h"
 #include "ir_program.h"
@@ -954,6 +954,41 @@ static StepResult handle_skip(VMContext* vm_context, IrInstruction* ir_instructi
 
 static StepResult handle_throw(VMContext* vm_context, IrInstruction* ir_instruction)
 {
+    Frame* frame = vm_context->frame;
+    frame->pc++;
+
+    return SR_ASSERTION_ERR;
+}
+
+static StepResult handle_negate(VMContext* vm_context, IrInstruction* ir_instruction)
+{
+    NegateOP* negate = &ir_instruction->data.negate;
+    if (!negate) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
+
+    Value value;
+    stack_pop(frame->stack, &value);
+
+    if (value.type != negate->type) {
+        return SR_INVALID_TYPE;
+    }
+
+    if (value.type == TYPE_INT) {
+        value.data.int_value = -value.data.int_value;
+    } else if (value.type == TYPE_BOOLEAN) {
+        value.data.bool_value = -value.data.bool_value;
+    } else if (value.type == TYPE_CHAR) {
+        value.data.char_value = -value.data.char_value;
+    } else {
+        return SR_INVALID_TYPE;
+    }
+
+    stack_push(frame->stack, value);
+
+    frame->pc++;
     return SR_ASSERTION_ERR;
 }
 

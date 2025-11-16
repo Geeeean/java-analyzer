@@ -28,6 +28,7 @@ typedef enum {
     OP_ARRAY_STORE,
     OP_ARRAY_LENGTH,
     OP_INCR,
+    OP_NEGATE,
     OP_COUNT
 } Opcode;
 
@@ -125,6 +126,10 @@ typedef struct {
     int index;
     int amount;
 } IncrOP;
+
+typedef struct {
+    Type* type;
+} NegateOP;
 
 const char* opcode_print(Opcode opcode);
 Opcode opcode_parse(cJSON* instruction_json);

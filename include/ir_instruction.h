@@ -24,6 +24,7 @@ typedef struct {
         ArrayLoadOP array_load;
         ArrayLengthOP array_length;
         IncrOP incr;
+        NegateOP negate;
     } data;
 } IrInstruction;
 
