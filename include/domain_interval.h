@@ -2,6 +2,8 @@
 #define DOMAIN_INTERVAL_H
 
 #include "ir_instruction.h"
+
+#include <stdbool.h>
 #include <vector.h>
 
 typedef struct {
@@ -14,12 +16,12 @@ typedef struct {
     Vector* stack;  // Vector<int>
     Vector* env;    // Vector<Interval>
     int name_count;
-    int is_bottom;
 } IntervalState;
 
 IntervalState* interval_new_top_state(int num_vars);
 IntervalState* interval_new_bottom_state(int num_locals);
 int interval_state_copy(IntervalState* dst, const IntervalState* src);
+bool is_interval_state_bottom(IntervalState* state);
 
 int interval_join(IntervalState* acc, const IntervalState* new, int* changed);
 int interval_intersection(IntervalState* acc, const IntervalState* constraint, int* changed);

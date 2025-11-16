@@ -58,29 +58,6 @@ static Interval interval_widen_single(Interval old, Interval newer)
     return r;
 }
 
-IntervalState* interval_new_bottom_state(int num_locals)
-{
-    IntervalState* st = malloc(sizeof(IntervalState));
-    if (!st) {
-        return NULL;
-    }
-
-    st->locals = vector_new(sizeof(int));
-    st->stack = vector_new(sizeof(int));
-    st->env = vector_new(sizeof(Interval));
-    st->name_count = 0;
-    st->is_bottom = 1;
-
-    // for (int i = 0; i < num_locals; i++) {
-    //     vector_push(st->locals, &i);
-    //
-    //     Interval iv = interval_bottom();
-    //     vector_push(st->env, &iv);
-    // }
-
-    return st;
-}
-
 IntervalState* interval_new_top_state(int num_locals)
 {
     IntervalState* st = malloc(sizeof(IntervalState));
@@ -92,7 +69,6 @@ IntervalState* interval_new_top_state(int num_locals)
     st->stack = vector_new(sizeof(int));
     st->env = vector_new(sizeof(Interval));
     st->name_count = num_locals;
-    st->is_bottom = 0;
 
     for (int i = 0; i < num_locals; i++) {
         vector_push(st->locals, &i);
@@ -146,96 +122,84 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 
     *changed = 0;
 
-    if (new->is_bottom) {
-        // join(X, bottom) = X
+    /* --- 1) JOIN ENV ---------------------------------------------------- */
+    int acc_env_len = vector_length(acc->env);
+    int new_env_len = vector_length(new->env);
+
+    /* porta acc->env alla lunghezza massima */
+    while (vector_length(acc->env) < new_env_len) {
+        Interval top = interval_top();
+        vector_push(acc->env, &top);
+        *changed = 1;
+    }
+
+    /* join sugli intervalli */
+    for (int i = 0; i < new_env_len; i++) {
+        Interval* a = vector_get(acc->env, i);
+        Interval b = *(Interval*)vector_get(new->env, i);
+
+        Interval r = interval_join_single(*a, b);
+
+        if (r.lower != a->lower || r.upper != a->upper) {
+            *a = r;
+            *changed = 1;
+        }
+    }
+
+    /* --- 2) JOIN LOCALS ------------------------------------------------- */
+
+    int locals_len = vector_length(acc->locals);
+
+    for (int i = 0; i < locals_len; i++) {
+
+        int* nameA = (int*)vector_get(acc->locals, i);
+        int nameB = *(int*)vector_get(new->locals, i);
+
+        if (*nameA == nameB)
+            continue; /* stessi nomi → nessun problema */
+
+        /* nomi diversi → crea nuovo nome */
+        int newName = acc->name_count++;
+
+        Interval a = *(Interval*)vector_get(acc->env, *nameA);
+        Interval b = *(Interval*)vector_get(new->env, nameB);
+
+        Interval r = interval_join_single(a, b);
+
+        vector_push(acc->env, &r);
+
+        *nameA = newName;
+        *changed = 1;
+    }
+
+    /* --- 3) JOIN STACK -------------------------------------------------- */
+    // Join dello stack
+    int lenA = vector_length(acc->stack);
+    int lenB = vector_length(new->stack);
+
+    // Se forme diverse → stack comune = vuoto
+    if (lenA != lenB) {
+        vector_delete(acc->stack);
+        acc->stack = vector_new(sizeof(int));
+        *changed = 1;
+        // non tocchiamo env qui
         return SUCCESS;
     }
 
-    if (acc->is_bottom) {
-        interval_state_copy(acc, new);
-        acc->is_bottom = 0;
-    } else {
+    for (int i = 0; i < lenA; i++) {
+        int* nameA = vector_get(acc->stack, i);
+        int nameB = *(int*)vector_get(new->stack, i);
 
-        /* --- 1) JOIN ENV ---------------------------------------------------- */
-
-        int acc_env_len = vector_length(acc->env);
-        int new_env_len = vector_length(new->env);
-
-        /* porta acc->env alla lunghezza massima */
-        while (vector_length(acc->env) < new_env_len) {
-            Interval top = interval_top();
-            vector_push(acc->env, &top);
-            *changed = 1;
-        }
-
-        /* join sugli intervalli */
-        for (int i = 0; i < new_env_len; i++) {
-            Interval* a = vector_get(acc->env, i);
-            Interval b = *(Interval*)vector_get(new->env, i);
-
-            Interval r = interval_join_single(*a, b);
-
-            if (r.lower != a->lower || r.upper != a->upper) {
-                *a = r;
-                *changed = 1;
-            }
-        }
-
-        /* --- 2) JOIN LOCALS ------------------------------------------------- */
-
-        int locals_len = vector_length(acc->locals);
-
-        for (int i = 0; i < locals_len; i++) {
-
-            int* nameA = (int*)vector_get(acc->locals, i);
-            int nameB = *(int*)vector_get(new->locals, i);
-
-            if (*nameA == nameB)
-                continue; /* stessi nomi → nessun problema */
-
-            /* nomi diversi → crea nuovo nome */
+        if (*nameA != nameB) {
             int newName = acc->name_count++;
 
             Interval a = *(Interval*)vector_get(acc->env, *nameA);
             Interval b = *(Interval*)vector_get(new->env, nameB);
-
             Interval r = interval_join_single(a, b);
 
             vector_push(acc->env, &r);
-
             *nameA = newName;
             *changed = 1;
-        }
-
-        /* --- 3) JOIN STACK -------------------------------------------------- */
-        // Join dello stack
-        int lenA = vector_length(acc->stack);
-        int lenB = vector_length(new->stack);
-
-        // Se forme diverse → stack comune = vuoto
-        if (lenA != lenB) {
-            vector_delete(acc->stack);
-            acc->stack = vector_new(sizeof(int));
-            *changed = 1;
-            // non tocchiamo env qui
-            return SUCCESS;
-        }
-
-        for (int i = 0; i < lenA; i++) {
-            int* nameA = vector_get(acc->stack, i);
-            int nameB = *(int*)vector_get(new->stack, i);
-
-            if (*nameA != nameB) {
-                int newName = acc->name_count++;
-
-                Interval a = *(Interval*)vector_get(acc->env, *nameA);
-                Interval b = *(Interval*)vector_get(new->env, nameB);
-                Interval r = interval_join_single(a, b);
-
-                vector_push(acc->env, &r);
-                *nameA = newName;
-                *changed = 1;
-            }
         }
     }
 
@@ -319,7 +283,6 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
     *changed = 0;
 
     /* --- 1) WIDENING ENV ------------------------------------------------ */
-
     int env_len = vector_length(acc->env);
     int new_len = vector_length(new->env);
     int max_len = (env_len > new_len ? env_len : new_len);
@@ -344,7 +307,6 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
     }
 
     /* --- 2) LOCALS E STACK --------------------------------------------- */
-
     for (int i = 0; i < vector_length(acc->locals); i++) {
         int* nameA = vector_get(acc->locals, i);
         int nameB = *(int*)vector_get(new->locals, i);
@@ -685,9 +647,7 @@ static int handle_if_aux(IfCondition condition,
     int yL = y->lower;
     int yU = y->upper;
 
-    Interval bottom;
-    bottom.lower = 1;
-    bottom.upper = 0;
+    Interval bottom = interval_bottom();
 
 // Helper per creare intervalli validi
 #define MAKE_INTERVAL(out, L, U) \
@@ -975,4 +935,22 @@ void interval_state_print(const IntervalState* st)
         else
             LOG_INFO("n%d = [%d,%d]", i, iv->lower, iv->upper);
     }
+}
+
+bool is_interval_state_bottom(IntervalState* state)
+{
+    if (!state) {
+        return true;
+    }
+
+    Interval bottom = interval_bottom();
+
+    for (int i = 0; i < vector_length(state->env); i++) {
+        Interval* iv = vector_get(state->env, i);
+        if (bottom.lower == iv->lower && bottom.upper == iv->upper) {
+            return true;
+        }
+    }
+
+    return false;
 }

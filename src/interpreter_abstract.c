@@ -13,7 +13,7 @@ struct AbstractContext {
     int num_locals;
 };
 
-static void interpreter_abstract_print_result(const AbstractContext* ctx)
+static void interpreter_abstract_print_result(const AbstractContext* ctx, int8_t* bottom)
 {
     if (!ctx || !ctx->cfg || !ctx->cfg->blocks)
         return;
@@ -28,10 +28,16 @@ static void interpreter_abstract_print_result(const AbstractContext* ctx)
         IntervalState* out_state = *(IntervalState**)vector_get(ctx->out, i);
 
         LOG_INFO("Block %d: [%d, %d] (success len: %ld)", block->id, block->ip_start, block->ip_end, vector_length(block->successors));
+#ifdef DEBUG
         LOG_INFO("IN : ");
         interval_state_print(in_state);
         LOG_INFO("OUT: ");
-        interval_state_print(out_state);
+#endif
+        if (bottom[i]) {
+            LOG_INFO("⊥");
+        } else {
+            interval_state_print(out_state);
+        }
         LOG_INFO("");
     }
 }
@@ -140,7 +146,8 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
     int num_locals = abstract_context->num_locals;
 
     int8_t* visited = calloc(num_blocks, sizeof(int8_t));
-    if (!visited) {
+    int8_t* bottom = calloc(num_blocks, sizeof(int8_t));
+    if (!visited || !bottom) {
         return;
     }
 
@@ -155,7 +162,6 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
 
     visited[id] = 1;
     while (!vector_pop(worklist, &id)) {
-
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, id);
         if (!block) {
             continue;
@@ -182,7 +188,7 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
 
         if (ir_instruction_is_conditional(last_ir)) {
             // ---------------------------------------------
-            // cond branch 
+            // cond branch
             // ---------------------------------------------
             IntervalState* out_true = interval_new_top_state(num_locals);
             IntervalState* out_false = interval_new_top_state(num_locals);
@@ -199,45 +205,57 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
                 BasicBlock* succ_false = *(BasicBlock**)vector_get(block->successors, 1);
 
                 if (succ_true) {
-                    IntervalState* succ_in = *(IntervalState**)vector_get(
-                        abstract_context->in, succ_true->id);
-
-                    int changed = 0;
-                    if (!visited[succ_true->id]) {
-                        interval_state_copy(succ_in, out_true);
-                        visited[succ_true->id] = 1;
-                        changed = 1;
+                    if (is_interval_state_bottom(out_true)) {
+                        bottom[id] = true;
                     } else {
-                        interval_join(succ_in, out_true, &changed);
-                    }
+                        IntervalState* succ_in = *(IntervalState**)vector_get(
+                            abstract_context->in, succ_true->id);
 
-                    if (changed) {
-                        int sid = succ_true->id;
-                        vector_push(worklist, &sid);
+                        int changed = 0;
+                        if (!visited[succ_true->id]) {
+                            interval_state_copy(succ_in, out_true);
+                            visited[succ_true->id] = true;
+                            changed = true;
+                        } else {
+                            interval_join(succ_in, out_true, &changed);
+                        }
+
+                        if (changed) {
+                            int sid = succ_true->id;
+                            vector_push(worklist, &sid);
+                        }
                     }
                 }
 
                 if (succ_false) {
-                    IntervalState* succ_in = *(IntervalState**)vector_get(
-                        abstract_context->in, succ_false->id);
-
-                    int changed = 0;
-                    if (!visited[succ_false->id]) {
-                        interval_state_copy(succ_in, out_false);
-                        visited[succ_false->id] = 1;
-                        changed = 1;
+                    if (is_interval_state_bottom(out_false)) {
+                        bottom[id] = true;
                     } else {
-                        interval_join(succ_in, out_false, &changed);
-                    }
+                        IntervalState* succ_in = *(IntervalState**)vector_get(
+                            abstract_context->in, succ_false->id);
 
-                    if (changed) {
-                        int sid = succ_false->id;
-                        vector_push(worklist, &sid);
+                        int changed = 0;
+                        if (!visited[succ_false->id]) {
+                            interval_state_copy(succ_in, out_false);
+                            visited[succ_false->id] = true;
+                            changed = true;
+                        } else {
+                            interval_join(succ_in, out_false, &changed);
+                        }
+
+                        if (changed) {
+                            int sid = succ_false->id;
+                            vector_push(worklist, &sid);
+                        }
                     }
                 }
             }
         } else {
             interval_transfer(out_state, last_ir);
+            if (is_interval_state_bottom(out_state)) {
+                bottom[id] = true;
+                continue;
+            }
 
             for (int i = 0; i < vector_length(block->successors); i++) {
                 BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, i);
@@ -269,6 +287,13 @@ void interpreter_abstract_run(AbstractContext* abstract_context)
 #endif
     }
 
-    interpreter_abstract_print_result(abstract_context);
+    for (int i = 0; i < num_blocks; i++) {
+        if (!visited[i]) {
+            bottom[i] = true;
+        }
+    }
+
+    interpreter_abstract_print_result(abstract_context, bottom);
+    free(bottom);
     free(visited);
 }
