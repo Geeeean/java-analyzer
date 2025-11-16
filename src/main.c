@@ -16,10 +16,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 int main(int argc, char** argv)
 {
+    struct timeval start, end;
+    gettimeofday(&start, NULL); // capture start time
 #ifdef DEBUG
     omp_set_num_threads(1);
 #endif
@@ -186,6 +189,14 @@ int main(int argc, char** argv)
 
         print_outcome(outcome);
     }
+
+    gettimeofday(&end, NULL); // capture end time
+
+    long seconds = end.tv_sec - start.tv_sec;
+    long useconds = end.tv_usec - start.tv_usec;
+
+    long total_microseconds = seconds * 1000000L + useconds;
+    LOG_INFO("Elapsed time: %ld microseconds\n", total_microseconds);
 
 cleanup:
     ts_tree_delete(tree);
