@@ -517,8 +517,14 @@ static int handle_store(IntervalState* out_state, IrInstruction* ir_instruction)
     Interval iv = *(Interval*)vector_get(out_state->env, name_old);
     vector_push(out_state->env, &iv);
 
-    int* local_name = vector_get(out_state->locals, store->index);
-    *local_name = new_name;
+    if (store->index == vector_length(out_state->locals)) {
+        vector_push(out_state->locals, &new_name);
+    } else if (store->index == vector_length(out_state->locals)) {
+        int* local_name = vector_get(out_state->locals, store->index);
+        *local_name = new_name;
+    } else {
+        return FAILURE;
+    }
 
     return SUCCESS;
 }
@@ -945,6 +951,8 @@ void interval_state_print(const IntervalState* st)
         Interval* iv = vector_get(st->env, name);
         if (iv->lower == INT_MIN && iv->upper == INT_MAX)
             LOG_INFO("v%d = n%d [⊤]", i, name);
+        else if (iv->lower == 1 && iv->upper == 0)
+            LOG_INFO("v%d = n%d [⊥]", i, name);
         else
             LOG_INFO("v%d = n%d [%d,%d]", i, name, iv->lower, iv->upper);
     }
