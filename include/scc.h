@@ -17,6 +17,11 @@ typedef struct {
     int* exit_id; // [component count]
     int wpo_node_count;
     Vector** successors;
+    Vector** scheduling_pred;
+    int* component_of_node;
+    int* exit_id_inverse;
+    int** num_outer_sched_preds;
+    Vector** Cx;
 } CondensedSCC;
 
 CondensedSCC* cscc_build(Cfg* cfg);

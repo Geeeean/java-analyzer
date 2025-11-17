@@ -410,25 +410,6 @@ CondensedSCC* cscc_build(Cfg* cfg)
             stabilizing_pred[h] = x;
         }
     }
-    /*** SCHEDULING PREDECESSORS ***/
-    Vector** scheduling_pred = malloc(sizeof(Vector*) * wpo_node_count);
-    if (!scheduling_pred) {
-        goto cleanup;
-    }
-
-    for (int i = 0; i < wpo_node_count; i++) {
-        scheduling_pred[i] = vector_new(sizeof(int));
-        if (!scheduling_pred[i]) {
-            goto cleanup;
-        }
-    }
-
-    for (int i = 0; i < wpo_node_count; i++) {
-        for (int j = 0; j < vector_length(successors[i]); j++) {
-            int* v = vector_get(successors[i], j);
-            vector_push(scheduling_pred[*v], &i);
-        }
-    }
 
     /*** COMPONENT OF EACH WPO NODE (Cx) ***/
     int* component_of_node = malloc(sizeof(int) * wpo_node_count);
@@ -450,6 +431,36 @@ CondensedSCC* cscc_build(Cfg* cfg)
         component_of_node[x] = c;
     }
 
+    /*** SCHEDULING PREDECESSORS ***/
+    Vector** scheduling_pred = malloc(sizeof(Vector*) * wpo_node_count);
+    if (!scheduling_pred) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        scheduling_pred[i] = vector_new(sizeof(int));
+        if (!scheduling_pred[i]) {
+            goto cleanup;
+        }
+    }
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        for (int j = 0; j < vector_length(successors[i]); j++) {
+            int* v = vector_get(successors[i], j);
+
+            // avoid exit -> head
+            if (stabilizing_pred[*v] == i) {
+                continue;
+            }
+
+            if (component_of_node[*v] == component_of_node[i]) {
+                continue;
+            }
+
+            vector_push(scheduling_pred[*v], &i);
+        }
+    }
+
     /*** NUM OUTER SCHED PREDS ***/
     int** num_outer_sched_preds = malloc(sizeof(int*) * wpo_node_count);
     if (!num_outer_sched_preds) {
@@ -463,21 +474,13 @@ CondensedSCC* cscc_build(Cfg* cfg)
         }
     }
 
-    /*
-        num_outer_sched_preds[v][c] =
-            quanti scheduling predecessors di v NON appartengono alla componente c
-    */
     for (int v = 0; v < wpo_node_count; v++) {
-
-        /* analizza ogni predecessore che schedula v */
         for (int i = 0; i < vector_length(scheduling_pred[v]); i++) {
             int u = *(int*)vector_get(scheduling_pred[v], i);
 
-            int cu = component_of_node[u]; // componente del predecessore
-            int cv = component_of_node[v]; // componente di v
+            int cu = component_of_node[u]; // component of predecessor
+            int cv = component_of_node[v]; // component of v
 
-            /* per ogni componente c,
-               se u NON appartiene a c, incrementiamo il contatore */
             for (int c = 0; c < scc->comp_count; c++) {
                 if (cu != c) {
                     num_outer_sched_preds[v][c]++;
@@ -486,13 +489,12 @@ CondensedSCC* cscc_build(Cfg* cfg)
         }
     }
 
-    /*** Cx: NODI CHE APPARTENGONO A OGNI COMPONENTE DEL WPO ***/
+    /*** Cx: NODES FOR EACH WPO COMPONENT ***/
     Vector** Cx = malloc(sizeof(Vector*) * scc->comp_count);
     if (!Cx) {
         goto cleanup;
     }
 
-    /* crea un vector per ciascuna componente */
     for (int c = 0; c < scc->comp_count; c++) {
         Cx[c] = vector_new(sizeof(int));
         if (!Cx[c]) {
@@ -500,13 +502,11 @@ CondensedSCC* cscc_build(Cfg* cfg)
         }
     }
 
-    /*** 1) Aggiungi i basic block alla loro componente ***/
     for (int v = 0; v < block_count; v++) {
         int c = scc->comp_id[v];
         vector_push(Cx[c], &v);
     }
 
-    /*** 2) Aggiungi l'exit node, se esiste ***/
     for (int c = 0; c < scc->comp_count; c++) {
         int x = exit_id[c];
         if (x >= 0) { // esiste un exit → componente ciclica
@@ -514,7 +514,17 @@ CondensedSCC* cscc_build(Cfg* cfg)
         }
     }
 
+    cscc->scheduling_pred = scheduling_pred;
+    cscc->component_of_node = component_of_node;
+
+    cscc->exit_id_inverse = exit_id_inverse;
+    cscc->Cx = Cx;
+    cscc->num_outer_sched_preds = num_outer_sched_preds;
+
+#ifdef DEBUG
     print_wpo_graph(successors, stabilizing_pred, wpo_node_count);
+#endif
+
 cleanup:
     // todo
     return cscc;
