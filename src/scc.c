@@ -1,6 +1,7 @@
 #include "scc.h"
 #include "cfg.h"
 #include "common.h"
+#include "log.h"
 #include "vector.h"
 #include <limits.h>
 
@@ -301,13 +302,12 @@ CondensedSCC* cscc_build(Cfg* cfg)
             is_loop[i] = 1;
         } else if (vector_length(cscc->scc->components[i]) == 1) {
             int b = *(int*)vector_get(cscc->scc->components[i], 0);
-
             BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, b);
 
             int self_loop = 0;
             for (int j = 0; j < vector_length(block->successors); j++) {
                 BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, j);
-                if (succ->id == b) {
+                if (succ->id == block->id) {
                     self_loop = 1;
                     break;
                 }
@@ -370,6 +370,9 @@ CondensedSCC* cscc_build(Cfg* cfg)
         vector_push(successors[i], &cscc->head[c]);
 
         Vector* comp = cscc->scc->components[c];
+
+        vector_push(successors[head[c]], &i);
+
         for (int k = 0; k < vector_length(comp); k++) {
             int b = *(int*)vector_get(comp, k);
             BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, b);
@@ -431,6 +434,44 @@ CondensedSCC* cscc_build(Cfg* cfg)
         component_of_node[x] = c;
     }
 
+    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+
+        for (int j = 0; j < vector_length(block->successors); j++) {
+            BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
+            int component = component_of_node[successor->id];
+            if (is_loop[component] && component_of_node[successor->id] != component_of_node[i]) {
+                vector_push(successors[i], &exit_id[component]);
+            }
+        }
+    }
+
+    for (int i = 0; i < scc->comp_count; i++) {
+        int component = i;
+        // if im in a loop
+        if (is_loop[component]) {
+            // iterate over each node in the loop
+            for (int j = 0; j < vector_length(cscc->scc->components[component]); j++) {
+                int go_to_head = 0;
+                int node = *(int*)vector_get(cscc->scc->components[component], j);
+
+                int loop_head = head[component];
+
+                for (int k = 0; k < vector_length(successors[node]); k++) {
+                    int node_to = *(int*)vector_get(successors[node], k);
+                    if (node_to == loop_head) {
+                        go_to_head = 1;
+                        break;
+                    }
+                }
+
+                if (go_to_head) {
+                    vector_push(successors[node], &exit_id[component]);
+                }
+            }
+        }
+    }
+
     /*** SCHEDULING PREDECESSORS ***/
     Vector** scheduling_pred = malloc(sizeof(Vector*) * wpo_node_count);
     if (!scheduling_pred) {
@@ -450,10 +491,11 @@ CondensedSCC* cscc_build(Cfg* cfg)
 
             // avoid exit -> head
             if (stabilizing_pred[*v] == i) {
+                LOG_DEBUG("%d %d", *v, i);
                 continue;
             }
 
-            if (component_of_node[*v] == component_of_node[i]) {
+            if (component_of_node[*v] == component_of_node[i] && head[component_of_node[i]] == *v) {
                 continue;
             }
 

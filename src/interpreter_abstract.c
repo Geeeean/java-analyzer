@@ -85,8 +85,8 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     ctx->N = N;
 
     ctx->worklist = vector_new(sizeof(int));
-    int entry = 0;
-    vector_push(ctx->worklist, &entry);
+    // int entry = 0;
+    // vector_push(ctx->worklist, &entry);
 
     return ctx;
 
@@ -163,13 +163,27 @@ void interpreter_abstract_run(AbstractContext* ctx)
     int block_count = ctx->block_count;
     int wpo_n = cscc->wpo_node_count;
 
-    int* visited = calloc(wpo_n, sizeof(int));   // copy-first semantics
+    int* visited = calloc(wpo_n, sizeof(int)); // copy-first semantics
 
+    for (int v = 0; v < wpo_n; v++) {
+        LOG_DEBUG("NUM SCHED PRED[%d]: %d", v, vector_length(cscc->scheduling_pred[v]));
+        if (vector_length(cscc->scheduling_pred[v]) == 0) {
+            vector_push(ctx->worklist, &v);
+        }
+    }
     while (vector_length(ctx->worklist) > 0) {
+        int ready = 0;
+        for (int i = 0; i < wpo_n; i++) {
+            if (ctx->N[i] == vector_length(cscc->scheduling_pred[i])) {
+                ready += 1;
+            }
+            LOG_DEBUG("N[%d]: %d, scheduling_pred: %ld", i, ctx->N[i], vector_length(cscc->scheduling_pred[i]));
+        }
+        LOG_INFO("READY %d", ready);
 
         int node;
         vector_pop(ctx->worklist, &node);
-        printf("NODE %d\n", node);
+        LOG_DEBUG("NODE %d", node);
 
         int is_exit = (node >= block_count);
 
@@ -177,7 +191,6 @@ void interpreter_abstract_run(AbstractContext* ctx)
            CASO 1: NODO NORMALE (NON EXIT)
            ======================================================= */
         if (!is_exit) {
-
             int needed = vector_length(cscc->scheduling_pred[node]);
             if (ctx->N[node] != needed)
                 continue;
@@ -192,30 +205,55 @@ void interpreter_abstract_run(AbstractContext* ctx)
 
             /* ---- Caso NON condizionale ---- */
             if (!tr.is_conditional) {
-
                 IntervalState* out = tr.out_single;
 
+                /* ========================================
+                   1) AGGIORNA LO STATO DEL NODO node
+                   ======================================== */
+
+                int comp = cscc->component_of_node[node];
+                int head = cscc->head[comp];
+
+                int changed_node = 0;
+
+                if (node == head && cscc->is_loop[comp]) {
+                    /* widening solo sul nodo head della sua SCC */
+                    interval_widening(ctx->states[node], out, &changed_node);
+                } else {
+                    /* copy-first + join in tutte le altre situazioni */
+                    if (!visited[node]) {
+                        interval_state_copy(ctx->states[node], out);
+                        visited[node] = 1;
+                        changed_node = 1;
+                    } else {
+                        interval_join(ctx->states[node], out, &changed_node);
+                    }
+                }
+
+                /* Se lo stato del nodo non è cambiato → non propaga nulla */
+                // if (!changed_node)
+                //     continue;
+
+                /* ========================================
+                   2) PROPAGA AI SUCCESSORI VIA JOIN
+                   ======================================== */
+
                 for (int i = 0; i < vector_length(cscc->successors[node]); i++) {
+
                     int succ = *(int*)vector_get(cscc->successors[node], i);
 
-                    int succ_comp = cscc->component_of_node[succ];
-                    int succ_head = cscc->head[succ_comp];
+                    /* JOIN NORMALE nel successore */
+                    int changed_succ = 0;
 
-                    int changed = 0;
-
-                    /* widening se succ è head di un ciclo */
-                    if (succ == succ_head && cscc->is_loop[succ_comp]) {
-                        interval_widening(ctx->states[succ], out, &changed);
+                    if (!visited[succ]) {
+                        interval_state_copy(ctx->states[succ], ctx->states[node]);
+                        visited[succ] = 1;
+                        changed_succ = 1;
                     } else {
-                        if (!visited[succ]) {
-                            interval_state_copy(ctx->states[succ], out);
-                            visited[succ] = 1;
-                            changed = 1;
-                        } else {
-                            interval_join(ctx->states[succ], out, &changed);
-                        }
+                        interval_join(ctx->states[succ], ctx->states[node], &changed_succ);
                     }
 
+                    /* scheduling */
                     ctx->N[succ]++;
                     int need = vector_length(cscc->scheduling_pred[succ]);
                     if (ctx->N[succ] == need)
@@ -226,12 +264,12 @@ void interpreter_abstract_run(AbstractContext* ctx)
             /* ---- Caso CONDIZIONALE (due rami) ---- */
             else {
 
-                if (vector_length(cscc->successors[node]) != 2) {
-                    printf("ERRORE: nodo %d condizionale ma non ha 2 successori!\n", node);
+                if (vector_length(cscc->successors[node]) < 2) {
+                    LOG_ERROR("Conditional block has less than 2 successors");
                     continue;
                 }
 
-                int succ_true  = *(int*)vector_get(cscc->successors[node], 0);
+                int succ_true = *(int*)vector_get(cscc->successors[node], 0);
                 int succ_false = *(int*)vector_get(cscc->successors[node], 1);
 
                 /* ---- TRUE branch ---- */
@@ -253,11 +291,6 @@ void interpreter_abstract_run(AbstractContext* ctx)
                             interval_join(ctx->states[succ], out, &changed);
                         }
                     }
-
-                    ctx->N[succ]++;
-                    int need = vector_length(cscc->scheduling_pred[succ]);
-                    if (ctx->N[succ] == need)
-                        vector_push(ctx->worklist, &succ);
                 }
 
                 /* ---- FALSE branch ---- */
@@ -279,7 +312,12 @@ void interpreter_abstract_run(AbstractContext* ctx)
                             interval_join(ctx->states[succ], out, &changed);
                         }
                     }
+                }
 
+                for (int i = 0; i < vector_length(cscc->successors[node]); i++) {
+                    int succ = *(int*)vector_get(cscc->successors[node], i);
+
+                    /* scheduling */
                     ctx->N[succ]++;
                     int need = vector_length(cscc->scheduling_pred[succ]);
                     if (ctx->N[succ] == need)
@@ -322,7 +360,7 @@ void interpreter_abstract_run(AbstractContext* ctx)
         if (!visited[head]) {
             interval_state_copy(ctx->states[head], new_h);
             visited[head] = 1;
-            changed = 1;   // prima visita → cambia sempre
+            changed = 1; // prima visita → cambia sempre
         } else {
             interval_join(ctx->states[head], new_h, &changed);
         }
@@ -359,13 +397,7 @@ void interpreter_abstract_run(AbstractContext* ctx)
     /* ----- Stampa finale ----- */
     for (int i = 0; i < block_count; i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
-        printf("BLOCK %d: [%d-%d]\n", i, block->ip_start, block->ip_end);
-
-        for (int j = 0; j < vector_length(ctx->states[i]->env); j++) {
-            Interval* itv = vector_get(ctx->states[i]->env, j);
-            printf("  n%d = [%d, %d]\n", j, itv->lower, itv->upper);
-        }
-        printf("\n");
+        LOG_INFO("BLOCK %d: [%d-%d]", i, block->ip_start, block->ip_end);
+        interval_state_print(ctx->states[i]);
     }
 }
-

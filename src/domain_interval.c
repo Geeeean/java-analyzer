@@ -456,6 +456,11 @@ static int handle_load(IntervalState* out_state, IrInstruction* ir_instruction)
     }
 
     int* name = vector_get(out_state->locals, load->index);
+    if (!name) {
+        LOG_ERROR("Name is not defined, locals len: %ld", vector_length(out_state->locals));
+        return FAILURE;
+    }
+
     if (vector_push(out_state->stack, name)) {
         return FAILURE;
     }
@@ -481,7 +486,8 @@ static int handle_store(IntervalState* out_state, IrInstruction* ir_instruction)
 
     if (store->index == vector_length(out_state->locals)) {
         vector_push(out_state->locals, &new_name);
-    } else if (store->index == vector_length(out_state->locals)) {
+        LOG_DEBUG("AFTER STORE LOCAL LEN: %d", vector_length(out_state->locals));
+    } else if (store->index < vector_length(out_state->locals)) {
         int* local_name = vector_get(out_state->locals, store->index);
         *local_name = new_name;
     } else {
@@ -595,14 +601,16 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
         return FAILURE;
     }
 
+    LOG_DEBUG("TRANSFER: %d", ir_instruction->opcode);
+
     int result = SUCCESS;
 
     switch (ir_instruction->opcode) {
-    case OP_PUSH:
-        result = handle_push(out_state, ir_instruction);
-        break;
     case OP_LOAD:
         result = handle_load(out_state, ir_instruction);
+        break;
+    case OP_PUSH:
+        result = handle_push(out_state, ir_instruction);
         break;
     case OP_STORE:
         result = handle_store(out_state, ir_instruction);
@@ -905,6 +913,11 @@ void interval_state_print(const IntervalState* st)
         return;
     }
 
+    if (is_interval_state_bottom(st)) {
+        LOG_INFO("[⊥]");
+        return;
+    }
+
     LOG_INFO("Locals:");
     for (int i = 0; i < vector_length(st->locals); i++) {
         int name = *(int*)vector_get(st->locals, i);
@@ -923,6 +936,8 @@ void interval_state_print(const IntervalState* st)
         Interval* iv = vector_get(st->env, name);
         if (iv->lower == INT_MIN && iv->upper == INT_MAX)
             LOG_INFO("[%d] = n%d [⊤]", i, name);
+        else if (iv->lower == 1 && iv->upper == 0)
+            LOG_INFO("v%d = n%d [⊥]", i, name);
         else
             LOG_INFO("[%d] = n%d [%d,%d]", i, name, iv->lower, iv->upper);
     }
@@ -932,12 +947,14 @@ void interval_state_print(const IntervalState* st)
         Interval* iv = vector_get(st->env, i);
         if (iv->lower == INT_MIN && iv->upper == INT_MAX)
             LOG_INFO("n%d = [⊤]", i);
+        else if (iv->lower == 1 && iv->upper == 0)
+            LOG_INFO("v%d = [⊥]", i);
         else
             LOG_INFO("n%d = [%d,%d]", i, iv->lower, iv->upper);
     }
 }
 
-bool is_interval_state_bottom(IntervalState* state)
+bool is_interval_state_bottom(const IntervalState* state)
 {
     if (!state) {
         return true;
