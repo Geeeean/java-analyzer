@@ -1,6 +1,17 @@
 CC = gcc
-IFLAGS = -I$(INCLUDE_DIR) -I$(LIBRARY_DIR) -fopenmp 
-LFLAGS = -L$(LIBRARY_DIR) -Llib/tree_sitter -fopenmp
+# IFLAGS = -I$(INCLUDE_DIR) -I$(LIBRARY_DIR) -fopenmp
+# LFLAGS = -L$(LIBRARY_DIR) -Llib/tree_sitter -fopenmp
+
+# Test for fixing compilation in CLion
+
+IFLAGS = -I$(INCLUDE_DIR) -I$(LIBRARY_DIR)
+LFLAGS = -L$(LIBRARY_DIR) -Llib/tree_sitter
+CFLAGS ?= -O2 -g -std=c11 -Wall -Wextra
+CFLAGS  += -fopenmp
+LDFLAGS += -fopenmp
+
+# End of test section
+
 DEBUG_FLAGS = -O0 -DDEBUG=1 -g 
 
 SRC_DIR = src
@@ -24,12 +35,16 @@ DEPS := $(LOCAL_DEPS) $(LIB_DEPS)
 LOCAL_SOURCES := $(wildcard $(SRC_DIR)/*.c)
 LIB_SOURCES := $(wildcard $(LIBRARY_DIR)/*/*.c)
 SOURCES := $(LOCAL_SOURCES) $(LIB_SOURCES)
+
 OBJ = $(patsubst %.c,$(BUILD_DIR)/$(BUILD_RELEASE_DIR)/%.o, $(SOURCES))
 DEBUG_OBJ = $(patsubst %.c,$(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o, $(SOURCES))
 
+.PHONY: all # cLion test
+all: $(TARGET) # cLion test
+
 $(TARGET): $(OBJ)
 	@mkdir -p $(BIN_DIR)
-	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS)
+	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LDFLAGS) $(LLIBS)
 
 $(BUILD_DIR)/$(BUILD_RELEASE_DIR)/%.o: %.c $(DEPS)
 	@ mkdir -p $(dir $@)
@@ -39,12 +54,12 @@ debug: $(DEBUG_TARGET)
 
 $(DEBUG_TARGET): $(DEBUG_OBJ)
 	@mkdir -p $(BIN_DIR)
-	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS)
+	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS) $(LLIBS)
 
 $(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o: %.c $(DEPS)
 	@ mkdir -p $(dir $@)
-	$(CC) -c -o $@ $< $(IFLAGS) $(DEBUG_FLAGS)
-	
+	$(CC) $(CFLAGS) $(IFLAGS) $(DEBUG_FLAGS) -c -o $@ $<
+
 .PHONY: clean
 
 clean:
