@@ -2,18 +2,54 @@
 #include "cfg.h"
 #include "common.h"
 #include "vector.h"
-
-struct SCC {
-    int comp_count;
-    Vector** components; // sizeof(Vector*) * num_block
-    int* comp_id;
-};
+#include <limits.h>
 
 typedef struct Item Item;
 struct Item {
     int value;
     Item* next;
 };
+
+static int min(Vector* v)
+{
+    int res = INT_MAX;
+    for (int i = 0; i < vector_length(v); i++) {
+        int* value = vector_get(v, i);
+        if (*value < res) {
+            res = *value;
+        }
+    }
+
+    return res;
+}
+
+void print_wpo_graph(
+    Vector** successors,
+    int* stabilizing_pred,
+    int wpo_node_count)
+{
+    printf("=== GRAFO WPO ===\n");
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        printf("Nodo %d:\n", i);
+
+        // successori normali e stabilizing
+        for (int j = 0; j < vector_length(successors[i]); j++) {
+            int v = *(int*)vector_get(successors[i], j);
+
+            // controlla se è un arco di stabilizzazione
+            int is_stabilizing = (stabilizing_pred[v] == i);
+
+            if (is_stabilizing) {
+                printf("  -> %d   (stabilizing edge)\n", v);
+            } else {
+                printf("  -> %d\n", v);
+            }
+        }
+
+        printf("\n");
+    }
+}
 
 static int stack_push(Item** top, int value)
 {
@@ -219,19 +255,21 @@ CondensedSCC* cscc_build(Cfg* cfg)
         goto cleanup;
     }
 
-    if (!cscc->comp_succ
-        || !cscc->scc) {
+    cscc->scc = scc_build(cfg);
+
+    if (!cscc->scc) {
         goto cleanup;
     }
-
-    cscc->scc = scc_build(cfg);
     SCC* scc = cscc->scc;
+
     cscc->comp_succ = malloc(sizeof(Vector*) * scc->comp_count);
+    if (!cscc->comp_succ) {
+        goto cleanup;
+    }
 
     for (int i = 0; i < scc->comp_count; i++) {
         cscc->comp_succ[i] = vector_new(sizeof(int));
     }
-
 
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
@@ -248,6 +286,235 @@ CondensedSCC* cscc_build(Cfg* cfg)
         }
     }
 
+    /*** HEAD + IS LOOP***/
+    int* head = malloc(sizeof(int) * cscc->scc->comp_count);
+    if (!head) {
+        goto cleanup;
+    }
+
+    uint8_t* is_loop = calloc(cscc->scc->comp_count, sizeof(uint8_t));
+
+    for (int i = 0; i < cscc->scc->comp_count; i++) {
+        head[i] = min(cscc->scc->components[i]);
+
+        if (vector_length(cscc->scc->components[i]) > 1) {
+            is_loop[i] = 1;
+        } else if (vector_length(cscc->scc->components[i]) == 1) {
+            int b = *(int*)vector_get(cscc->scc->components[i], 0);
+
+            BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, b);
+
+            int self_loop = 0;
+            for (int j = 0; j < vector_length(block->successors); j++) {
+                BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, j);
+                if (succ->id == b) {
+                    self_loop = 1;
+                    break;
+                }
+            }
+
+            is_loop[i] = self_loop;
+        }
+    }
+
+    cscc->head = head;
+    cscc->is_loop = is_loop;
+
+    /*** EXIT ***/
+    int* exit_id = malloc(sizeof(int) * scc->comp_count);
+    int* exit_id_inverse = malloc(sizeof(int) * scc->comp_count);
+    if (!exit_id || !exit_id_inverse) {
+        goto cleanup;
+    }
+
+    int wpo_node_count = vector_length(cfg->blocks);
+
+    for (int i = 0; i < scc->comp_count; i++) {
+        if (!is_loop[i]) {
+            exit_id[i] = -1;
+        } else {
+            exit_id[i] = wpo_node_count;
+            exit_id_inverse[wpo_node_count - vector_length(cfg->blocks)] = i;
+            wpo_node_count++;
+        }
+    }
+
+    Vector** successors = malloc(sizeof(Vector*) * wpo_node_count);
+    if (!successors) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+        successors[i] = vector_new(sizeof(int));
+        if (!successors[i]) {
+            goto cleanup;
+        }
+
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+        for (int j = 0; j < vector_length(block->successors); j++) {
+            BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
+
+            vector_push(successors[i], &successor->id);
+        }
+    }
+
+    for (int i = vector_length(cfg->blocks); i < wpo_node_count; i++) {
+        successors[i] = vector_new(sizeof(int));
+        if (!successors[i]) {
+            goto cleanup;
+        }
+
+        int exit_index = i - vector_length(cfg->blocks);
+        int c = exit_id_inverse[exit_index];
+
+        vector_push(successors[i], &cscc->head[c]);
+
+        Vector* comp = cscc->scc->components[c];
+        for (int k = 0; k < vector_length(comp); k++) {
+            int b = *(int*)vector_get(comp, k);
+            BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, b);
+
+            for (int j = 0; j < vector_length(block->successors); j++) {
+                BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, j);
+                int c_to = cscc->scc->comp_id[succ->id];
+
+                if (c_to != c) {
+                    int head_to = cscc->head[c_to];
+                    vector_push(successors[i], &head_to);
+                }
+            }
+        }
+    }
+
+    cscc->wpo_node_count = wpo_node_count;
+    cscc->successors = successors;
+
+    int* stabilizing_pred = malloc(sizeof(int) * wpo_node_count);
+    if (!stabilizing_pred) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        stabilizing_pred[i] = -1;
+    }
+
+    for (int c = 0; c < scc->comp_count; c++) {
+        if (!is_loop[c]) {
+            continue;
+        }
+
+        int x = exit_id[c];
+        int h = head[c];
+
+        if (x >= 0) {
+            stabilizing_pred[h] = x;
+        }
+    }
+    /*** SCHEDULING PREDECESSORS ***/
+    Vector** scheduling_pred = malloc(sizeof(Vector*) * wpo_node_count);
+    if (!scheduling_pred) {
+        goto cleanup;
+    }
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        scheduling_pred[i] = vector_new(sizeof(int));
+        if (!scheduling_pred[i]) {
+            goto cleanup;
+        }
+    }
+
+    for (int i = 0; i < wpo_node_count; i++) {
+        for (int j = 0; j < vector_length(successors[i]); j++) {
+            int* v = vector_get(successors[i], j);
+            vector_push(scheduling_pred[*v], &i);
+        }
+    }
+
+    /*** COMPONENT OF EACH WPO NODE (Cx) ***/
+    int* component_of_node = malloc(sizeof(int) * wpo_node_count);
+    if (!component_of_node) {
+        goto cleanup;
+    }
+
+    int block_count = vector_length(cfg->blocks);
+
+    /* 1) Per i nodi normali del CFG (0 .. block_count-1) */
+    for (int v = 0; v < block_count; v++) {
+        component_of_node[v] = scc->comp_id[v];
+    }
+
+    /* 2) Per gli exit nodes (block_count .. wpo_node_count-1) */
+    for (int x = block_count; x < wpo_node_count; x++) {
+        int exit_index = x - block_count; // indice nell’array degli exit
+        int c = exit_id_inverse[exit_index]; // componente a cui appartiene questo exit
+        component_of_node[x] = c;
+    }
+
+    /*** NUM OUTER SCHED PREDS ***/
+    int** num_outer_sched_preds = malloc(sizeof(int*) * wpo_node_count);
+    if (!num_outer_sched_preds) {
+        goto cleanup;
+    }
+
+    for (int v = 0; v < wpo_node_count; v++) {
+        num_outer_sched_preds[v] = calloc(scc->comp_count, sizeof(int));
+        if (!num_outer_sched_preds[v]) {
+            goto cleanup;
+        }
+    }
+
+    /*
+        num_outer_sched_preds[v][c] =
+            quanti scheduling predecessors di v NON appartengono alla componente c
+    */
+    for (int v = 0; v < wpo_node_count; v++) {
+
+        /* analizza ogni predecessore che schedula v */
+        for (int i = 0; i < vector_length(scheduling_pred[v]); i++) {
+            int u = *(int*)vector_get(scheduling_pred[v], i);
+
+            int cu = component_of_node[u]; // componente del predecessore
+            int cv = component_of_node[v]; // componente di v
+
+            /* per ogni componente c,
+               se u NON appartiene a c, incrementiamo il contatore */
+            for (int c = 0; c < scc->comp_count; c++) {
+                if (cu != c) {
+                    num_outer_sched_preds[v][c]++;
+                }
+            }
+        }
+    }
+
+    /*** Cx: NODI CHE APPARTENGONO A OGNI COMPONENTE DEL WPO ***/
+    Vector** Cx = malloc(sizeof(Vector*) * scc->comp_count);
+    if (!Cx) {
+        goto cleanup;
+    }
+
+    /* crea un vector per ciascuna componente */
+    for (int c = 0; c < scc->comp_count; c++) {
+        Cx[c] = vector_new(sizeof(int));
+        if (!Cx[c]) {
+            goto cleanup;
+        }
+    }
+
+    /*** 1) Aggiungi i basic block alla loro componente ***/
+    for (int v = 0; v < block_count; v++) {
+        int c = scc->comp_id[v];
+        vector_push(Cx[c], &v);
+    }
+
+    /*** 2) Aggiungi l'exit node, se esiste ***/
+    for (int c = 0; c < scc->comp_count; c++) {
+        int x = exit_id[c];
+        if (x >= 0) { // esiste un exit → componente ciclica
+            vector_push(Cx[c], &x);
+        }
+    }
+
+    print_wpo_graph(successors, stabilizing_pred, wpo_node_count);
 cleanup:
     // todo
     return cscc;
