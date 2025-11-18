@@ -8,6 +8,7 @@
 #include "string.h"
 #include "utils.h"
 #include "value.h"
+#include "coverage.h"
 
 #include <stdlib.h>
 
@@ -1028,6 +1029,8 @@ static StepResult step(VMContext* vm_context)
     }
     // LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
 
+    coverage_mark((uint32_t)vm_context->frame->pc);
+
     Opcode opcode = instruction->opcode;
     if (opcode < 0 || opcode >= OP_COUNT) {
         return SR_UNKNOWN_OPCODE;
@@ -1035,6 +1038,9 @@ static StepResult step(VMContext* vm_context)
 
     return opcode_table[instruction->opcode](vm_context, instruction);
 }
+
+
+
 
 VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg)
 {
@@ -1123,4 +1129,10 @@ cleanup:
 
     // todo free memory
     return result;
+}
+
+size_t interpreter_instruction_count(const Method* m, const Config* cfg)
+{
+  InstructionTable* table = get_instruction_table(m, cfg);
+  return table ? table->count : 0;
 }

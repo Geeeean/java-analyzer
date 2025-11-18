@@ -94,3 +94,13 @@ size_t coverage_count(void) {
     }
     return count;
 }
+
+void coverage_debug_dump(void) {
+  for (size_t i = 0; i < coverage.nBits; i++) {
+    if (block_is_covered(i))
+      printf("1");
+    else
+      printf("0");
+  }
+  printf("\n");
+}

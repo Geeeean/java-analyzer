@@ -8,7 +8,9 @@
 #include "outcome.h"
 #include "syntax.h"
 #include "vector.h"
+#include "coverage.h"
 
+#include "opcode.h"
 #include "tree_sitter/api.h"
 
 #include <omp.h>
@@ -107,24 +109,54 @@ int main(int argc, char** argv)
         int run = 100;
         Outcome outcome = new_outcome();
 
+        size_t best_cov = 0;
+        size_t instruction_count = interpreter_instruction_count(m, cfg);
+
+        coverage_init(instruction_count);
+
+
+
+
+
 #pragma omp parallel
         {
             Outcome private = new_outcome();
 
 #pragma omp for
             for (int i = 0; i < run; i++) {
+              char* fuzz_params = NULL;
                 if (!opts.interpreter_only) {
-                    Vector* v = method_get_arguments_as_types(m);
-                    opts.parameters = fuzzer_random_parameters(v);
-                    vector_delete(v);
+                  Vector* v = method_get_arguments_as_types(m);
+                  fuzz_params = fuzzer_random_parameters(v);
+                  vector_delete(v);
                 }
 
-                VMContext* vm_context = interpreter_setup(m, &opts, cfg);
+                Options local_opts = opts;
+                local_opts.parameters = fuzz_params;
+
+                coverage_reset();
+
+
+                VMContext* vm_context = interpreter_setup(m, &local_opts, cfg);
                 if (!vm_context) {
                     LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
                     continue;
                 }
                 RuntimeResult interpreter_result = interpreter_run(vm_context);
+
+                size_t cov = coverage_count();
+
+                #pragma omp critical
+                {
+                  if (cov > best_cov) {
+                    best_cov = cov;
+                    printf("[+] New coverage: %zu / %zu instructions (%.2f%%) with input %s\n",
+                           cov,
+                           instruction_count,
+                           (instruction_count ? (cov * 100.0 / instruction_count) : 0.0),
+                           fuzz_params);
+                  }
+                }
 
                 switch (interpreter_result) {
                 case RT_OK:
@@ -177,6 +209,22 @@ int main(int argc, char** argv)
         }
 
         print_outcome(outcome);
+
+        printf("\n=== FINAL COVERAGE REPORT ===\n");
+        printf("Instructions covered: %zu / %zu\n", best_cov, instruction_count);
+
+        if (instruction_count > 0) {
+          double pct = (best_cov * 100.0) / instruction_count;
+          printf("Coverage: %.2f%%\n", pct);
+        }
+
+        // Print small bitmap preview
+        printf("Coverage bitmap (first 64 PCs): ");
+        for (size_t i = 0; i < 64 && i < instruction_count; i++) {
+          putchar(block_is_covered(i) ? '1' : '0');
+        }
+        putchar('\n');
+
     }
 
 cleanup:
