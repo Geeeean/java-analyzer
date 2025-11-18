@@ -47,6 +47,10 @@ To run it from the root dir execute:
 ```sh
 ./bin/analyzer
 ```
+Example for running a jpamb test: 
+```sh
+./bin/analyzer "jpamb/cases/Simple.divideByZero:()I"
+```
 
 # References
 https://www.sciencedirect.com/science/article/pii/S0164121221001394
