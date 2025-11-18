@@ -134,7 +134,7 @@ int main(int argc, char** argv)
                 Options local_opts = opts;
                 local_opts.parameters = fuzz_params;
 
-                coverage_reset();
+                coverage_reset_current();
 
 
                 VMContext* vm_context = interpreter_setup(m, &local_opts, cfg);
@@ -144,17 +144,19 @@ int main(int argc, char** argv)
                 }
                 RuntimeResult interpreter_result = interpreter_run(vm_context);
 
-                size_t cov = coverage_count();
+                size_t new_cov = coverage_commit();
+                size_t global_cov = coverage_global_count();
 
                 #pragma omp critical
                 {
-                  if (cov > best_cov) {
-                    best_cov = cov;
-                    printf("[+] New coverage: %zu / %zu instructions (%.2f%%) with input %s\n",
-                           cov,
-                           instruction_count,
-                           (instruction_count ? (cov * 100.0 / instruction_count) : 0.0),
-                           fuzz_params);
+                  if (new_cov > 0) {
+                      best_cov = global_cov;
+                      printf("[+] New bits: %zu  |  Total coverage: %zu / %zu  |  (%.2f%%)  | input = %s\n",
+                             new_cov,
+                             global_cov,
+                             instruction_count,
+                             (instruction_count ? (global_cov * 100.0 / instruction_count) : 0.0),
+                             fuzz_params);
                   }
                 }
 
@@ -182,6 +184,10 @@ int main(int argc, char** argv)
                 case RT_UNKNOWN_ERROR:
                 default:
                     LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+                }
+                if (fuzz_params) {
+                    free(fuzz_params);
+                    fuzz_params = NULL;
                 }
             }
 
@@ -218,12 +224,8 @@ int main(int argc, char** argv)
           printf("Coverage: %.2f%%\n", pct);
         }
 
-        // Print small bitmap preview
-        printf("Coverage bitmap (first 64 PCs): ");
-        for (size_t i = 0; i < 64 && i < instruction_count; i++) {
-          putchar(block_is_covered(i) ? '1' : '0');
-        }
-        putchar('\n');
+        printf("Global coverage bitmap (first 64 PCs): ");
+        coverage_global_print(instruction_count);
 
     }
 

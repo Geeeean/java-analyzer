@@ -1010,6 +1010,9 @@ static OpHandler opcode_table[OP_COUNT] = {
 
 static StepResult step(VMContext* vm_context)
 {
+    Frame* frame = vm_context->frame;
+    printf("[trace] PC=%d\n", frame->pc);
+
     if (!vm_context->cfg) {
         return SR_INTERNAL_NULL_ERR;
     }

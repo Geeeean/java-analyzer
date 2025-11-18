@@ -6,16 +6,22 @@
 #include <stdbool.h>
 
 
-// Initializing the coverage map
-bool coverage_init(size_t size);
-void coverage_reset(void);
-void coverage_enable(bool on);
-void coverage_remove(void);
+bool coverage_init(size_t nBits);
 
-// Recording coverage
+void coverage_mark(size_t pc);
 
-void coverage_mark(uint32_t id);
-bool block_is_covered(uint32_t id);
-size_t coverage_count(void);
+void coverage_reset_current(void);
+
+size_t coverage_commit(void);
+
+size_t coverage_global_count(void);
+
+size_t coverage_current_count(void);
+
+void coverage_reset_all(void);
+
+void coverage_global_print(size_t maxBits);
+void coverage_current_print(size_t maxBits);
+
 
 #endif //COVERAGE_H
