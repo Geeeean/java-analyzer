@@ -18,22 +18,6 @@ static BasicBlock* basic_block_new(int id)
     return basic_block;
 }
 
-static void compute_rpo(BasicBlock* block, int8_t* visited, Vector* rpo)
-{
-    if (block && !visited[block->id]) {
-        visited[block->id] = 1;
-
-        for (int i = 0; i < vector_length(block->successors); i++) {
-            BasicBlock* next = *(BasicBlock**)vector_get(block->successors, i);
-            if (next && !visited[next->id]) {
-                compute_rpo(next, visited, rpo);
-            }
-        }
-
-        vector_push(rpo, &block);
-    }
-}
-
 Cfg* cfg_build(IrFunction* ir_function)
 {
     int result = SUCCESS;
@@ -221,22 +205,12 @@ Cfg* cfg_build(IrFunction* ir_function)
         }
     }
 
-    Vector* rpo = vector_new(sizeof(BasicBlock*));
-    if (!rpo) {
-        result = FAILURE;
-        goto cleanup;
-    }
 
     visited = calloc(vector_length(cfg->blocks), sizeof(int8_t));
     if (!visited) {
         result = FAILURE;
         goto cleanup;
     }
-
-    compute_rpo(*(BasicBlock**)vector_get(cfg->blocks, 0), visited, rpo);
-    vector_reverse(rpo);
-
-    cfg->rpo = rpo;
 
 cleanup:
     free(visited);

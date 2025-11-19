@@ -113,7 +113,7 @@ int main(int argc, char** argv)
         }
     } else if (opts.abstract_only) {
         AbstractContext* abstract_context = interpreter_abstract_setup(m, &opts, cfg);
-        interpreter_abstract_run(abstract_context);
+        // interpreter_abstract_run(abstract_context);
     } else {
         int run = 100;
         Outcome outcome = new_outcome();

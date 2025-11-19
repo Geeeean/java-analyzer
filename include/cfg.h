@@ -12,7 +12,6 @@ typedef struct {
 
 typedef struct {
     Vector* blocks;
-    Vector* rpo;
 } Cfg;
 
 Cfg* cfg_build(IrFunction* ir_function);
