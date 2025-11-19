@@ -183,7 +183,7 @@ void interpreter_abstract_run(AbstractContext* ctx)
 
         int node;
         vector_pop(ctx->worklist, &node);
-        LOG_DEBUG("NODE %d", node);
+        LOG_INFO("NODE %d", node);
 
         int is_exit = (node >= block_count);
 
@@ -220,6 +220,7 @@ void interpreter_abstract_run(AbstractContext* ctx)
                     /* widening solo sul nodo head della sua SCC */
                     interval_widening(ctx->states[node], out, &changed_node);
                 } else {
+                    LOG_INFO("SONO QUI");
                     /* copy-first + join in tutte le altre situazioni */
                     if (!visited[node]) {
                         interval_state_copy(ctx->states[node], out);
@@ -325,79 +326,78 @@ void interpreter_abstract_run(AbstractContext* ctx)
                 }
             }
 
-            continue;
-        }
-
-        /* =======================================================
-           CASO 2: EXIT NODE
-           ======================================================= */
-
-        int exit_index = node - block_count;
-        int comp = cscc->exit_id_inverse[exit_index];
-        int head = cscc->head[comp];
-
-        int needed = vector_length(cscc->scheduling_pred[node]);
-        if (ctx->N[node] != needed)
-            continue;
-
-        ctx->N[node] = 0;
-
-        /* ---- Transfer del head SENZA widening ---- */
-        BlockTransferResult tr_h = apply_block_transfer(ctx, head);
-
-        IntervalState* new_h = interval_new_top_state(ctx->num_locals);
-        int dummy = 0;
-
-        if (!tr_h.is_conditional) {
-            interval_state_copy(new_h, tr_h.out_single);
         } else {
-            interval_state_copy(new_h, tr_h.out_true);
-            interval_join(new_h, tr_h.out_false, &dummy);
-        }
+            /* =======================================================
+               CASO 2: EXIT NODE
+               ======================================================= */
 
-        /* ---- Test di stabilizzazione ---- */
-        int changed = 0;
-        if (!visited[head]) {
-            interval_state_copy(ctx->states[head], new_h);
-            visited[head] = 1;
-            changed = 1; // prima visita → cambia sempre
-        } else {
-            interval_join(ctx->states[head], new_h, &changed);
-        }
+            int exit_index = node - block_count;
+            int comp = cscc->exit_id_inverse[exit_index];
+            int head = cscc->head[comp];
 
-        int stabilized = !changed;
+            int needed = vector_length(cscc->scheduling_pred[node]);
+            if (ctx->N[node] != needed)
+                continue;
 
-        /* ---- COMPONENTE STABILIZZATA ---- */
-        if (stabilized) {
+            ctx->N[node] = 0;
 
-            for (int i = 0; i < vector_length(cscc->successors[node]); i++) {
-                int succ = *(int*)vector_get(cscc->successors[node], i);
+            /* ---- Transfer del head SENZA widening ---- */
+            BlockTransferResult tr_h = apply_block_transfer(ctx, head);
 
-                ctx->N[succ]++;
-                int need = vector_length(cscc->scheduling_pred[succ]);
-                if (ctx->N[succ] == need)
-                    vector_push(ctx->worklist, &succ);
+            IntervalState* new_h = interval_new_top_state(ctx->num_locals);
+            int dummy = 0;
+
+            if (!tr_h.is_conditional) {
+                interval_state_copy(new_h, tr_h.out_single);
+            } else {
+                interval_state_copy(new_h, tr_h.out_true);
+                interval_join(new_h, tr_h.out_false, &dummy);
             }
 
-            continue;
+            /* ---- Test di stabilizzazione ---- */
+            int changed = 0;
+            if (!visited[head]) {
+                interval_state_copy(ctx->states[head], new_h);
+                visited[head] = 1;
+                changed = 1; // prima visita → cambia sempre
+            } else {
+                interval_join(ctx->states[head], new_h, &changed);
+            }
+
+            int stabilized = !changed;
+
+            /* ---- COMPONENTE STABILIZZATA ---- */
+            if (stabilized) {
+
+                for (int i = 0; i < vector_length(cscc->successors[node]); i++) {
+                    int succ = *(int*)vector_get(cscc->successors[node], i);
+
+                    ctx->N[succ]++;
+                    int need = vector_length(cscc->scheduling_pred[succ]);
+                    if (ctx->N[succ] == need)
+                        vector_push(ctx->worklist, &succ);
+                }
+            } else {
+                /* ---- COMPONENTE NON STABILIZZATA ---- */
+                for (int i = 0; i < vector_length(cscc->Cx[comp]); i++) {
+                    int v = *(int*)vector_get(cscc->Cx[comp], i);
+
+                    ctx->N[v] = cscc->num_outer_sched_preds[v][comp];
+                    int need = vector_length(cscc->scheduling_pred[v]);
+                    if (ctx->N[v] == need)
+                        vector_push(ctx->worklist, &v);
+                }
+            }
         }
 
-        /* ---- COMPONENTE NON STABILIZZATA ---- */
-        for (int i = 0; i < vector_length(cscc->Cx[comp]); i++) {
-            int v = *(int*)vector_get(cscc->Cx[comp], i);
+        int dummy1;
+        scanf("%d", &dummy1);
 
-            ctx->N[v] = cscc->num_outer_sched_preds[v][comp];
-
-            int need = vector_length(cscc->scheduling_pred[v]);
-            if (ctx->N[v] == need)
-                vector_push(ctx->worklist, &v);
+        /* ----- Stampa finale ----- */
+        for (int i = 0; i < block_count; i++) {
+            BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
+            LOG_INFO("BLOCK %d: [%d-%d]", i, block->ip_start, block->ip_end);
+            interval_state_print(ctx->states[i]);
         }
-    }
-
-    /* ----- Stampa finale ----- */
-    for (int i = 0; i < block_count; i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
-        LOG_INFO("BLOCK %d: [%d-%d]", i, block->ip_start, block->ip_end);
-        interval_state_print(ctx->states[i]);
     }
 }
