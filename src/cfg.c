@@ -205,7 +205,6 @@ Cfg* cfg_build(IrFunction* ir_function)
         }
     }
 
-
     visited = calloc(vector_length(cfg->blocks), sizeof(int8_t));
     if (!visited) {
         result = FAILURE;
@@ -224,3 +223,4 @@ cleanup:
 
     return cfg;
 }
+

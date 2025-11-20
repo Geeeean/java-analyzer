@@ -51,6 +51,7 @@ static void strong_connect(int id,
     Graph* graph)
 {
     if (graph->not_valid[id]) {
+        comp_id[id] = -1;
         return;
     }
 
@@ -67,11 +68,15 @@ static void strong_connect(int id,
 
     for (int i = 0; i < vector_length(node->successors); i++) {
         int successor_id = *(int*)vector_get(node->successors, i);
-        if (graph->not_valid[successor_id]) {
-            continue;
+        if (!graph || !graph->not_valid) {
+            LOG_ERROR("Graph or not_valid array is NULL in strong_connect.");
+            return;
         }
 
-        Node* successor = vector_get(graph->nodes, successor_id);
+        if (!index) {
+            LOG_ERROR("index array is NULL in strong_connect.");
+            return;
+        }
 
         // not visited
         if (index[successor_id] == -1) {
