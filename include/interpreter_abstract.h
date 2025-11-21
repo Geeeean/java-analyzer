@@ -8,7 +8,6 @@
 typedef struct AbstractContext AbstractContext;
 
 AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts, const Config* cfg);
-void interpreter_abstract_run(AbstractContext* abstract_context);
-// void interpreter_abstract_run(VMContext* vm_context);
+void* interpreter_abstract_run(AbstractContext* abstract_context);
 
 #endif

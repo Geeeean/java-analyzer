@@ -80,6 +80,28 @@ IntervalState* interval_new_top_state(int num_locals)
     return st;
 }
 
+IntervalState* interval_new_bottom_state(int num_locals)
+{
+    IntervalState* st = malloc(sizeof(IntervalState));
+    if (!st) {
+        return NULL;
+    }
+
+    st->locals = vector_new(sizeof(int));
+    st->stack = vector_new(sizeof(int));
+    st->env = vector_new(sizeof(Interval));
+    st->name_count = num_locals;
+
+    for (int i = 0; i < num_locals; i++) {
+        vector_push(st->locals, &i);
+
+        Interval iv = interval_bottom();
+        vector_push(st->env, &iv);
+    }
+
+    return st;
+}
+
 void interval_state_delete(IntervalState* st)
 {
     if (!st) {
