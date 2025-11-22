@@ -10,17 +10,21 @@
 #include "vector.h"
 #include "coverage.h"
 
-#include "opcode.h"
 #include "tree_sitter/api.h"
 
-#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+#include <omp.h>
 
-int main(int argc, char** argv)
-{
+/* Forward declarations */
+void run_interpreter(const Method* m, Options opts, const Config* cfg);
+void run_fuzzer(const Method* m, Options opts, const Config* cfg);
+void run_base(Method* m, Options opts, const Config* cfg);
+
+int main(int argc, char** argv) {
     int result = 0;
     Config* cfg = NULL;
     Method* m = NULL;
@@ -70,43 +74,26 @@ int main(int argc, char** argv)
         goto cleanup;
     }
 
-    /*** INTERPRETER ***/
+    /*** MODES ***/
     if (opts.interpreter_only) {
-        VMContext* vm_context = interpreter_setup(m, &opts, cfg);
-        if (!vm_context) {
-            LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
-            result = 6;
-            goto cleanup;
-        }
-        RuntimeResult interpreter_result = interpreter_run(vm_context);
-
-        switch (interpreter_result) {
-        case RT_OK:
-            print_interpreter_outcome(OC_OK);
-            break;
-        case RT_DIVIDE_BY_ZERO:
-            print_interpreter_outcome(OC_DIVIDE_BY_ZERO);
-            break;
-        case RT_ASSERTION_ERR:
-            print_interpreter_outcome(OC_ASSERTION_ERROR);
-            break;
-        case RT_INFINITE:
-            print_interpreter_outcome(OC_INFINITE_LOOP);
-            break;
-        case RT_OUT_OF_BOUNDS:
-            print_interpreter_outcome(OC_OUT_OF_BOUNDS);
-            break;
-        case RT_NULL_POINTER:
-            print_interpreter_outcome(OC_NULL_POINTER);
-            break;
-        case RT_CANT_BUILD_FRAME:
-        case RT_NULL_PARAMETERS:
-        case RT_UNKNOWN_ERROR:
-        default:
-            LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
-        }
+        run_interpreter(m, opts, cfg);
+    } else if (opts.fuzzer) {
+        run_fuzzer(m,opts,cfg);
     } else {
-        int run = 100;
+        run_base(m,opts,cfg);
+    }
+
+cleanup:
+    ts_tree_delete(tree);
+    method_delete(m);
+    config_delete(cfg);
+    options_cleanup(&opts);
+
+    return result;
+}
+
+void run_base(Method* m, Options opts, const Config* cfg) {
+    int run = 100;
         Outcome outcome = new_outcome();
 
         size_t best_cov = 0;
@@ -114,51 +101,38 @@ int main(int argc, char** argv)
 
         coverage_init(instruction_count);
 
-
-
-
-
 #pragma omp parallel
         {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+
+            unsigned int seed = (unsigned int)(
+                ts.tv_nsec ^
+                (ts.tv_sec << 16) ^
+                omp_get_thread_num()
+            );
+
+            srand(seed);
+            srandom(seed);
+
             Outcome private = new_outcome();
+            uint8_t* thread_bitmap = coverage_create_thread_bitmap();
 
 #pragma omp for
             for (int i = 0; i < run; i++) {
-              char* fuzz_params = NULL;
-                if (!opts.interpreter_only) {
-                  Vector* v = method_get_arguments_as_types(m);
-                  fuzz_params = fuzzer_random_parameters(v);
-                  vector_delete(v);
-                }
+                char* fuzz_params = NULL;
 
                 Options local_opts = opts;
                 local_opts.parameters = fuzz_params;
 
-                coverage_reset_current();
 
+                VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
 
-                VMContext* vm_context = interpreter_setup(m, &local_opts, cfg);
                 if (!vm_context) {
                     LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
                     continue;
                 }
                 RuntimeResult interpreter_result = interpreter_run(vm_context);
-
-                size_t new_cov = coverage_commit();
-                size_t global_cov = coverage_global_count();
-
-                #pragma omp critical
-                {
-                  if (new_cov > 0) {
-                      best_cov = global_cov;
-                      printf("[+] New bits: %zu  |  Total coverage: %zu / %zu  |  (%.2f%%)  | input = %s\n",
-                             new_cov,
-                             global_cov,
-                             instruction_count,
-                             (instruction_count ? (global_cov * 100.0 / instruction_count) : 0.0),
-                             fuzz_params);
-                  }
-                }
 
                 switch (interpreter_result) {
                 case RT_OK:
@@ -215,27 +189,51 @@ int main(int argc, char** argv)
         }
 
         print_outcome(outcome);
+}
 
-        printf("\n=== FINAL COVERAGE REPORT ===\n");
-        printf("Instructions covered: %zu / %zu\n", best_cov, instruction_count);
 
-        if (instruction_count > 0) {
-          double pct = (best_cov * 100.0) / instruction_count;
-          printf("Coverage: %.2f%%\n", pct);
-        }
-
-        printf("Global coverage bitmap (first 64 PCs): ");
-        coverage_global_print(instruction_count);
-
+/* interpreter-only runner */
+void run_interpreter(const Method* m, Options opts, const Config* cfg) {
+    VMContext* vm_context = interpreter_setup(m, &opts, cfg, NULL);
+    if (!vm_context) {
+        LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
+        return;
     }
 
-cleanup:
-    ts_tree_delete(tree);
-    method_delete(m);
-    config_delete(cfg);
-    options_cleanup(&opts);
+    RuntimeResult interpreter_result = interpreter_run(vm_context);
 
-    return result;
+    switch (interpreter_result) {
+    case RT_OK:
+        print_interpreter_outcome(OC_OK);
+        break;
+    case RT_DIVIDE_BY_ZERO:
+        print_interpreter_outcome(OC_DIVIDE_BY_ZERO);
+        break;
+    case RT_ASSERTION_ERR:
+        print_interpreter_outcome(OC_ASSERTION_ERROR);
+        break;
+    case RT_INFINITE:
+        print_interpreter_outcome(OC_INFINITE_LOOP);
+        break;
+    case RT_OUT_OF_BOUNDS:
+        print_interpreter_outcome(OC_OUT_OF_BOUNDS);
+        break;
+    case RT_NULL_POINTER:
+        print_interpreter_outcome(OC_NULL_POINTER);
+        break;
+    case RT_CANT_BUILD_FRAME:
+    case RT_NULL_PARAMETERS:
+    case RT_UNKNOWN_ERROR:
+    default:
+        LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+        break;
+    }
+
+    /*add VMContext cleanup */
+}
+
+void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
+    printf("Hello world!");
 }
 
 /*

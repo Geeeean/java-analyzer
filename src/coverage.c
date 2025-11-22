@@ -6,8 +6,7 @@
 #include <stdio.h>
 
 typedef struct {
-    uint8_t* global_bits;      // persistent fuzzy coverage
-    uint8_t* current_bits;     // per-run coverage
+    uint8_t* global_bits;
     size_t nBits;
     bool is_initialized;
 } coverage_state;
@@ -24,13 +23,10 @@ bool coverage_init(const size_t size) {
     }
 
     coverage.global_bits = calloc(size, sizeof(uint8_t));
-    coverage.current_bits = calloc(size, sizeof(uint8_t));
 
-    if (!coverage.global_bits || !coverage.current_bits) {
+    if (!coverage.global_bits) {
         free(coverage.global_bits);
-        free(coverage.current_bits);
         coverage.global_bits = NULL;
-        coverage.current_bits = NULL;
         return false;
     }
 
@@ -41,42 +37,35 @@ bool coverage_init(const size_t size) {
     return true;
 }
 
-void coverage_reset_current(void) {
-    if (!coverage.is_initialized) return;
-    memset(coverage.current_bits, 0, coverage.nBits);
+uint8_t* coverage_create_thread_bitmap() {
+    if (!coverage.is_initialized) return NULL;
+    uint8_t* bitmap = calloc(coverage.nBits, sizeof(uint8_t));
+    return bitmap;
 }
 
-void coverage_mark(size_t pc) {
-    if (!coverage.is_initialized) return;
-    if (pc >= coverage.nBits) return;
-
-    coverage.current_bits[pc] = 1;
+void coverage_reset_thread_bitmap(uint8_t* bitmap) {
+    memset(bitmap, 0, coverage.nBits);
 }
 
-size_t coverage_commit(void) {
+void coverage_mark_thread(uint8_t* bitmap, size_t pc) {
+    if (pc < coverage.nBits) {
+        bitmap[pc] = 1;
+    }
+}
+
+size_t coverage_commit_thread(const uint8_t* bitmap) {
     if (!coverage.is_initialized) return 0;
 
     size_t new_bits = 0;
     for (size_t i = 0; i < coverage.nBits; i++) {
-        if (coverage.current_bits[i] && !coverage.global_bits[i]) {
+        if (bitmap[i] && !coverage.global_bits[i]) {
             coverage.global_bits[i] = 1;
             new_bits++;
         }
     }
-
-    memset(coverage.current_bits, 0, coverage.nBits);
     return new_bits;
 }
 
-size_t coverage_current_count(void) {
-    if (!coverage.is_initialized) return 0;
-
-    size_t count = 0;
-    for (size_t i = 0; i < coverage.nBits; i++) {
-        count += (coverage.current_bits[i] != 0);
-    }
-    return count;
-}
 
 size_t coverage_global_count(void) {
     if (!coverage.is_initialized) return 0;
@@ -92,10 +81,8 @@ void coverage_reset_all(void) {
     if (!coverage.is_initialized) return;
 
     free(coverage.global_bits);
-    free(coverage.current_bits);
 
     coverage.global_bits = NULL;
-    coverage.current_bits = NULL;
     coverage.nBits = 0;
     coverage.is_initialized = false;
 }
@@ -103,19 +90,9 @@ void coverage_reset_all(void) {
 void coverage_global_print(size_t maxBits) {
     if (!coverage.is_initialized) return;
 
-    size_t limit = maxBits < coverage.nBits ? maxBits : coverage.nBits;
+    const size_t limit = maxBits < coverage.nBits ? maxBits : coverage.nBits;
     for (size_t i = 0; i < limit; i++) {
         putchar(coverage.global_bits[i] ? '1' : '0');
-    }
-    putchar('\n');
-}
-
-void coverage_current_print(size_t maxBits) {
-    if (!coverage.is_initialized) return;
-
-    size_t limit = maxBits < coverage.nBits ? maxBits : coverage.nBits;
-    for (size_t i = 0; i < limit; i++) {
-        putchar(coverage.current_bits[i] ? '1' : '0');
     }
     putchar('\n');
 }

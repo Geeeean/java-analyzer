@@ -10,10 +10,18 @@
 
 #define INTERPRETER_TAG "i"
 #define INTERPRETER_TAG_F "interpreter"
+#define FUZZ_SHORT        "f"
+#define FUZZ_LONG         "fuzzer"
 
 static bool is_interpreter_only(const char* opt)
 {
     return strcmp(opt, INTERPRETER_TAG) == 0 || strcmp(opt, INTERPRETER_TAG_F) == 0;
+}
+
+static bool is_fuzz_mode(const char* opt)
+{
+    return strcmp(opt, FUZZ_SHORT) == 0 ||
+           strcmp(opt, FUZZ_LONG)  == 0;
 }
 
 OptionsParseResult options_parse_args(const int argc, const char** argv, Options* opts)
@@ -22,6 +30,7 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
 
     opts->info = false;
     opts->interpreter_only = false;
+    opts->fuzzer = false;
     opts->method_id = NULL;
     opts->parameters = NULL;
 
@@ -38,6 +47,9 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
             if (argv[i][0] && argv[i][0] == '-') {
                 if (is_interpreter_only(argv[i] + 1)) {
                     opts->interpreter_only = true;
+                }
+                else if (is_fuzz_mode(argv[i]+1)) {
+                    opts->fuzzer = true;
                 }
                 // else if (other options) {...}
                 else {

@@ -106,6 +106,7 @@ struct VMContext {
     CallStack* call_stack;
     const Config* cfg;
     Frame* frame;
+    uint8_t* coverage_bitmap;
 };
 
 static void call_stack_push(CallStack* call_stack, Frame* frame)
@@ -1011,7 +1012,10 @@ static OpHandler opcode_table[OP_COUNT] = {
 static StepResult step(VMContext* vm_context)
 {
     Frame* frame = vm_context->frame;
-    printf("[trace] PC=%d\n", frame->pc);
+
+    if (vm_context->coverage_bitmap) {
+        coverage_mark_thread(vm_context->coverage_bitmap, (uint32_t)frame->pc);
+    }
 
     if (!vm_context->cfg) {
         return SR_INTERNAL_NULL_ERR;
@@ -1032,8 +1036,6 @@ static StepResult step(VMContext* vm_context)
     }
     // LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
 
-    coverage_mark((uint32_t)vm_context->frame->pc);
-
     Opcode opcode = instruction->opcode;
     if (opcode < 0 || opcode >= OP_COUNT) {
         return SR_UNKNOWN_OPCODE;
@@ -1045,7 +1047,7 @@ static StepResult step(VMContext* vm_context)
 
 
 
-VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg)
+VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg, uint8_t* thread_bitmap)
 {
     if (!m || !opts || !cfg) {
         return NULL;
@@ -1074,6 +1076,8 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     vm_context->call_stack = call_stack;
     vm_context->frame = frame;
     vm_context->cfg = cfg;
+
+    vm_context->coverage_bitmap = thread_bitmap;
 
     return vm_context;
 }

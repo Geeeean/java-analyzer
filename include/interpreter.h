@@ -3,6 +3,7 @@
 
 #include "cli.h"
 #include "method.h"
+#include <stdint.h>
 
 typedef enum {
     RT_OK,
@@ -18,7 +19,7 @@ typedef enum {
 
 typedef struct VMContext VMContext;
 
-VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg);
+VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg, uint8_t* thread_bitmap);
 RuntimeResult interpreter_run(VMContext* vm_context);
 
 size_t interpreter_instruction_count(const Method* m, const Config* cfg);
