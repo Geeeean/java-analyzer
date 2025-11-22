@@ -224,3 +224,10 @@ cleanup:
     return cfg;
 }
 
+void cfg_print(Cfg* cfg)
+{
+    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+        LOG_INFO("BLOCK %d, [%d-%d]", i, block->ip_start, block->ip_end);
+    }
+}

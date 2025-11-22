@@ -26,12 +26,15 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
         goto cleanup;
     }
 
-    Cfg* control_glow_graph = cfg_build(ir_function);
-    if (!control_glow_graph) {
+    Cfg* control_flow_graph = ir_program_get_cfg(m, cfg);
+#ifdef DEBUG
+    cfg_print(control_flow_graph);
+#endif
+    if (!control_flow_graph) {
         goto cleanup;
     }
 
-    Graph* graph = graph_from_cfg(control_glow_graph);
+    Graph* graph = graph_from_cfg(control_flow_graph);
     if (!graph) {
         goto cleanup;
     }
@@ -48,10 +51,10 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
         goto cleanup;
     }
 
-    ctx->block_count = vector_length(control_glow_graph->blocks);
+    ctx->block_count = vector_length(control_flow_graph->blocks);
     ctx->exit_count = vector_length(wpo.wpo->nodes) - ctx->block_count;
     ctx->wpo = wpo;
-    ctx->cfg = control_glow_graph;
+    ctx->cfg = control_flow_graph;
     ctx->num_locals = ir_program_get_num_locals(m, cfg);
     ctx->ir_function = ir_function;
 
@@ -95,15 +98,18 @@ static void update_scheduling_successors(
     Vector* worklist,
     int* num_sched_pred,
     IntervalState** X_in,
-    IntervalState** X_out)
+    IntervalState** X_out,
+    int is_conditional)
 {
     Node* node = vector_get(graph->nodes, current_node);
     for (int i = 0; i < vector_length(node->successors); i++) {
         int successor = *(int*)vector_get(node->successors, i);
         N[successor]++;
 
-        int dummy;
-        interval_join(X_in[successor], X_out[current_node], &dummy);
+        if (!(is_conditional && (i == 0 || i == 1))) {
+            int dummy;
+            interval_join(X_in[successor], X_out[current_node], &dummy);
+        }
 
         if (num_sched_pred[successor] == N[successor]) {
             vector_push(worklist, &successor);
@@ -111,7 +117,7 @@ static void update_scheduling_successors(
     }
 }
 
-void apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* changed)
+int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* changed)
 {
     int component = ctx->wpo.node_to_component[current_node];
     int head = component == -1 ? -1 : *(int*)vector_get(ctx->wpo.heads, component);
@@ -140,6 +146,14 @@ void apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Inter
         interval_state_copy(out_false, out);
 
         interval_transfer_conditional(out_true, out_false, last);
+
+        Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+
+        int successor_true = *(int*)vector_get(node->successors, 0);
+        int successor_false = *(int*)vector_get(node->successors, 1);
+
+        interval_state_copy(X_in[successor_true], out_true);
+        interval_state_copy(X_in[successor_false], out_false);
     } else {
         interval_transfer(out, last);
     }
@@ -153,6 +167,8 @@ void apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Inter
     } else {
         interval_join(in, out, changed);
     }
+
+    return ir_instruction_is_conditional(last);
 }
 
 int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out)
@@ -219,6 +235,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     Vector* worklist = vector_new(sizeof(int));
     vector_push(worklist, &current_node);
 
+    LOG_DEBUG("interpreter_abstract_run-------------");
     while (!vector_pop(worklist, &current_node)) {
         LOG_DEBUG("NODE %d", current_node);
 
@@ -226,20 +243,20 @@ void* interpreter_abstract_run(AbstractContext* ctx)
             /*** NonExit ***/
             if (current_node < ctx->block_count) {
                 int changed = 0;
-                apply_f(current_node, ctx, X_in, X_out, &changed);
+                int is_conditional = apply_f(current_node, ctx, X_in, X_out, &changed);
 
                 N[current_node] = 0;
 
                 if (changed) {
                     // update successors
-                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out);
+                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
                 }
             }
             /*** Exit ***/
             else {
                 N[current_node] = 0;
                 if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
-                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out);
+                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, 0);
                 } else {
                     set_n_for_component(N, current_node, ctx, worklist);
                 }

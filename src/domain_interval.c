@@ -493,7 +493,6 @@ static int handle_store(IntervalState* out_state, IrInstruction* ir_instruction)
 
     if (store->index == vector_length(out_state->locals)) {
         vector_push(out_state->locals, &new_name);
-        LOG_DEBUG("AFTER STORE LOCAL LEN: %d", vector_length(out_state->locals));
     } else if (store->index < vector_length(out_state->locals)) {
         int* local_name = vector_get(out_state->locals, store->index);
         *local_name = new_name;
@@ -607,8 +606,6 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
     if (!out_state || !ir_instruction) {
         return FAILURE;
     }
-
-    LOG_DEBUG("TRANSFER: %d", ir_instruction->opcode);
 
     int result = SUCCESS;
 
@@ -834,12 +831,6 @@ static int handle_if_zero(IntervalState* out_state_true, IntervalState* out_stat
 
     Interval* false_interval = vector_get(out_state_false->env, name);
     *false_interval = false_branch;
-
-    LOG_DEBUG("IF ZERO, condition: %d", ift->condition);
-    LOG_DEBUG("TRUE INTERVAL RESULT");
-    LOG_DEBUG("LOWER: %d, UPPER: %d", true_branch.lower, true_branch.upper);
-    LOG_DEBUG("FALSE INTERVAL RESULT");
-    LOG_DEBUG("LOWER: %d, UPPER: %d", false_branch.lower, false_branch.upper);
 
     return SUCCESS;
 }

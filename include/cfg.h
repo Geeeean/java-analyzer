@@ -15,5 +15,6 @@ typedef struct {
 } Cfg;
 
 Cfg* cfg_build(IrFunction* ir_function);
+void cfg_print(Cfg* cfg);
 
 #endif
