@@ -166,7 +166,7 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
 
-    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, current_node);
+    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
 
     for (int ip = block->ip_start; ip <= block->ip_end; ip++) {
         IrInstruction* ir = *(IrInstruction**)
