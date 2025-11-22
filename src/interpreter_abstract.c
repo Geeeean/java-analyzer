@@ -37,9 +37,9 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     }
 
     WPO wpo;
-    Graph* test = graph_create_test_8_nodes();
-    if (wpo_construct_aux(test, &wpo)) {
-        // if (wpo_construct_aux(graph, &wpo)) {
+    // Graph* test = graph_create_test_8_nodes();
+    // if (wpo_construct_aux(test, &wpo)) {
+    if (wpo_construct_aux(graph, &wpo)) {
         goto cleanup;
     }
 
@@ -166,6 +166,7 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
 
+    LOG_DEBUG("HEAD: %d", head);
     BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
 
     for (int ip = block->ip_start; ip <= block->ip_end; ip++) {
