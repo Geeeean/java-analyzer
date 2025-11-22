@@ -144,18 +144,15 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 
     *changed = 0;
 
-    /* --- 1) JOIN ENV ---------------------------------------------------- */
     int acc_env_len = vector_length(acc->env);
     int new_env_len = vector_length(new->env);
 
-    /* porta acc->env alla lunghezza massima */
     while (vector_length(acc->env) < new_env_len) {
         Interval top = interval_top();
         vector_push(acc->env, &top);
         *changed = 1;
     }
 
-    /* join sugli intervalli */
     for (int i = 0; i < new_env_len; i++) {
         Interval* a = vector_get(acc->env, i);
         Interval b = *(Interval*)vector_get(new->env, i);
@@ -168,8 +165,6 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         }
     }
 
-    /* --- 2) JOIN LOCALS ------------------------------------------------- */
-
     int locals_len = vector_length(acc->locals);
 
     for (int i = 0; i < locals_len; i++) {
@@ -178,9 +173,8 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         int nameB = *(int*)vector_get(new->locals, i);
 
         if (*nameA == nameB)
-            continue; /* stessi nomi → nessun problema */
+            continue;
 
-        /* nomi diversi → crea nuovo nome */
         int newName = acc->name_count++;
 
         Interval a = *(Interval*)vector_get(acc->env, *nameA);
@@ -194,17 +188,14 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         *changed = 1;
     }
 
-    /* --- 3) JOIN STACK -------------------------------------------------- */
-    // Join dello stack
     int lenA = vector_length(acc->stack);
     int lenB = vector_length(new->stack);
 
-    // Se forme diverse → stack comune = vuoto
     if (lenA != lenB) {
         vector_delete(acc->stack);
         acc->stack = vector_new(sizeof(int));
         *changed = 1;
-        // non tocchiamo env qui
+
         return SUCCESS;
     }
 
@@ -234,8 +225,6 @@ int interval_intersection(IntervalState* acc, const IntervalState* constraint, i
         return FAILURE;
     *changed = 0;
 
-    /* --- 1) INTERSEZIONE ENV --------------------------------------------- */
-
     int env_len = vector_length(acc->env);
     int c_len = vector_length(constraint->env);
     int max_len = (env_len > c_len ? env_len : c_len);
@@ -258,8 +247,6 @@ int interval_intersection(IntervalState* acc, const IntervalState* constraint, i
             *changed = 1;
         }
     }
-
-    /* --- 2) LOCALS E STACK ---------------------------------------------- */
 
     for (int i = 0; i < vector_length(acc->locals); i++) {
         int* nameA = vector_get(acc->locals, i);
@@ -304,7 +291,6 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
         return FAILURE;
     *changed = 0;
 
-    /* --- 1) WIDENING ENV ------------------------------------------------ */
     int env_len = vector_length(acc->env);
     int new_len = vector_length(new->env);
     int max_len = (env_len > new_len ? env_len : new_len);
@@ -328,7 +314,6 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
         }
     }
 
-    /* --- 2) LOCALS E STACK --------------------------------------------- */
     for (int i = 0; i < vector_length(acc->locals); i++) {
         int* nameA = vector_get(acc->locals, i);
         int nameB = *(int*)vector_get(new->locals, i);
@@ -912,6 +897,7 @@ int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* 
         break;
     }
 
+    /*
 #ifdef DEBUG
     LOG_DEBUG("---------------------------------------");
     LOG_DEBUG("TRUE");
@@ -920,6 +906,7 @@ int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* 
     interval_state_print(out_state_false);
     LOG_DEBUG("---------------------------------------");
 #endif
+*/
 
     if (result) {
         LOG_ERROR("%s", opcode_print(ir_instruction->opcode));

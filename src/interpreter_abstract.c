@@ -8,6 +8,7 @@
 
 struct AbstractContext {
     Cfg* cfg;
+    IrFunction* ir_function;
     WPO wpo;
     int block_count;
     int exit_count;
@@ -52,6 +53,7 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     ctx->wpo = wpo;
     ctx->cfg = control_glow_graph;
     ctx->num_locals = ir_program_get_num_locals(m, cfg);
+    ctx->ir_function = ir_function;
 
 #ifdef DEBUG
     graph_print(wpo.wpo);
@@ -70,14 +72,19 @@ cleanup:
     return ctx;
 }
 
-static void set_n_for_component(int exit_node, AbstractContext* ctx)
+static void set_n_for_component(int* N, int exit_node, AbstractContext* ctx, Vector* worklist)
 {
     int component_id = ctx->wpo.node_to_component[exit_node];
     C* component = vector_get(ctx->wpo.Cx, component_id);
     Vector* component_nodes = component->components;
 
     for (int i = 0; i < vector_length(component_nodes); i++) {
-        // int 
+        int node = *(int*)vector_get(component_nodes, i);
+        N[node] = ctx->wpo.num_outer_sched_pred[component_id][node];
+
+        if (ctx->wpo.num_sched_pred[node] == N[node]) {
+            vector_push(worklist, &node);
+        }
     }
 }
 
@@ -86,12 +93,17 @@ static void update_scheduling_successors(
     int current_node,
     int* N,
     Vector* worklist,
-    int* num_sched_pred)
+    int* num_sched_pred,
+    IntervalState** X_in,
+    IntervalState** X_out)
 {
     Node* node = vector_get(graph->nodes, current_node);
     for (int i = 0; i < vector_length(node->successors); i++) {
         int successor = *(int*)vector_get(node->successors, i);
         N[successor]++;
+
+        int dummy;
+        interval_join(X_in[successor], X_out[current_node], &dummy);
 
         if (num_sched_pred[successor] == N[successor]) {
             vector_push(worklist, &successor);
@@ -99,19 +111,73 @@ static void update_scheduling_successors(
     }
 }
 
-void apply_f(int current_node, AbstractContext* ctx)
+void apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* changed)
 {
     int component = ctx->wpo.node_to_component[current_node];
     int head = component == -1 ? -1 : *(int*)vector_get(ctx->wpo.heads, component);
 
-    if (head == current_node) {
-        // apply widening
+    IntervalState* in = X_in[current_node];
+    IntervalState* out = X_out[current_node];
+
+    interval_state_copy(out, in);
+
+    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, current_node);
+
+    for (int ip = block->ip_start; ip < block->ip_end; ip++) {
+        IrInstruction* ir = *(IrInstruction**)
+                                vector_get(ctx->ir_function->ir_instructions, ip);
+        interval_transfer(out, ir);
+    }
+
+    IrInstruction* last = *(IrInstruction**)vector_get(ctx->ir_function->ir_instructions,
+        block->ip_end);
+
+    if (ir_instruction_is_conditional(last)) {
+        IntervalState* out_true = interval_new_top_state(ctx->num_locals);
+        IntervalState* out_false = interval_new_top_state(ctx->num_locals);
+
+        interval_state_copy(out_true, out);
+        interval_state_copy(out_false, out);
+
+        interval_transfer_conditional(out_true, out_false, last);
     } else {
-        // apply transfer
+        interval_transfer(out, last);
+    }
+
+    if (head == current_node) {
+        if (ir_instruction_is_conditional(last)) {
+            LOG_ERROR("OK THIS CAN HAPPEN");
+        }
+
+        interval_widening(in, out, changed);
+    } else {
+        interval_join(in, out, changed);
     }
 }
-int is_component_stabilized(int current_node) {
-    return true;
+
+int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out)
+{
+    int component_id = ctx->wpo.node_to_component[current_node];
+    int head = *(int*)vector_get(ctx->wpo.heads, component_id);
+
+    IntervalState* test_in = interval_new_top_state(ctx->num_locals);
+    IntervalState* test_out = interval_new_top_state(ctx->num_locals);
+
+    interval_state_copy(test_in, X_in[head]);
+    interval_state_copy(test_out, X_out[head]);
+
+    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, current_node);
+
+    for (int ip = block->ip_start; ip <= block->ip_end; ip++) {
+        IrInstruction* ir = *(IrInstruction**)
+                                vector_get(ctx->ir_function->ir_instructions, ip);
+        interval_transfer(test_out, ir);
+    }
+
+    int changed = 0;
+    interval_join(test_in, test_out, &changed);
+
+    return !changed;
 }
 
 void* interpreter_abstract_run(AbstractContext* ctx)
@@ -126,9 +192,10 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     }
 
     int* N = calloc(nodes_num, sizeof(int));
-    IntervalState** X = calloc(nodes_num, sizeof(IntervalState));
+    IntervalState** X_in = calloc(nodes_num, sizeof(IntervalState));
+    IntervalState** X_out = calloc(nodes_num, sizeof(IntervalState));
 
-    if (!N || !X) {
+    if (!N || !X_in || !X_out) {
         goto cleanup;
     }
 
@@ -140,13 +207,13 @@ void* interpreter_abstract_run(AbstractContext* ctx)
 
     /*** INIT ***/
     int current_node = 0;
-    X[current_node] = interval_new_top_state(ctx->num_locals);
+    X_in[current_node] = interval_new_top_state(ctx->num_locals);
+    X_out[current_node] = interval_new_bottom_state(ctx->num_locals);
 
     for (int i = current_node + 1; i < nodes_num; i++) {
-        X[i] = interval_new_bottom_state(ctx->num_locals);
+        X_in[i] = interval_new_bottom_state(ctx->num_locals);
+        X_out[i] = interval_new_bottom_state(ctx->num_locals);
     }
-
-    exit(1);
 
     Vector* worklist = vector_new(sizeof(int));
     vector_push(worklist, &current_node);
@@ -154,23 +221,35 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     while (!vector_pop(worklist, &current_node)) {
         LOG_DEBUG("NODE %d", current_node);
 
-        N[current_node] = 0;
+        if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
+            /*** NonExit ***/
+            if (current_node < ctx->block_count) {
+                int changed = 0;
+                apply_f(current_node, ctx, X_in, X_out, &changed);
 
-        /*** NonExit ***/
-        if (current_node < ctx->block_count) {
-            apply_f(current_node, ctx);
+                N[current_node] = 0;
 
-            // update successors
-            update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred);
-        }
-        /*** Exit ***/
-        else {
-            if (is_component_stabilized(current_node)) {
-                update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred);
-            } else {
-                set_n_for_component(current_node, ctx);
+                if (changed) {
+                    // update successors
+                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out);
+                }
+            }
+            /*** Exit ***/
+            else {
+                N[current_node] = 0;
+                if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
+                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out);
+                } else {
+                    set_n_for_component(N, current_node, ctx, worklist);
+                }
             }
         }
+    }
+
+    LOG_INFO("RESULTS:");
+    for (int i = 0; i < nodes_num; i++) {
+        LOG_INFO("NODE %d", i);
+        interval_state_print(X_out[i]);
     }
 
 cleanup:
