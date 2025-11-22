@@ -139,8 +139,9 @@ int interval_state_copy(IntervalState* dst, const IntervalState* src)
 
 int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 {
-    if (!acc || !new || !changed)
+    if (!acc || !new || !changed) {
         return FAILURE;
+    }
 
     *changed = 0;
 
@@ -148,8 +149,8 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
     int new_env_len = vector_length(new->env);
 
     while (vector_length(acc->env) < new_env_len) {
-        Interval top = interval_top();
-        vector_push(acc->env, &top);
+        Interval bottom = interval_bottom();
+        vector_push(acc->env, &bottom);
         *changed = 1;
     }
 
@@ -168,7 +169,6 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
     int locals_len = vector_length(acc->locals);
 
     for (int i = 0; i < locals_len; i++) {
-
         int* nameA = (int*)vector_get(acc->locals, i);
         int nameB = *(int*)vector_get(new->locals, i);
 
@@ -188,26 +188,22 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         *changed = 1;
     }
 
+    for (int i = locals_len; i < vector_length(new->locals); i++) {
+        vector_push(acc->locals, vector_get(new->locals, i));
+    }
+
     int lenA = vector_length(acc->stack);
     int lenB = vector_length(new->stack);
 
-    if (lenA != lenB) {
-        vector_delete(acc->stack);
-        acc->stack = vector_new(sizeof(int));
-        *changed = 1;
-
-        return SUCCESS;
-    }
-
-    for (int i = 0; i < lenA; i++) {
+    for (int i = 0; i < (lenA > lenB ? lenA : lenB); i++) {
         int* nameA = vector_get(acc->stack, i);
-        int nameB = *(int*)vector_get(new->stack, i);
+        int* nameB = vector_get(new->stack, i);
 
-        if (*nameA != nameB) {
+        if (*nameA != *nameB) {
             int newName = acc->name_count++;
 
-            Interval a = *(Interval*)vector_get(acc->env, *nameA);
-            Interval b = *(Interval*)vector_get(new->env, nameB);
+            Interval a = nameA ? *(Interval*)vector_get(acc->env, *nameA) : interval_bottom();
+            Interval b = nameB ? *(Interval*)vector_get(new->env, *nameB) : interval_bottom();
             Interval r = interval_join_single(a, b);
 
             vector_push(acc->env, &r);
@@ -456,6 +452,8 @@ static int handle_load(IntervalState* out_state, IrInstruction* ir_instruction)
     if (!out_state || !ir_instruction) {
         return FAILURE;
     }
+
+    interval_state_print(out_state);
 
     LoadOP* load = &ir_instruction->data.load;
     if (!load) {

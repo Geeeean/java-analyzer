@@ -73,7 +73,7 @@ int vector_push(Vector* v, void* element)
 
 void* vector_get(const Vector* v, size_t index)
 {
-    if (index >= v->length) {
+    if (!v || index >= v->length) {
         return NULL;
     }
 

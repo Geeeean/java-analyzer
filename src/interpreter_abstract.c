@@ -149,11 +149,16 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
 
         Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
 
-        int successor_true = *(int*)vector_get(node->successors, 0);
-        int successor_false = *(int*)vector_get(node->successors, 1);
+        int dummy;
+        int* successor_true = vector_get(node->successors, 0);
+        if (successor_true) {
+            interval_join(X_in[*successor_true], out_true, &dummy);
+        }
 
-        interval_state_copy(X_in[successor_true], out_true);
-        interval_state_copy(X_in[successor_false], out_false);
+        int* successor_false = vector_get(node->successors, 1);
+        if (successor_false) {
+            interval_join(X_in[*successor_false], out_false, &dummy);
+        }
     } else {
         interval_transfer(out, last);
     }
@@ -237,7 +242,8 @@ void* interpreter_abstract_run(AbstractContext* ctx)
 
     LOG_DEBUG("interpreter_abstract_run-------------");
     while (!vector_pop(worklist, &current_node)) {
-        LOG_DEBUG("NODE %d", current_node);
+        LOG_DEBUG("NODE %d STATE:", current_node);
+        interval_state_print(X_in[current_node]);
 
         if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
             /*** NonExit ***/
@@ -248,6 +254,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                 N[current_node] = 0;
 
                 if (changed) {
+                    LOG_INFO("SONO QUI CAPO, IS COND: %d", is_conditional);
                     // update successors
                     update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
                 }
@@ -262,6 +269,9 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                 }
             }
         }
+
+        LOG_DEBUG("NODE %d STATE AFTER:", current_node);
+        interval_state_print(X_out[current_node]);
     }
 
     LOG_INFO("RESULTS:");
