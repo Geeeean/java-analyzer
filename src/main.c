@@ -11,13 +11,14 @@
 #include "coverage.h"
 
 #include "tree_sitter/api.h"
+#include "type.h"
 
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <time.h>
-#include <omp.h>
+#include <unistd.h>
 
 /* Forward declarations */
 void run_interpreter(const Method* m, Options opts, const Config* cfg);
@@ -119,10 +120,10 @@ void run_base(Method* m, Options opts, const Config* cfg) {
 
 #pragma omp for
             for (int i = 0; i < run; i++) {
-                char* fuzz_params = NULL;
+                char*start_params = NULL;
 
                 Options local_opts = opts;
-                local_opts.parameters = fuzz_params;
+                local_opts.parameters = start_params;
 
 
                 VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
@@ -337,6 +338,7 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
   coverage_global_print(instruction_count);
 
 }
+
 
 /*
  * TODO

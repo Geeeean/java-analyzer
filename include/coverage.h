@@ -21,6 +21,8 @@ size_t coverage_global_count(void);
 
 void coverage_reset_all(void);
 
+int check_bits(const uint8_t* bitmap, size_t size);
+
 void coverage_global_print(size_t maxBits);
 
 

@@ -87,6 +87,21 @@ void coverage_reset_all(void) {
     coverage.is_initialized = false;
 }
 
+
+int check_bits (const uint8_t* bitmap, size_t bitmap_size) {
+    if (!coverage.global_bits || !bitmap || !bitmap_size) {
+      return 0;
+    }
+    int new_bit_count = 0;
+
+     for (size_t i = 0; i < bitmap_size; i++) {
+      if (bitmap[i] == 1 && coverage.global_bits[i] != 1)  {
+        new_bit_count++;
+      }
+    }
+    return new_bit_count;
+}
+
 void coverage_global_print(size_t maxBits) {
     if (!coverage.is_initialized) return;
 
