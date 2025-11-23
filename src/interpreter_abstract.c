@@ -187,7 +187,6 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
 
-    LOG_DEBUG("HEAD: %d", head);
     BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
 
     for (int ip = block->ip_start; ip <= block->ip_end; ip++) {
@@ -240,7 +239,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     Vector* worklist = vector_new(sizeof(int));
     vector_push(worklist, &current_node);
 
-    LOG_DEBUG("interpreter_abstract_run-------------");
+    LOG_DEBUG("interpreter_abstract_run -------------");
     while (!vector_pop(worklist, &current_node)) {
         LOG_DEBUG("NODE %d STATE:", current_node);
         interval_state_print(X_in[current_node]);
@@ -254,6 +253,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                 N[current_node] = 0;
 
                 if (changed) {
+                    LOG_DEBUG("UPDATING SUCCESSORS OF %d", current_node);
                     // update successors
                     update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
                 }

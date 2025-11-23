@@ -27,12 +27,24 @@ static Interval interval_bottom(void)
     return (Interval) { .lower = 1, .upper = -1 };
 }
 
+static int is_interval_bottom(Interval iv)
+{
+    Interval bottom = interval_bottom();
+    return iv.lower == bottom.lower && iv.upper == bottom.upper;
+}
+
 static Interval interval_join_single(Interval a, Interval b)
 {
-    return (Interval) {
-        .lower = (a.lower < b.lower) ? a.lower : b.lower,
-        .upper = (a.upper > b.upper) ? a.upper : b.upper
-    };
+    if (is_interval_bottom(a)) {
+        return b;
+    } else if (is_interval_bottom(b)) {
+        return a;
+    } else {
+        return (Interval) {
+            .lower = (a.lower < b.lower) ? a.lower : b.lower,
+            .upper = (a.upper > b.upper) ? a.upper : b.upper
+        };
+    }
 }
 
 static Interval interval_intersect_single(Interval a, Interval b)
@@ -68,7 +80,6 @@ IntervalState* interval_new_top_state(int num_locals)
     st->locals = vector_new(sizeof(int));
     st->stack = vector_new(sizeof(int));
     st->env = vector_new(sizeof(Interval));
-    st->name_count = num_locals;
 
     for (int i = 0; i < num_locals; i++) {
         vector_push(st->locals, &i);
@@ -90,7 +101,6 @@ IntervalState* interval_new_bottom_state(int num_locals)
     st->locals = vector_new(sizeof(int));
     st->stack = vector_new(sizeof(int));
     st->env = vector_new(sizeof(Interval));
-    st->name_count = num_locals;
 
     for (int i = 0; i < num_locals; i++) {
         vector_push(st->locals, &i);
@@ -131,8 +141,6 @@ int interval_state_copy(IntervalState* dst, const IntervalState* src)
     if (vector_copy(dst->env, src->env)) {
         return FAILURE;
     }
-
-    dst->name_count = src->name_count;
 
     return SUCCESS;
 }
@@ -175,7 +183,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         if (*nameA == nameB)
             continue;
 
-        int newName = acc->name_count++;
+        int new_name = vector_length(acc->env);
 
         Interval a = *(Interval*)vector_get(acc->env, *nameA);
         Interval b = *(Interval*)vector_get(new->env, nameB);
@@ -184,7 +192,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 
         vector_push(acc->env, &r);
 
-        *nameA = newName;
+        *nameA = new_name;
         *changed = 1;
     }
 
@@ -201,25 +209,22 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 
         if (nameA && nameB) {
             if (*nameA != *nameB) {
-                int newName = acc->name_count++;
+                int new_name = vector_length(acc->env);
 
                 Interval a = *(Interval*)vector_get(acc->env, *nameA);
                 Interval b = *(Interval*)vector_get(new->env, *nameB);
                 Interval r = interval_join_single(a, b);
 
                 vector_push(acc->env, &r);
-                *nameA = newName;
+                *nameA = new_name;
                 *changed = 1;
             }
         } else {
-            int newName = acc->name_count++;
-
             Interval a = nameA ? *(Interval*)vector_get(acc->env, *nameA) : interval_bottom();
             Interval b = nameB ? *(Interval*)vector_get(new->env, *nameB) : interval_bottom();
             Interval r = interval_join_single(a, b);
 
             vector_push(acc->env, &r);
-            // *nameA = newName;
             *changed = 1;
         }
     }
@@ -261,14 +266,14 @@ int interval_intersection(IntervalState* acc, const IntervalState* constraint, i
         int nameB = *(int*)vector_get(constraint->locals, i);
 
         if (*nameA != nameB) {
-            int newName = acc->name_count++;
+            int new_name = vector_length(acc->env);
 
             Interval a = *(Interval*)vector_get(acc->env, *nameA);
             Interval b = *(Interval*)vector_get(constraint->env, nameB);
             Interval r = interval_intersect_single(a, b);
 
             vector_push(acc->env, &r);
-            *nameA = newName;
+            *nameA = new_name;
             *changed = 1;
         }
     }
@@ -278,14 +283,14 @@ int interval_intersection(IntervalState* acc, const IntervalState* constraint, i
         int nameB = *(int*)vector_get(constraint->stack, i);
 
         if (*nameA != nameB) {
-            int newName = acc->name_count++;
+            int new_name = vector_length(acc->env);
 
             Interval a = *(Interval*)vector_get(acc->env, *nameA);
             Interval b = *(Interval*)vector_get(constraint->env, nameB);
             Interval r = interval_intersect_single(a, b);
 
             vector_push(acc->env, &r);
-            *nameA = newName;
+            *nameA = new_name;
             *changed = 1;
         }
     }
@@ -327,14 +332,14 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
         int nameB = *(int*)vector_get(new->locals, i);
 
         if (*nameA != nameB) {
-            int newName = acc->name_count++;
+            int new_name = vector_length(acc->env);
 
             Interval a = *(Interval*)vector_get(acc->env, *nameA);
             Interval b = *(Interval*)vector_get(new->env, nameB);
             Interval r = interval_widen_single(a, b);
 
             vector_push(acc->env, &r);
-            *nameA = newName;
+            *nameA = new_name;
             *changed = 1;
         }
     }
@@ -344,14 +349,14 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
         int nameB = *(int*)vector_get(new->stack, i);
 
         if (*nameA != nameB) {
-            int newName = acc->name_count++;
+            int new_name = vector_length(acc->env);
 
             Interval a = *(Interval*)vector_get(acc->env, *nameA);
             Interval b = *(Interval*)vector_get(new->env, nameB);
             Interval r = interval_widen_single(a, b);
 
             vector_push(acc->env, &r);
-            *nameA = newName;
+            *nameA = new_name;
             *changed = 1;
         }
     }
@@ -368,11 +373,26 @@ Interval interval_add(Interval* a, Interval* b)
     return r;
 }
 
-Interval interval_sub(Interval* a, Interval* b)
+Interval interval_sub(const Interval* a, const Interval* b)
 {
     Interval r;
-    r.lower = a->lower - b->upper;
-    r.upper = a->upper - b->lower;
+
+    long tmp_lower = (long)a->lower - (long)b->upper;
+    long tmp_upper = (long)a->upper - (long)b->lower;
+
+    if (tmp_lower < INT_MIN)
+        tmp_lower = INT_MIN;
+    if (tmp_lower > INT_MAX)
+        tmp_lower = INT_MAX;
+
+    if (tmp_upper < INT_MIN)
+        tmp_upper = INT_MIN;
+    if (tmp_upper > INT_MAX)
+        tmp_upper = INT_MAX;
+
+    r.lower = (int)tmp_lower;
+    r.upper = (int)tmp_upper;
+
     return r;
 }
 
@@ -448,11 +468,11 @@ static int handle_push(IntervalState* out_state, IrInstruction* ir_instruction)
         return FAILURE;
     }
 
-    int name = out_state->name_count++;
+    int new_name = vector_length(out_state->env);
     Interval interval = (Interval) { .lower = value, .upper = value };
     vector_push(out_state->env, &interval);
 
-    if (vector_push(out_state->stack, &name)) {
+    if (vector_push(out_state->stack, &new_name)) {
         return FAILURE;
     }
 
@@ -497,7 +517,7 @@ static int handle_store(IntervalState* out_state, IrInstruction* ir_instruction)
     int name_old;
     vector_pop(out_state->stack, &name_old);
 
-    int new_name = out_state->name_count++;
+    int new_name = vector_length(out_state->env);
     Interval iv = *(Interval*)vector_get(out_state->env, name_old);
     vector_push(out_state->env, &iv);
 
@@ -540,9 +560,9 @@ static int handle_get(IntervalState* out_state, IrInstruction* ir_instruction)
         return FAILURE;
     }
 
+    int name = vector_length(out_state->env);
     Interval interval = { .lower = 0, .upper = 1 };
     vector_push(out_state->env, &interval);
-    int name = out_state->name_count++;
 
     if (vector_push(out_state->stack, &name)) {
         return FAILURE;
@@ -594,10 +614,10 @@ static int handle_binary(IntervalState* out_state, IrInstruction* ir_instruction
         return FAILURE;
     }
 
-    int name = out_state->name_count++;
+    int new_name = vector_length(out_state->env);
 
     vector_push(out_state->env, &result);
-    vector_push(out_state->stack, &name);
+    vector_push(out_state->stack, &new_name);
 
     return SUCCESS;
 }
@@ -608,6 +628,23 @@ static int handle_new(IntervalState* st, IrInstruction* ins)
     Interval top = interval_top();
     vector_push(st->env, &top);
     vector_push(st->stack, &name);
+    return SUCCESS;
+}
+
+static int handle_negate(IntervalState* st, IrInstruction* ins)
+{
+    int new_name = vector_length(st->env);
+    int iv_id;
+    vector_pop(st->stack, &iv_id);
+
+    Interval iv = *(Interval*)vector_get(st->env, iv_id);
+
+    int tmp = iv.lower;
+    iv.lower = -iv.upper;
+    iv.upper = -tmp;
+
+    vector_push(st->env, &iv);
+    vector_push(st->stack, &new_name);
     return SUCCESS;
 }
 
@@ -640,6 +677,9 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
         break;
     case OP_NEW:
         result = handle_new(out_state, ir_instruction);
+        break;
+    case OP_NEGATE:
+        result = handle_negate(out_state, ir_instruction);
         break;
     case OP_ARRAY_STORE:
     case OP_NEW_ARRAY:
@@ -734,8 +774,10 @@ static int handle_if_aux(IfCondition condition,
             *false_branch = *x;
             return SUCCESS;
         }
+        if (yL > INT_MIN)
+            yL--;
 
-        MAKE_INTERVAL(true_branch, xL, yL - 1);
+        MAKE_INTERVAL(true_branch, xL, yL);
         MAKE_INTERVAL(false_branch, yU, xU);
         return SUCCESS;
     }
