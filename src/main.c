@@ -229,114 +229,60 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
 }
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
+    write(2, "FUZZER REACHED\n", 15);
 
-  int run = 50;
+    size_t instruction_count = interpreter_instruction_count(m, cfg);
 
-  Outcome outcome = new_outcome();
-
-  size_t best_cov = 0;
-
-  size_t instruction_count = interpreter_instruction_count(m, cfg);
-
-  if (!coverage_init(instruction_count)) {
-    LOG_ERROR("Coverage initialization failed");
-    return;
-  }
-
-#pragma omp parallel
-  {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-
-    uint32_t seed = (ts.tv_nsec
-                    ^ (ts.tv_sec << 16)
-                    ^ omp_get_thread_num()
-    );
-
-    srand(seed);
-    srandom(seed);
-
-    Outcome private = new_outcome();
-
-    uint8_t* thread_bitmap = coverage_create_thread_bitmap();
-
-   #pragma omp for
-    for (int i = 0; i < run; i++) {
-      Vector* v = method_get_arguments_as_types(m);
-
-      char* fuzz_params = fuzzer_random_parameters(v);
-
-      vector_delete(v);
-
-      Options local_opts = opts;
-
-      local_opts.parameters = fuzz_params;
-
-      coverage_reset_thread_bitmap(thread_bitmap);
-
-      VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, thread_bitmap);
-
-      if (!vm_context) {
-        LOG_ERROR("Interpreter setup failed during fuzzing");
+    if (!coverage_init(instruction_count)) {
+        LOG_ERROR("Coverage init failed.");
         return;
-      }
-
-      RuntimeResult r = interpreter_run(vm_context);
-
-      size_t new_cov = coverage_commit_thread(thread_bitmap);
-      size_t global_cov = coverage_global_count();
-
-    #pragma omp critical
-      {
-          if (new_cov > 0) {
-            best_cov = global_cov;
-            printf("[+] New coverage: %zu | Total %zu / %zu (%.2f%% | input= '%s'\n" ,
-                new_cov,
-                global_cov,
-                instruction_count,
-                instruction_count ? (global_cov * 100.0 / instruction_count) : 0.0,
-                fuzz_params);
-          }
-      }
-
-      switch (r) {
-      case RT_OK: private.oc_ok = 100; break;
-      case RT_DIVIDE_BY_ZERO: private.oc_divide_by_zero = 100; break;
-      case RT_ASSERTION_ERR: private.oc_assertion_error = 100; break;
-      case RT_INFINITE: private.oc_infinite_loop = 75; break;
-      case RT_OUT_OF_BOUNDS: private.oc_out_of_bounds = 100; break;
-      case RT_NULL_POINTER: private.oc_null_pointer = 100; break;
-      default:
-        LOG_ERROR("Interpreter error: %d", r);
-        break;
-      }
-
-      free(fuzz_params);
-    } // End of for-loop
-  #pragma omp critical
-    {
-#define MERGE(field) if (private.field != 50) outcome.field = private.field;
-      MERGE(oc_ok);
-      MERGE(oc_divide_by_zero);
-      MERGE(oc_assertion_error);
-      MERGE(oc_infinite_loop);
-      MERGE(oc_null_pointer);
-      MERGE(oc_out_of_bounds);
-#undef MERGE
     }
-  } // End of parallel block
-  print_outcome(outcome);
 
-  printf("\n=== FINAL COVERAGE REPORT ===\n");
-  printf("Instructions covered: %zu / %zu\n", best_cov, instruction_count);
+    Fuzzer* f = fuzzer_init(instruction_count);
 
-  if (instruction_count > 0) {
-    printf("Coverage: %.2f%%\n", (best_cov * 100.0) / instruction_count);
-  }
+    if (!f) {
+        LOG_ERROR("Fuzzer init failed.");
+        coverage_reset_all();
+        return;
+    }
 
-  printf("Coverage bitmap (first 64 PCs): ");
-  coverage_global_print(instruction_count);
+    Vector* arg_types = method_get_arguments_as_types(m);
 
+    if (!arg_types) {
+        LOG_ERROR("Argument types missing.");
+        fuzzer_free(f);
+        coverage_reset_all();
+        return;
+    }
+
+    Vector* results = fuzzer_run(f, m, cfg, &opts, arg_types);
+
+    printf("Fuzzing found %zu interesting testcases:\n", vector_length(results));
+
+    for (size_t i = 0; i < vector_length(results); i++) {
+        TestCase* tc = *(TestCase**) vector_get(results, i);
+        printf("[%zu] len=%zu fuzz_count=%u\n",
+               i,
+               tc->len,
+               tc->fuzz_count);
+    }
+
+    fuzzer_free(f);
+
+
+    size_t covered = coverage_global_count();
+    printf("\n=== FINAL COVERAGE REPORT ===\n");
+    printf("Instructions covered: %zu / %zu\n", covered, instruction_count);
+    if (instruction_count > 0) {
+        printf("Coverage: %.2f%%\n", (covered * 100.0) / instruction_count);
+    }
+    printf("Coverage bitmap (first 64 PCs): ");
+    coverage_global_print(instruction_count);
+
+
+    // Cleanup
+    vector_delete(arg_types);
+    coverage_reset_all();
 }
 
 

@@ -23,6 +23,6 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
 RuntimeResult interpreter_run(VMContext* vm_context);
 
 size_t interpreter_instruction_count(const Method* m, const Config* cfg);
-
+void interpreter_free(VMContext* vm);
 
 #endif

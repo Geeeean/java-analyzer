@@ -255,8 +255,6 @@ Vector* method_get_arguments_as_types(const Method* m)
             vector_delete(v);
             v = NULL;
         }
-
-        arguments_consume++;
     }
 
 cleanup:

@@ -1,7 +1,7 @@
 #include "heap.h"
 #include <stdlib.h>
 
-#define HEAP_SIZE 100
+#define HEAP_SIZE 100000
 
 typedef struct {
     ObjectValue* fields[HEAP_SIZE];
@@ -32,4 +32,23 @@ ObjectValue* heap_get(int index)
     }
 
     return heap.fields[index];
+}
+
+void heap_reset(void)
+{
+    for (int i = 1; i < heap.len; i++) {
+        ObjectValue* obj = heap.fields[i];
+        if (!obj) continue;
+
+        if (obj->type && obj->type->kind == TK_ARRAY) {
+            free(obj->array.elements);
+            obj->array.elements = NULL;
+            obj->array.elements_count = 0;
+        }
+
+        free(obj);
+        heap.fields[i] = NULL;
+    }
+
+    heap.len = 1;
 }

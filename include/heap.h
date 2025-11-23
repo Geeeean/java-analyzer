@@ -6,4 +6,5 @@
 int heap_insert(ObjectValue* obj, int* index);
 ObjectValue* heap_get(int index);
 
+void heap_reset(void);
 #endif

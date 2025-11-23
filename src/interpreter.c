@@ -222,24 +222,15 @@ static int parse_array(Type* type, char* token, ObjectValue* array)
     return 0;
 }
 
-static int parse_next_parameter(char** arguments, char* token, Value* value)
+static int parse_next_parameter(Type* type, char* token, Value* value)
+
 {
-    if (!arguments || !(*arguments) || !token || !value) {
+    if (!type || !token || !value) {
         return 1;
     }
 
-    Type* type = get_type(arguments);
-    // TypeKind tk = get_tk(**arguments);
-    if (!type) {
-        LOG_ERROR("Unknown arg type in method signature: %c", **arguments);
-        return 2;
-    }
-
-    (*arguments)++;
-
     if (type_is_array(type)) {
         ObjectValue* array = malloc(sizeof(ObjectValue));
-
         if (parse_array(type, token, array)) {
             LOG_ERROR("While handling parse array");
             return 10;
@@ -251,51 +242,95 @@ static int parse_next_parameter(char** arguments, char* token, Value* value)
             LOG_ERROR("While inserting array into heap");
             return 11;
         }
-    } else if (type == TYPE_INT) {
-        value->type = type;
-        value->data.int_value = (int)strtol(token, NULL, 10);
-    } else if (type == TYPE_BOOLEAN) {
-        value->type = type;
 
-        if (strcmp(token, "false") == 0) {
-            value->data.bool_value = false;
-        } else if (strcmp(token, "true") == 0) {
-            value->data.bool_value = true;
-        } else {
-            LOG_ERROR("Type is bool but token is neither 'true' or 'false': %s", token);
-            return 4;
-        }
-    } else {
-        LOG_ERROR("Not handled type in method signature: %c", **arguments);
-        return 3;
+        return 0;
     }
 
-    return 0;
+    if (type == TYPE_INT) {
+        value->type = TYPE_INT;
+        value->data.int_value = (int)strtol(token, NULL, 10);
+        return 0;
+    }
+
+    if (type == TYPE_BOOLEAN) {
+        value->type = TYPE_BOOLEAN;
+
+        if (strcmp(token, "true") == 0) {
+            value->data.bool_value = true;
+        } else if (strcmp(token, "false") == 0) {
+            value->data.bool_value = false;
+        } else {
+            LOG_ERROR("Invalid boolean literal: %s", token);
+            return 4;
+        }
+
+        return 0;
+    }
+
+    LOG_ERROR("Unhandled type kind: %d", type->kind);
+    return 3;
 }
 
 static Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
 {
     char* arguments = strdup(method_get_arguments(m));
+    if (!arguments) {
+        return NULL;
+    }
     char* arguments_pointer = arguments;
+
+    if (*arguments_pointer == '(') {
+        arguments_pointer++;
+    }
 
     int capacity = 10;
     Value* locals = malloc(capacity * sizeof(Value));
+    if (!locals) {
+        free(arguments);
+        return NULL;
+    }
+
+    Vector* arg_types = method_get_arguments_as_types(m);
+    if (!arg_types) {
+        free(arguments);
+        free(locals);
+        return NULL;
+    }
 
     parameter_fix(parameters);
     char* strtok_state = NULL;
     char* token = strtok_r(parameters, "(), ", &strtok_state);
     while (token != NULL) {
 
+        if (*arguments_pointer == ')') {
+            break;
+        }
+
         if (*locals_count >= capacity) {
             capacity *= 2;
-            locals = realloc(locals, capacity * sizeof(Value));
-            if (!locals) {
+            Value* new_locals = realloc(locals, capacity * sizeof(Value));
+            if (!new_locals) {
+                vector_delete(arg_types);
+                free(arguments);
+                free(locals);
                 return NULL;
             }
+            locals = new_locals;
+        }
+
+        Type* type = *(Type**) vector_get(arg_types, *locals_count);
+        if (!type) {
+            vector_delete(arg_types);
+            free(arguments);
+            free(locals);
+            return NULL;
         }
 
         Value value;
-        if (parse_next_parameter(&arguments, token, &value)) {
+        if (parse_next_parameter(type, token, &value)) {
+            vector_delete(arg_types);
+            free(arguments);
+            free(locals);
             return NULL;
         }
 
@@ -310,8 +345,14 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
         free(locals);
         locals = NULL;
     } else {
-        locals = realloc(locals, *locals_count * sizeof(Value));
+        Value* shrunk = realloc(locals, *locals_count * sizeof(Value));
+        if (shrunk) {
+            locals = shrunk;
+        }
     }
+
+    vector_delete(arg_types);
+    free(arguments);
 
     return locals;
 }
@@ -1060,6 +1101,8 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
 
     int locals_count = 0;
     Value* locals = build_locals_from_str(m, parameters, &locals_count);
+    free(parameters);
+
     Frame* frame = build_frame(m, cfg, locals, locals_count);
     LOG_DEBUG("LOCALS COUNT: %d", locals_count);
 
@@ -1142,4 +1185,41 @@ size_t interpreter_instruction_count(const Method* m, const Config* cfg)
 {
   InstructionTable* table = get_instruction_table(m, cfg);
   return table ? table->count : 0;
+}
+
+static void frame_free(Frame* frame) {
+    if (!frame) return;
+
+    free(frame->locals);
+
+    stack_delete(frame->stack);
+
+    free(frame);
+}
+
+void interpreter_free(VMContext* vm) {
+    if (!vm) return;
+
+    CallStack* cs = vm->call_stack;
+
+    if (cs) {
+        CallStackNode* node = cs->top;
+
+        while (node) {
+            CallStackNode* next = node->next;
+
+            // free the frame object
+            frame_free(node->frame);
+
+            // free the stack node
+            free(node);
+
+            node = next;
+        }
+
+        free(cs);
+    }
+
+
+    free(vm);
 }
