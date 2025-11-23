@@ -164,9 +164,9 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
     }
 
     if (head == current_node) {
-        if (ir_instruction_is_conditional(last)) {
-            LOG_ERROR("OK THIS CAN HAPPEN");
-        }
+        // if (ir_instruction_is_conditional(last)) {
+        //     LOG_ERROR("OK THIS CAN HAPPEN");
+        // }
 
         interval_widening(in, out, changed);
     } else {
@@ -254,7 +254,6 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                 N[current_node] = 0;
 
                 if (changed) {
-                    LOG_INFO("SONO QUI CAPO, IS COND: %d", is_conditional);
                     // update successors
                     update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
                 }

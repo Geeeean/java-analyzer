@@ -199,7 +199,19 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         int* nameA = vector_get(acc->stack, i);
         int* nameB = vector_get(new->stack, i);
 
-        if (*nameA != *nameB) {
+        if (nameA && nameB) {
+            if (*nameA != *nameB) {
+                int newName = acc->name_count++;
+
+                Interval a = *(Interval*)vector_get(acc->env, *nameA);
+                Interval b = *(Interval*)vector_get(new->env, *nameB);
+                Interval r = interval_join_single(a, b);
+
+                vector_push(acc->env, &r);
+                *nameA = newName;
+                *changed = 1;
+            }
+        } else {
             int newName = acc->name_count++;
 
             Interval a = nameA ? *(Interval*)vector_get(acc->env, *nameA) : interval_bottom();
@@ -955,6 +967,10 @@ void interval_state_print(const IntervalState* st)
 bool is_interval_state_bottom(const IntervalState* state)
 {
     if (!state) {
+        return true;
+    }
+
+    if (!vector_length(state->env) && !vector_length(state->locals) && !vector_length(state->stack)) {
         return true;
     }
 
