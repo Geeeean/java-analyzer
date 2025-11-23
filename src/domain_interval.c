@@ -219,7 +219,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
             Interval r = interval_join_single(a, b);
 
             vector_push(acc->env, &r);
-            *nameA = newName;
+            // *nameA = newName;
             *changed = 1;
         }
     }
