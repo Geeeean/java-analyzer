@@ -5,6 +5,9 @@
 #include "ir_program.h"
 #include "log.h"
 #include "wpo.h"
+#include <limits.h>
+
+int x = 0;
 
 struct AbstractContext {
     Cfg* cfg;
@@ -117,60 +120,91 @@ static void update_scheduling_successors(
     }
 }
 
-int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* changed)
+int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* visited)
 {
+    int dummy;
     int component = ctx->wpo.node_to_component[current_node];
     int head = component == -1 ? -1 : *(int*)vector_get(ctx->wpo.heads, component);
 
     IntervalState* in = X_in[current_node];
     IntervalState* out = X_out[current_node];
 
-    interval_state_copy(out, in);
-
     BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, current_node);
-
-    for (int ip = block->ip_start; ip < block->ip_end; ip++) {
-        IrInstruction* ir = *(IrInstruction**)
-                                vector_get(ctx->ir_function->ir_instructions, ip);
-        interval_transfer(out, ir);
-    }
-
     IrInstruction* last = *(IrInstruction**)vector_get(ctx->ir_function->ir_instructions,
         block->ip_end);
-
-    if (ir_instruction_is_conditional(last)) {
-        IntervalState* out_true = interval_new_top_state(ctx->num_locals);
-        IntervalState* out_false = interval_new_top_state(ctx->num_locals);
-
-        interval_state_copy(out_true, out);
-        interval_state_copy(out_false, out);
-
-        interval_transfer_conditional(out_true, out_false, last);
-
-        Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-
-        int dummy;
-        int* successor_true = vector_get(node->successors, 0);
-        if (successor_true) {
-            interval_join(X_in[*successor_true], out_true, &dummy);
-        }
-
-        int* successor_false = vector_get(node->successors, 1);
-        if (successor_false) {
-            interval_join(X_in[*successor_false], out_false, &dummy);
-        }
-    } else {
-        interval_transfer(out, last);
-    }
-
     if (head == current_node) {
-        // if (ir_instruction_is_conditional(last)) {
-        //     LOG_ERROR("OK THIS CAN HAPPEN");
-        // }
+        if (is_interval_state_bottom(out)) {
+            interval_state_copy(out, in);
+        } else {
+            interval_widening(out, in, &dummy);
+        }
 
-        interval_widening(in, out, changed);
+        for (int ip = block->ip_start; ip < block->ip_end; ip++) {
+            IrInstruction* ir = *(IrInstruction**)
+                                    vector_get(ctx->ir_function->ir_instructions, ip);
+            interval_transfer(out, ir);
+        }
+
+        if (ir_instruction_is_conditional(last)) {
+            IntervalState* out_true = interval_new_top_state(ctx->num_locals);
+            IntervalState* out_false = interval_new_top_state(ctx->num_locals);
+
+            interval_state_copy(out_true, out);
+            interval_state_copy(out_false, out);
+
+            interval_transfer_conditional(out_true, out_false, last);
+
+            Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+
+            int exit = *(int*)vector_get(ctx->wpo.exits, component);
+            Node* exit_node = vector_get(ctx->wpo.wpo->nodes, exit);
+
+            int* successor_true = vector_get(exit_node->successors, 0);
+            if (successor_true) {
+                interval_join(X_in[*successor_true], out_true, &dummy);
+            }
+
+            int* successor_false = vector_get(node->successors, 0);
+            if (successor_false) {
+                interval_join(X_in[*successor_false], out_false, &dummy);
+            }
+        } else {
+            interval_transfer(out, last);
+        }
     } else {
-        interval_join(in, out, changed);
+        interval_state_copy(out, in);
+
+        for (int ip = block->ip_start; ip < block->ip_end; ip++) {
+            IrInstruction* ir = *(IrInstruction**)
+                                    vector_get(ctx->ir_function->ir_instructions, ip);
+            interval_transfer(out, ir);
+        }
+
+        if (ir_instruction_is_conditional(last)) {
+            IntervalState* out_true = interval_new_top_state(ctx->num_locals);
+            IntervalState* out_false = interval_new_top_state(ctx->num_locals);
+
+            interval_state_copy(out_true, out);
+            interval_state_copy(out_false, out);
+
+            interval_transfer_conditional(out_true, out_false, last);
+
+            Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+
+            int* successor_true = vector_get(node->successors, 0);
+            if (successor_true) {
+                interval_join(X_in[*successor_true], out_true, &dummy);
+            }
+
+            int* successor_false = vector_get(node->successors, 1);
+            if (successor_false) {
+                interval_join(X_in[*successor_false], out_false, &dummy);
+            }
+        } else {
+            interval_transfer(out, last);
+        }
+
+        interval_join(in, out, &dummy);
     }
 
     return ir_instruction_is_conditional(last);
@@ -187,18 +221,27 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
 
-    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
-
-    for (int ip = block->ip_start; ip <= block->ip_end; ip++) {
-        IrInstruction* ir = *(IrInstruction**)
-                                vector_get(ctx->ir_function->ir_instructions, ip);
-        interval_transfer(test_out, ir);
+    if (vector_length(test_in->locals) != vector_length(test_out->locals)) {
+        return 0;
     }
 
-    int changed = 0;
-    interval_join(test_in, test_out, &changed);
+    for (int i = 0; i < vector_length(test_in->locals); i++) {
+        int in_id = *(int*)vector_get(test_in->locals, i);
+        int out_id = *(int*)vector_get(test_out->locals, i);
 
-    return !changed;
+        Interval* in = vector_get(test_in->env, in_id);
+        Interval* out = vector_get(test_out->env, out_id);
+
+        if (out->lower == in->lower && out->upper == in->upper && (in->lower == INT_MIN || in->upper == INT_MAX)) {
+            continue;
+        }
+
+        if ((out->lower < in->lower) || (out->upper > in->lower)) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 void* interpreter_abstract_run(AbstractContext* ctx)
@@ -213,6 +256,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     }
 
     int* N = calloc(nodes_num, sizeof(int));
+    int* visited = calloc(nodes_num, sizeof(int));
     IntervalState** X_in = calloc(nodes_num, sizeof(IntervalState));
     IntervalState** X_out = calloc(nodes_num, sizeof(IntervalState));
 
@@ -239,38 +283,57 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     Vector* worklist = vector_new(sizeof(int));
     vector_push(worklist, &current_node);
 
-    LOG_DEBUG("interpreter_abstract_run -------------");
     while (!vector_pop(worklist, &current_node)) {
+#ifdef DEBUG
         LOG_DEBUG("NODE %d STATE:", current_node);
         interval_state_print(X_in[current_node]);
+#endif
 
         if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
             /*** NonExit ***/
             if (current_node < ctx->block_count) {
-                int changed = 0;
-                int is_conditional = apply_f(current_node, ctx, X_in, X_out, &changed);
+                int is_conditional = apply_f(current_node, ctx, X_in, X_out, visited);
 
                 N[current_node] = 0;
 
-                if (changed) {
-                    LOG_DEBUG("UPDATING SUCCESSORS OF %d", current_node);
-                    // update successors
-                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
-                }
+                update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
             }
             /*** Exit ***/
             else {
+                interval_state_copy(X_out[current_node], X_in[current_node]);
                 N[current_node] = 0;
                 if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
-                    update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, 0);
+                    Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+                    // update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, 0);
+                    int exit_component = ctx->wpo.node_to_component[current_node];
+                    int head = *(int*)vector_get(ctx->wpo.heads, exit_component);
+                    for (int i = 0; i < vector_length(node->successors); i++) {
+                        int successor = *(int*)vector_get(node->successors, i);
+                        if (successor != head) {
+                            N[successor]++;
+                            if (N[successor] == ctx->wpo.num_sched_pred[successor]) {
+                                vector_push(worklist, &successor);
+                                int dummy;
+                                interval_join(X_in[successor], X_out[current_node], &dummy);
+                            }
+                        }
+                    }
                 } else {
+                    // update cycle successor
+                    Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+                    int node_id = *(int*)vector_get(node->successors, vector_length(node->successors) - 1);
+                    int dummy = 0;
+                    interval_join(X_in[node_id], X_out[current_node], &dummy);
                     set_n_for_component(N, current_node, ctx, worklist);
                 }
             }
         }
 
+#ifdef DEBUG
         LOG_DEBUG("NODE %d STATE AFTER:", current_node);
         interval_state_print(X_out[current_node]);
+#endif
+        visited[current_node] = 1;
     }
 
     LOG_INFO("RESULTS:");

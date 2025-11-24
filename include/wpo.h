@@ -16,10 +16,11 @@ typedef struct {
     int* node_to_component;
     Vector* Cx; // Vector<C>
     Vector* heads; // Vector<int>
+    Vector* exits;
 } WPO;
 
 int wpo_construct_aux(Graph* graph, WPO* wpo);
-WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx, Vector* heads);
-WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* heads);
+WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx, Vector* heads, Vector* exits);
+WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* heads, Vector* exits);
 
 #endif

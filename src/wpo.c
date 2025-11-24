@@ -100,7 +100,7 @@ compute_b_len(GraphMathRepr* graph, int head)
     return res;
 }
 
-WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* heads)
+WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* heads, Vector* exits)
 {
     Graph* graphh = graph_from_graph_math_repr(graph);
 
@@ -120,6 +120,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
 
         // pushing component's head
         vector_push(heads, &head);
+        vector_push(exits, exit_index);
 
         WPOComponent result = self_loop_WPO(*(int*)vector_get(graph->nodes, 0), exit_index);
 
@@ -134,6 +135,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
 
     // pushing component's head
     vector_push(heads, &head);
+    vector_push(exits, exit_index);
 
     (*exit_index)++;
 
@@ -160,7 +162,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
         }
     }
 
-    WPOComponent wpo_component = wpo_construct(graph_mr_comp, exit_index, Cx, heads);
+    WPOComponent wpo_component = wpo_construct(graph_mr_comp, exit_index, Cx, heads, exits);
 
     WPOComponent result = {
         .nodes = vector_new(sizeof(int)),
@@ -202,7 +204,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
     return result;
 }
 
-WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx, Vector* heads)
+WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx, Vector* heads, Vector* exits_vec)
 {
     Graph* graph = graph_from_graph_math_repr(graph_mr);
     SCC* scc = scc_build(graph);
@@ -249,7 +251,7 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
             }
         }
 
-        WPOComponent wpo_component = sccWPO(graph_mr_comp, exit_index, Cx, heads);
+        WPOComponent wpo_component = sccWPO(graph_mr_comp, exit_index, Cx, heads, exits_vec);
         for (int j = 0; j < vector_length(wpo_component.nodes); j++) {
             vector_push(result.nodes, vector_get(wpo_component.nodes, j));
         }
@@ -301,13 +303,18 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
         goto cleanup;
     }
 
+    Vector* exits = vector_new(sizeof(int));
+    if (!exits) {
+        goto cleanup;
+    }
+
     int exit_index = vector_length(graph->nodes);
     GraphMathRepr* graph_mr = graph_math_repr_from_graph(graph);
     if (!graph_mr) {
         goto cleanup;
     }
 
-    WPOComponent result = wpo_construct(graph_mr, &exit_index, Cx, heads);
+    WPOComponent result = wpo_construct(graph_mr, &exit_index, Cx, heads, exits);
 
     Graph* graph_result = malloc(sizeof(Graph));
     if (!graph_result) {
@@ -425,6 +432,7 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
     wpo->wpo = graph_result;
     wpo->Cx = Cx;
     wpo->heads = heads;
+    wpo->exits = exits;
 
 cleanup:
     LOG_ERROR("TODO wpo construct aux cleanup");
