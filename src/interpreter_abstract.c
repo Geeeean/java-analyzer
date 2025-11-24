@@ -327,6 +327,12 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                     set_n_for_component(N, current_node, ctx, worklist);
                 }
             }
+
+            printf("worklist:\n");
+            for (int i = 0; i < vector_length(worklist); i++) {
+                printf("%d ", *(int*)vector_get(worklist,i));
+            }
+            printf("\n");
         }
 
 #ifdef DEBUG
