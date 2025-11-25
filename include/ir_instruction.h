@@ -25,6 +25,7 @@ typedef struct {
         ArrayLengthOP array_length;
         IncrOP incr;
         NegateOP negate;
+        CompareFloatingOP compare_floating;
     } data;
 } IrInstruction;
 

@@ -9,6 +9,7 @@ typedef enum {
     TK_REFERENCE,
     TK_CLASS,
     TK_CHAR,
+    TK_DOUBLE,
     TK_ARRAY,
     TK_VOID,
 } TypeKind;
@@ -35,12 +36,14 @@ extern Type type_int;
 extern Type type_boolean;
 extern Type type_reference;
 extern Type type_char;
+extern Type type_double;
 extern Type type_void;
 
 #define TYPE_INT &type_int
 #define TYPE_BOOLEAN &type_boolean
 #define TYPE_REFERENCE &type_reference
 #define TYPE_CHAR &type_char
+#define TYPE_DOUBLE &type_double
 #define TYPE_VOID &type_void
 
 Type* make_array_type(Type* element_type);

@@ -9,6 +9,7 @@ Type type_int = { .kind = TK_INT };
 Type type_boolean = { .kind = TK_BOOLEAN };
 Type type_reference = { .kind = TK_REFERENCE };
 Type type_char = { .kind = TK_CHAR };
+Type type_double = { .kind = TK_DOUBLE };
 Type type_void = { .kind = TK_VOID };
 
 Type* type_table = NULL;
@@ -16,6 +17,7 @@ Type* type_table = NULL;
 static char args_type_signature[] = {
     [TK_INT] = 'I',
     [TK_CHAR] = 'C',
+    [TK_DOUBLE] = 'D',
     [TK_ARRAY] = '[',
     [TK_BOOLEAN] = 'Z',
 };
@@ -26,6 +28,8 @@ TypeKind get_tk(char c)
         return TK_INT;
     } else if (c == args_type_signature[TK_CHAR]) {
         return TK_CHAR;
+    } else if (c == args_type_signature[TK_DOUBLE]) {
+        return TK_DOUBLE;
     } else if (c == args_type_signature[TK_ARRAY]) {
         return TK_ARRAY;
     } else if (c == args_type_signature[TK_BOOLEAN]) {
@@ -55,6 +59,9 @@ Type* get_type(char** t)
         break;
     case TK_CHAR:
         type = TYPE_CHAR;
+        break;
+    case TK_DOUBLE:
+        type = TYPE_DOUBLE;
         break;
     case TK_ARRAY:
         (*t)++;

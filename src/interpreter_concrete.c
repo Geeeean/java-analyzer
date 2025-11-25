@@ -549,6 +549,8 @@ static StepResult handle_ift(VMContext* vm_context, IrInstruction* ir_instructio
         a = (int)value1.data.bool_value;
     } else if (value1.type == TYPE_CHAR) {
         a = (int)value1.data.char_value;
+    } else if (value1.type == TYPE_DOUBLE) {
+        a = (int)value1.data.double_value;
     } else {
         return SR_INVALID_TYPE;
     }
@@ -559,6 +561,8 @@ static StepResult handle_ift(VMContext* vm_context, IrInstruction* ir_instructio
         b = (int)value2.data.bool_value;
     } else if (value2.type == TYPE_CHAR) {
         b = (int)value2.data.char_value;
+    } else if (value2.type == TYPE_DOUBLE) {
+        b = (int)value2.data.double_value;
     } else {
         return SR_INVALID_TYPE;
     }
@@ -803,9 +807,9 @@ static StepResult handle_new_array(VMContext* vm_context, IrInstruction* ir_inst
         return SR_INVALID_TYPE;
     }
 
-    if (new_array->type == TYPE_INT) {
+    if (new_array->type == TYPE_INT || new_array->type == TYPE_CHAR || new_array->type == TYPE_DOUBLE) {
         ObjectValue* array = malloc(sizeof(ObjectValue));
-        array->type = make_array_type(TYPE_INT);
+        array->type = make_array_type(new_array->type);
         array->array.elements = malloc(sizeof(Value) * size.data.int_value);
         array->array.elements_count = size.data.int_value;
 
@@ -982,6 +986,8 @@ static StepResult handle_negate(VMContext* vm_context, IrInstruction* ir_instruc
         value.data.bool_value = -value.data.bool_value;
     } else if (value.type == TYPE_CHAR) {
         value.data.char_value = -value.data.char_value;
+    } else if (value.type == TYPE_DOUBLE) {
+        value.data.double_value = -value.data.double_value;
     } else {
         return SR_INVALID_TYPE;
     }
@@ -990,6 +996,49 @@ static StepResult handle_negate(VMContext* vm_context, IrInstruction* ir_instruc
 
     frame->pc++;
     return SR_ASSERTION_ERR;
+}
+
+static StepResult handle_compare_floating(VMContext* vm_context, IrInstruction* ir_instruction)
+{
+    CompareFloatingOP* compare_floating = &ir_instruction->data.compare_floating;
+    if (!compare_floating) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
+
+    Value value1, value2;
+    if (stack_pop(frame->stack, &value2)) {
+        return SR_EMPTY_STACK;
+    }
+    if (stack_pop(frame->stack, &value1)) {
+        return SR_EMPTY_STACK;
+    }
+
+    if (value1.type != TYPE_DOUBLE || value2.type != TYPE_DOUBLE) {
+        return SR_INVALID_TYPE;
+    }
+
+    double d1 = value1.data.double_value;
+    double d2 = value2.data.double_value;
+
+    Value result = { .type = TYPE_INT };
+
+    // Check for NaN
+    if (d1 != d1 || d2 != d2) { // NaN check (NaN != NaN)
+        result.data.int_value = compare_floating->onnan;
+    } else if (d1 > d2) {
+        result.data.int_value = 1;
+    } else if (d1 < d2) {
+        result.data.int_value = -1;
+    } else {
+        result.data.int_value = 0;
+    }
+
+    stack_push(frame->stack, result);
+    frame->pc++;
+
+    return SR_OK;
 }
 
 static IrInstruction* get_ir_instruction(VMContext* vm_context)
@@ -1027,6 +1076,8 @@ static OpHandler opcode_table[OP_COUNT] = {
     [OP_ARRAY_STORE] = handle_array_store,
     [OP_ARRAY_LOAD] = handle_array_load,
     [OP_INCR] = handle_incr,
+    [OP_NEGATE] = handle_negate,
+    [OP_COMPARE_FLOATING] = handle_compare_floating,
 };
 
 static StepResult step(VMContext* vm_context)

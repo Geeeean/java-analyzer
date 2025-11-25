@@ -25,6 +25,7 @@ static const char* opcode_signature[] = {
     [OP_ARRAY_LENGTH] = "arraylength",
     [OP_INCR] = "incr",
     [OP_NEGATE] = "negate",
+    [OP_COMPARE_FLOATING] = "comparefloating",
 };
 
 Opcode opcode_parse(cJSON* instruction_json)

@@ -16,6 +16,7 @@ typedef struct {
         int int_value;
         bool bool_value;
         char char_value;
+        double double_value;
         int ref_value;
     } data;
 } Value;

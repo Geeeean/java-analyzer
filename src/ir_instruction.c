@@ -20,27 +20,32 @@ static const char* load_type_signature[] = {
     [TK_INT] = "int",
     [TK_BOOLEAN] = "boolean",
     [TK_REFERENCE] = "ref",
+    [TK_DOUBLE] = "double",
 };
 
 static const char* push_type_signature[] = {
     [TK_INT] = "integer",
     [TK_BOOLEAN] = "boolean",
+    [TK_DOUBLE] = "double",
     [TK_VOID] = "null",
 };
 
 static const char* binary_type_signature[] = {
     [TK_INT] = "int",
+    [TK_DOUBLE] = "double",
 };
 
 static const char* store_type_signature[] = {
     [TK_INT] = "int",
     [TK_CHAR] = "char",
+    [TK_DOUBLE] = "double",
     [TK_REFERENCE] = "ref",
 };
 
 static const char* array_type_signature[] = {
     [TK_INT] = "int",
     [TK_CHAR] = "char",
+    [TK_DOUBLE] = "double",
 };
 
 static const char* return_type_signature[] = {
@@ -97,6 +102,8 @@ static IrInstructionParseResult parse_load(IrInstruction* ir_instruction, cJSON*
         load->type = TYPE_BOOLEAN;
     } else if (strcmp(type, load_type_signature[TK_REFERENCE]) == 0) {
         load->type = TYPE_REFERENCE;
+    } else if (strcmp(type, load_type_signature[TK_DOUBLE]) == 0) {
+        load->type = TYPE_DOUBLE;
     } else {
         LOG_ERROR("Unknown type in load instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -139,6 +146,15 @@ static IrInstructionParseResult parse_push(IrInstruction* ir_instruction, cJSON*
             return IPR_MALFORMED;
         }
         push->value.data.int_value = cJSON_GetNumberValue(inside_value_obj);
+    } else if (strcmp(type, push_type_signature[TK_DOUBLE]) == 0) {
+        cJSON* inside_value_obj = cJSON_GetObjectItem(value_obj, "value");
+        if (!inside_value_obj || !cJSON_IsNumber(inside_value_obj)) {
+            LOG_ERROR("Push instruction missing or invalid inside value, 'value' field");
+            return IPR_MALFORMED;
+        }
+
+        push->value.type = TYPE_DOUBLE;
+        push->value.data.double_value = cJSON_GetNumberValue(inside_value_obj);
     } else if (strcmp(type, push_type_signature[TK_VOID]) == 0) {
         push->value.type = TYPE_REFERENCE;
         push->value.data.ref_value = 0;
@@ -182,6 +198,8 @@ static IrInstructionParseResult parse_binary(IrInstruction* ir_instruction, cJSO
 
     if (strcmp(binary_type_signature[TK_INT], type) == 0) {
         binary->type = TYPE_INT;
+    } else if (strcmp(binary_type_signature[TK_DOUBLE], type) == 0) {
+        binary->type = TYPE_DOUBLE;
     } else {
         LOG_ERROR("Binary instruction unknown type: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -423,6 +441,8 @@ static IrInstructionParseResult parse_store(IrInstruction* ir_instruction, cJSON
         store->type = TYPE_INT;
     } else if (strcmp(type, store_type_signature[TK_CHAR]) == 0) {
         store->type = TYPE_CHAR;
+    } else if (strcmp(type, store_type_signature[TK_DOUBLE]) == 0) {
+        store->type = TYPE_DOUBLE;
     } else if (strcmp(type, store_type_signature[TK_REFERENCE]) == 0) {
         store->type = TYPE_REFERENCE;
     } else {
@@ -490,6 +510,8 @@ static IrInstructionParseResult parse_new_array(IrInstruction* ir_instruction, c
         new_array->type = TYPE_INT;
     } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
         new_array->type = TYPE_CHAR;
+    } else if (strcmp(type, array_type_signature[TK_DOUBLE]) == 0) {
+        new_array->type = TYPE_DOUBLE;
     } else {
         LOG_ERROR("Unknown type in newarray instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -512,6 +534,8 @@ static IrInstructionParseResult parse_array_load(IrInstruction* ir_instruction, 
         array_load->type = TYPE_INT;
     } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
         array_load->type = TYPE_CHAR;
+    } else if (strcmp(type, array_type_signature[TK_DOUBLE]) == 0) {
+        array_load->type = TYPE_DOUBLE;
     } else {
         LOG_ERROR("Unknown type in array load instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -534,6 +558,8 @@ static IrInstructionParseResult parse_array_store(IrInstruction* ir_instruction,
         array_store->type = TYPE_INT;
     } else if (strcmp(type, array_type_signature[TK_CHAR]) == 0) {
         array_store->type = TYPE_CHAR;
+    } else if (strcmp(type, array_type_signature[TK_DOUBLE]) == 0) {
+        array_store->type = TYPE_DOUBLE;
     } else {
         LOG_ERROR("Unknown type in array store instruction: %s", type);
         return IPR_UNABLE_TO_HANDLE_TYPE;
@@ -594,6 +620,42 @@ static IrInstructionParseResult parse_negate(IrInstruction* ir_instruction, cJSO
     return IPR_OK;
 }
 
+static IrInstructionParseResult parse_compare_floating(IrInstruction* ir_instruction, cJSON* instruction_json)
+{
+    CompareFloatingOP* compare_floating = &ir_instruction->data.compare_floating;
+    if (!compare_floating) {
+        LOG_ERROR("Parse instruction null");
+        return IPR_MALFORMED;
+    }
+
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        LOG_ERROR("Compare floating instruction missing or invalid 'type' field");
+        return IPR_MALFORMED;
+    }
+
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, "double") == 0) {
+        compare_floating->type = TYPE_DOUBLE;
+    } else if (strcmp(type, "float") == 0) {
+        // For now, treat float as double
+        compare_floating->type = TYPE_DOUBLE;
+    } else {
+        LOG_ERROR("Unknown type in compare floating instruction: %s", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    cJSON* onnan_obj = cJSON_GetObjectItem(instruction_json, "onnan");
+    if (onnan_obj && cJSON_IsNumber(onnan_obj)) {
+        compare_floating->onnan = cJSON_GetNumberValue(onnan_obj);
+    } else {
+        compare_floating->onnan = 1; // Default value
+    }
+
+    return IPR_OK;
+}
+
 static IrInstructionParseHandler ir_instruction_table[OP_COUNT] = {
     [OP_LOAD] = parse_load,
     [OP_PUSH] = parse_push,
@@ -615,6 +677,7 @@ static IrInstructionParseHandler ir_instruction_table[OP_COUNT] = {
     [OP_ARRAY_LOAD] = parse_array_load,
     [OP_INCR] = parse_incr,
     [OP_NEGATE] = parse_negate,
+    [OP_COMPARE_FLOATING] = parse_compare_floating,
 };
 
 IrInstruction*
