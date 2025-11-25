@@ -310,26 +310,11 @@ Graph* graph_from_graph_math_repr(GraphMathRepr* graph_mr)
         int source_id = edge->first;
         int target_id = edge->second;
 
-        // 1. CONTROLLO DI SICUREZZA ASSOLUTA (CRITICO)
-        // Se l'ID sorgente è fuori dai limiti, non possiamo accedervi.
         if (source_id < 0 || source_id >= num_dense_nodes) {
-            // Se l'ID non è nel range allocato, ignoriamo l'arco,
-            // altrimenti causiamo l'Invalid Read.
             continue;
         }
 
-        // L'errore è qui (riga 64): ora è sicuro accedere a graph->not_valid[source_id].
         if (graph->not_valid[source_id] == 0) {
-
-            // Aggiungi un controllo di sicurezza anche per target_id prima dell'uso,
-            // per evitare Invalid Read in un'altra parte del codice:
-            if (target_id < 0 || target_id >= num_dense_nodes) {
-                // Se la destinazione è fuori dai limiti, l'arco è inter-grafo e deve essere ignorato.
-                // *Tuttavia, siccome l'algoritmo WPO potrebbe volere che i target ID rimangano sparsi,
-                // si assume che i target ID non devono essere indicizzati in not_valid,
-                // ma solo l'ID sorgente.*
-            }
-
             Node* source_node = (Node*)vector_get(graph->nodes, source_id);
 
             vector_push(source_node->successors, &target_id);

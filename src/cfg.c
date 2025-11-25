@@ -17,12 +17,13 @@ static BasicBlock* basic_block_new(int id)
     }
 
     basic_block->id = id;
+    basic_block->og_id = id;
     basic_block->successors = vector_new(sizeof(BasicBlock*));
 
     return basic_block;
 }
 
-Cfg* cfg_build(IrFunction* ir_function)
+Cfg* cfg_build(IrFunction* ir_function, int num_locals)
 {
     int result = SUCCESS;
     Cfg* cfg = NULL;
@@ -215,6 +216,12 @@ Cfg* cfg_build(IrFunction* ir_function)
         goto cleanup;
     }
 
+    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+        block->ir_function = ir_function;
+        block->num_locals = num_locals;
+    }
+
 cleanup:
     free(visited);
     free(block_map);
@@ -248,6 +255,7 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
                 BasicBlock* invoke_exit = basic_block_new(id);
                 invoke_exit->ip_start = j + 1;
                 invoke_exit->ip_end = block->ip_end;
+                invoke_exit->ir_function = block->ir_function;
                 vector_copy(invoke_exit->successors, block->successors);
                 vector_delete(block->successors);
 
@@ -311,7 +319,7 @@ void cfg_print(Cfg* cfg)
     LOG_DEBUG("PRINT");
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        LOG_INFO("BLOCK %d, [%d-%d]", block->id, block->ip_start, block->ip_end);
+        LOG_INFO("BLOCK %d (OG ID: %d), [%d-%d] ir_function: %p", block->id, block->og_id, block->ip_start, block->ip_end, block->ir_function);
 
         for (int j = 0; j < vector_length(block->successors); j++) {
             BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);

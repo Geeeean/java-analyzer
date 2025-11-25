@@ -11,11 +11,9 @@ int x = 0;
 
 struct AbstractContext {
     Cfg* cfg;
-    IrFunction* ir_function;
     WPO wpo;
     int block_count;
     int exit_count;
-    int num_locals;
 };
 
 AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts, const Config* cfg)
@@ -35,10 +33,8 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
 
     cfg_inline(control_flow_graph, (Config*)cfg, (Method*)m);
 
-    LOG_INFO("BEFORE");
+    LOG_INFO("AFTER");
     cfg_print(control_flow_graph);
-
-    exit(1);
 
 #ifdef DEBUG
     cfg_print(control_flow_graph);
@@ -68,8 +64,6 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     ctx->exit_count = vector_length(wpo.wpo->nodes) - ctx->block_count;
     ctx->wpo = wpo;
     ctx->cfg = control_flow_graph;
-    ctx->num_locals = ir_program_get_num_locals(m, cfg);
-    ctx->ir_function = ir_function;
 
 #ifdef DEBUG
     graph_print(wpo.wpo);
@@ -130,6 +124,47 @@ static void update_scheduling_successors(
     }
 }
 
+void apply_last(IrInstruction* last,
+    BasicBlock* block,
+    IntervalState** X_in,
+    IntervalState** X_out,
+    IntervalState* out,
+    int current_node,
+    int component,
+    AbstractContext* ctx)
+{
+    int dummy = 0;
+
+    if (ir_instruction_is_conditional(last)) {
+        IntervalState* out_true = interval_new_top_state(block->num_locals);
+        IntervalState* out_false = interval_new_top_state(block->num_locals);
+
+        interval_state_copy(out_true, out);
+        interval_state_copy(out_false, out);
+
+        interval_transfer_conditional(out_true, out_false, last);
+
+        Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+
+        int exit = *(int*)vector_get(ctx->wpo.exits, component);
+        Node* exit_node = vector_get(ctx->wpo.wpo->nodes, exit);
+
+        int* successor_true = vector_get(exit_node->successors, 0);
+        if (successor_true) {
+            interval_join(X_in[*successor_true], out_true, &dummy);
+        }
+
+        int* successor_false = vector_get(node->successors, 0);
+        if (successor_false) {
+            interval_join(X_in[*successor_false], out_false, &dummy);
+        }
+    } else if (last->opcode == OP_INVOKE) {
+        LOG_DEBUG("INVOKE");
+    } else {
+        interval_transfer(out, last);
+    }
+}
+
 int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* visited)
 {
     int dummy;
@@ -140,8 +175,9 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
     IntervalState* out = X_out[current_node];
 
     BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, current_node);
-    IrInstruction* last = *(IrInstruction**)vector_get(ctx->ir_function->ir_instructions,
+    IrInstruction* last = *(IrInstruction**)vector_get(block->ir_function->ir_instructions,
         block->ip_end);
+
     if (head == current_node) {
         if (is_interval_state_bottom(out)) {
             interval_state_copy(out, in);
@@ -151,68 +187,21 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
 
         for (int ip = block->ip_start; ip < block->ip_end; ip++) {
             IrInstruction* ir = *(IrInstruction**)
-                                    vector_get(ctx->ir_function->ir_instructions, ip);
+                                    vector_get(block->ir_function->ir_instructions, ip);
             interval_transfer(out, ir);
         }
 
-        if (ir_instruction_is_conditional(last)) {
-            IntervalState* out_true = interval_new_top_state(ctx->num_locals);
-            IntervalState* out_false = interval_new_top_state(ctx->num_locals);
-
-            interval_state_copy(out_true, out);
-            interval_state_copy(out_false, out);
-
-            interval_transfer_conditional(out_true, out_false, last);
-
-            Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-
-            int exit = *(int*)vector_get(ctx->wpo.exits, component);
-            Node* exit_node = vector_get(ctx->wpo.wpo->nodes, exit);
-
-            int* successor_true = vector_get(exit_node->successors, 0);
-            if (successor_true) {
-                interval_join(X_in[*successor_true], out_true, &dummy);
-            }
-
-            int* successor_false = vector_get(node->successors, 0);
-            if (successor_false) {
-                interval_join(X_in[*successor_false], out_false, &dummy);
-            }
-        } else {
-            interval_transfer(out, last);
-        }
+        apply_last(last, block, X_in, X_out, out, current_node, component, ctx);
     } else {
         interval_state_copy(out, in);
 
         for (int ip = block->ip_start; ip < block->ip_end; ip++) {
             IrInstruction* ir = *(IrInstruction**)
-                                    vector_get(ctx->ir_function->ir_instructions, ip);
+                                    vector_get(block->ir_function->ir_instructions, ip);
             interval_transfer(out, ir);
         }
 
-        if (ir_instruction_is_conditional(last)) {
-            IntervalState* out_true = interval_new_top_state(ctx->num_locals);
-            IntervalState* out_false = interval_new_top_state(ctx->num_locals);
-
-            interval_state_copy(out_true, out);
-            interval_state_copy(out_false, out);
-
-            interval_transfer_conditional(out_true, out_false, last);
-
-            Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-
-            int* successor_true = vector_get(node->successors, 0);
-            if (successor_true) {
-                interval_join(X_in[*successor_true], out_true, &dummy);
-            }
-
-            int* successor_false = vector_get(node->successors, 1);
-            if (successor_false) {
-                interval_join(X_in[*successor_false], out_false, &dummy);
-            }
-        } else {
-            interval_transfer(out, last);
-        }
+        apply_last(last, block, X_in, X_out, out, current_node, component, ctx);
 
         interval_join(in, out, &dummy);
     }
@@ -225,8 +214,10 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     int component_id = ctx->wpo.node_to_component[current_node];
     int head = *(int*)vector_get(ctx->wpo.heads, component_id);
 
-    IntervalState* test_in = interval_new_top_state(ctx->num_locals);
-    IntervalState* test_out = interval_new_top_state(ctx->num_locals);
+    BasicBlock* block = vector_get(ctx->cfg->blocks, head);
+
+    IntervalState* test_in = interval_new_top_state(block->num_locals);
+    IntervalState* test_out = interval_new_top_state(block->num_locals);
 
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
@@ -282,12 +273,16 @@ void* interpreter_abstract_run(AbstractContext* ctx)
 
     /*** INIT ***/
     int current_node = 0;
-    X_in[current_node] = interval_new_top_state(ctx->num_locals);
-    X_out[current_node] = interval_new_bottom_state(ctx->num_locals);
+    BasicBlock* entry_block = *(BasicBlock**)vector_get(ctx->cfg->blocks, 0);
+
+    X_in[current_node] = interval_new_top_state(entry_block->num_locals);
+    X_out[current_node] = interval_new_bottom_state(entry_block->num_locals);
 
     for (int i = current_node + 1; i < nodes_num; i++) {
-        X_in[i] = interval_new_bottom_state(ctx->num_locals);
-        X_out[i] = interval_new_bottom_state(ctx->num_locals);
+        BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
+
+        X_in[i] = interval_new_bottom_state(block->num_locals);
+        X_out[i] = interval_new_bottom_state(block->num_locals);
     }
 
     Vector* worklist = vector_new(sizeof(int));

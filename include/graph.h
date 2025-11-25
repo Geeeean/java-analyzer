@@ -2,6 +2,7 @@
 #define GRAPH_H
 
 #include "cfg.h"
+#include "ir_function.h"
 #include "vector.h"
 
 #include <stdint.h>

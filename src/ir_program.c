@@ -48,8 +48,8 @@ static IRItem* build_item(const Method* m, const Config* cfg)
     // TODO: check for success
     it->method_id = strdup(method_get_id(m));
     it->ir_function = ir_function_build(m, cfg);
-    it->cfg = cfg_build(it->ir_function);
     it->num_locals = vector_length(method_get_arguments_as_types(m));
+    it->cfg = cfg_build(it->ir_function, it->num_locals);
 
     it->next = it_map;
 
