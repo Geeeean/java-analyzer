@@ -296,7 +296,7 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
 
                         vector_push(cfg->blocks, &invoke_cfg_block);
 
-                        IrInstruction* last = *(IrInstruction**)vector_get(invoke_function->ir_instructions, invoke_cfg_block->ip_end);
+                        IrInstruction* last = *(IrInstruction**)vector_get(invoke_cfg_block->ir_function->ir_instructions, invoke_cfg_block->ip_end);
                         if (last->opcode == OP_RETURN) {
                             vector_push(invoke_cfg_block->successors, &invoke_exit);
                         }
