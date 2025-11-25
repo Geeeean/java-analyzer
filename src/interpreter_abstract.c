@@ -170,7 +170,8 @@ void apply_last(IrInstruction* last,
         }
     } else if (last->opcode == OP_INVOKE) {
         IntervalState* state = interval_new_top_state(0);
-        int invoke_head = *(int*)vector_get(block->successors, 0);
+        Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+        int invoke_head = *(int*)vector_get(node->successors, 0);
 
         BasicBlock* successor = *(BasicBlock**)vector_get(ctx->cfg->blocks, invoke_head);
 
