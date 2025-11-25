@@ -177,7 +177,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         }
     }
 
-    int locals_len = vector_length(acc->locals);
+    int locals_len = vector_length(new->locals);
 
     for (int i = 0; i < locals_len; i++) {
         int* nameA = (int*)vector_get(acc->locals, i);
