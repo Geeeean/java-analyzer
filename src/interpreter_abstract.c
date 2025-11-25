@@ -30,6 +30,16 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     }
 
     Cfg* control_flow_graph = ir_program_get_cfg(m, cfg);
+    LOG_INFO("BEFORE");
+    cfg_print(control_flow_graph);
+
+    cfg_inline(control_flow_graph, (Config*)cfg, (Method*)m);
+
+    LOG_INFO("BEFORE");
+    cfg_print(control_flow_graph);
+
+    exit(1);
+
 #ifdef DEBUG
     cfg_print(control_flow_graph);
 #endif
@@ -330,7 +340,7 @@ void* interpreter_abstract_run(AbstractContext* ctx)
 
             printf("worklist:\n");
             for (int i = 0; i < vector_length(worklist); i++) {
-                printf("%d ", *(int*)vector_get(worklist,i));
+                printf("%d ", *(int*)vector_get(worklist, i));
             }
             printf("\n");
         }

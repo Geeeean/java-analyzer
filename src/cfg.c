@@ -1,9 +1,13 @@
 #include "cfg.h"
 #include "common.h"
 #include "ir_instruction.h"
+#include "ir_program.h"
 #include "log.h"
 #include "stdint.h"
+#include "utils.h"
 #include "vector.h"
+
+#include <string.h>
 
 static BasicBlock* basic_block_new(int id)
 {
@@ -224,15 +228,94 @@ cleanup:
     return cfg;
 }
 
+int cfg_inline(Cfg* cfg, Config* config, Method* m)
+{
+    if (!cfg) {
+        return FAILURE;
+    }
+
+    IrFunction* ir_function = ir_program_get_function_ir(m, config);
+    BasicBlock* entry = *(BasicBlock**)vector_get(cfg->blocks, 0);
+
+    int length = vector_length(cfg->blocks);
+    for (int i = 0; i < length; i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+        for (int j = block->ip_start; j <= block->ip_end; j++) {
+            IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, j);
+            if (ir_instruction->opcode == OP_INVOKE) {
+                int id = vector_length(cfg->blocks);
+                // split the current block
+                BasicBlock* invoke_exit = basic_block_new(id);
+                invoke_exit->ip_start = j + 1;
+                invoke_exit->ip_end = block->ip_end;
+                vector_copy(invoke_exit->successors, block->successors);
+                vector_delete(block->successors);
+
+                block->successors = vector_new(sizeof(BasicBlock*));
+                // vector_push(block->successors, &invoke_exit);
+
+                InvokeOP* invoke = &ir_instruction->data.invoke;
+                char* method_id = get_method_signature(invoke);
+                if (!method_id) {
+                    return FAILURE;
+                }
+
+                char* method_id_copy = strdup(method_id);
+                char* root = strtok(method_id_copy, ".");
+
+                if (strcmp(root, "jpamb") != 0) {
+                    continue;
+                }
+
+                free(method_id_copy);
+
+                Method* invoke_method = method_create(method_id);
+                // recursive
+                if (strcmp(method_get_id(invoke_method), method_get_id(m)) == 0) {
+                    vector_push(block->successors, &entry);
+                    exit(1);
+                } else {
+                    Cfg* invoke_cfg = ir_program_get_cfg(invoke_method, config);
+                    cfg_inline(invoke_cfg, config, invoke_method);
+
+                    IrFunction* invoke_function = ir_program_get_function_ir(invoke_method, config);
+
+                    vector_push(cfg->blocks, &invoke_exit);
+                    int actual_len = vector_length(cfg->blocks);
+                    for (int k = 0; k < vector_length(invoke_cfg->blocks); k++) {
+                        BasicBlock* invoke_cfg_block = *(BasicBlock**)vector_get(invoke_cfg->blocks, k);
+                        invoke_cfg_block->id = invoke_cfg_block->id + actual_len;
+
+                        vector_push(cfg->blocks, &invoke_cfg_block);
+
+                        IrInstruction* last = *(IrInstruction**)vector_get(invoke_function->ir_instructions, invoke_cfg_block->ip_end);
+                        if (last->opcode == OP_RETURN) {
+                            vector_push(invoke_cfg_block->successors, &invoke_exit);
+                        }
+                    }
+
+                    BasicBlock* invoke_cfg_entry = *(BasicBlock**)vector_get(invoke_cfg->blocks, 0);
+                    vector_push(block->successors, &invoke_cfg_entry);
+                }
+
+                block->ip_end = j;
+            }
+        }
+    }
+
+    return SUCCESS;
+}
+
 void cfg_print(Cfg* cfg)
 {
+    LOG_DEBUG("PRINT");
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        LOG_INFO("BLOCK %d, [%d-%d]", i, block->ip_start, block->ip_end);
+        LOG_INFO("BLOCK %d, [%d-%d]", block->id, block->ip_start, block->ip_end);
 
         for (int j = 0; j < vector_length(block->successors); j++) {
             BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
-            printf("%2d ", successor->id);
+            LOG_INFO("%2d ", successor->id);
         }
         printf("\n");
     }
