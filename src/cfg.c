@@ -19,6 +19,7 @@ static BasicBlock* basic_block_new(int id)
     basic_block->id = id;
     basic_block->og_id = id;
     basic_block->successors = vector_new(sizeof(BasicBlock*));
+    basic_block->num_locals = 0;
 
     return basic_block;
 }

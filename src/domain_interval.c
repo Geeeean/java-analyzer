@@ -177,7 +177,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
         }
     }
 
-    int locals_len = vector_length(new->locals);
+    int locals_len = MIN(vector_length(acc->locals), vector_length(new->locals));
 
     for (int i = 0; i < locals_len; i++) {
         int* nameA = (int*)vector_get(acc->locals, i);
@@ -206,7 +206,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
     int lenA = vector_length(acc->stack);
     int lenB = vector_length(new->stack);
 
-    for (int i = 0; i < (lenA > lenB ? lenA : lenB); i++) {
+    for (int i = 0; i < MIN(lenA, lenB); i++) {
         int* nameA = vector_get(acc->stack, i);
         int* nameB = vector_get(new->stack, i);
 
@@ -1031,7 +1031,7 @@ int interval_transfer_invoke(IntervalState* out_state, IntervalState* in_state, 
 
 void interval_state_print(const IntervalState* st)
 {
-    if (!st) {
+    if (!st || !st->env || !st->locals || !st->stack) {
         LOG_INFO("(null)");
         return;
     }
@@ -1055,14 +1055,20 @@ void interval_state_print(const IntervalState* st)
 
     LOG_INFO("Stack:");
     for (int i = 0; i < vector_length(st->stack); i++) {
-        int name = *(int*)vector_get(st->stack, i);
-        Interval* iv = vector_get(st->env, name);
+        int* name = vector_get(st->stack, i);
+        if (!name) {
+            LOG_ERROR("NULL NAME ON STACK");
+        }
+        Interval* iv = vector_get(st->env, *name);
+        if (!iv) {
+            LOG_ERROR("NULL ENV INTERVAL");
+        }
         if (iv->lower == INT_MIN && iv->upper == INT_MAX)
-            LOG_INFO("[%d] = n%d [⊤]", i, name);
+            LOG_INFO("[%d] = n%d [⊤]", i, *name);
         else if (iv->lower == 1 && iv->upper == 0)
-            LOG_INFO("v%d = n%d [⊥]", i, name);
+            LOG_INFO("v%d = n%d [⊥]", i, *name);
         else
-            LOG_INFO("[%d] = n%d [%d,%d]", i, name, iv->lower, iv->upper);
+            LOG_INFO("[%d] = n%d [%d,%d]", i, *name, iv->lower, iv->upper);
     }
 
     LOG_INFO("Env (all names):");
