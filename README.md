@@ -52,10 +52,14 @@ Example for running a jpamb test:
 ./bin/analyzer "jpamb/cases/Simple.divideByZero:()I"
 ```
 
+
 ```sh
 make clean && make CFLAGS="-g -O0"
 valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all \
 --track-origins=yes --error-exitcode=1 \
+./bin/analyzer -f "jpamb/cases/Arrays.arraySpellsHello:([C)V"
+```
+```sh
 ./bin/analyzer -f "jpamb/cases/Arrays.arraySpellsHello:([C)V"
 ```
 

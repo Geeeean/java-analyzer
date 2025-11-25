@@ -24,5 +24,6 @@ RuntimeResult interpreter_run(VMContext* vm_context);
 
 size_t interpreter_instruction_count(const Method* m, const Config* cfg);
 void interpreter_free(VMContext* vm);
+void instruction_table_map_free();
 
 #endif

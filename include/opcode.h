@@ -160,7 +160,6 @@ typedef struct {
 } InstructionTable;
 
 InstructionTable* instruction_table_build(const Method* m, const Config* cfg);
-void instruction_table_delete(InstructionTable* instruction_table);
 // void value_print(const Value* value);
 
 BinaryResult value_add(Value* value1, Value* value2, Value* result);
@@ -170,5 +169,8 @@ BinaryResult value_rem(Value* value1, Value* value2, Value* result);
 BinaryResult value_div(Value* value1, Value* value2, Value* result);
 
 const char* opcode_print(Opcode opcode);
+
+static void instruction_free(Instruction* inst);
+void instruction_table_free(InstructionTable* table);
 
 #endif

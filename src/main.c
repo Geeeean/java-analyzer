@@ -116,7 +116,6 @@ void run_base(Method* m, Options opts, const Config* cfg) {
             srandom(seed);
 
             Outcome private = new_outcome();
-            uint8_t* thread_bitmap = coverage_create_thread_bitmap();
 
 #pragma omp for
             for (int i = 0; i < run; i++) {
@@ -133,6 +132,8 @@ void run_base(Method* m, Options opts, const Config* cfg) {
                     continue;
                 }
                 RuntimeResult interpreter_result = interpreter_run(vm_context);
+
+                interpreter_free(vm_context);
 
                 switch (interpreter_result) {
                 case RT_OK:
@@ -225,6 +226,9 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
         break;
     }
 
+    interpreter_free(vm_context);
+    instruction_table_map_free();
+
     /*add VMContext cleanup */
 }
 
@@ -268,7 +272,7 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     }
 
     fuzzer_free(f);
-
+    instruction_table_map_free();
 
     size_t covered = coverage_global_count();
     printf("\n=== FINAL COVERAGE REPORT ===\n");

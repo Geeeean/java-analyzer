@@ -19,15 +19,24 @@ if (n < 0 || (size_t)n >= (max) - *(cursor)) return false; \
 
 
 static bool append_escaped_char(char *buffer, size_t *cursor, size_t max, char c) {
-  if (c == '\'' || c == '\\') {
-    APPEND_FMT(buffer, cursor, max, "'\\%c'", c);
-  } else if (!isprint((unsigned char)c)) {
+  // Characters that break tokenizer OR require escaping
+  if (c == '\'' || c == '\\' || c == '(' || c == ')' || c == ',' || c == ' ' || !isprint((unsigned char)c)) {
     APPEND_FMT(buffer, cursor, max, "'\\x%02x'", (unsigned char)c);
-  } else {
-    APPEND_FMT(buffer, cursor, max, "'%c'", c);
+    return true;
   }
+
+  // All other printable characters are safe
+  APPEND_FMT(buffer, cursor, max, "'%c'", c);
   return true;
 }
+
+
+// TODO - Add abstract interpreter to mutation strategy
+// Vector {[-10,10], [-INF, INF]}
+// Vector {{INT_MIN, INT_MAX}}
+
+
+// TODO - Implement concurrent manipulations
 
 
 Fuzzer * fuzzer_init(size_t instruction_count) {
@@ -55,7 +64,7 @@ Vector* fuzzer_run(Fuzzer* f,
                    const Options* options,
                    Vector* arg_types) {
   int stagnant_iterations = 0;
-  const size_t STAGNATION_LIMIT = 1000;
+  const size_t STAGNATION_LIMIT = 1000000;
 
   while (stagnant_iterations < STAGNATION_LIMIT) {
 
@@ -66,8 +75,10 @@ Vector* fuzzer_run(Fuzzer* f,
     Options local_opts = *options;
     local_opts.parameters = NULL;
 
-    if (!parse(child->data, child->len, arg_types, &local_opts)) {
+    if (!parse(child->data, child->len, arg_types, &local_opts) ||
+        !local_opts.parameters || local_opts.parameters[0] == '\0') {
       free(local_opts.parameters);
+      local_opts.parameters = NULL;
       testcase_free(child);
       continue;
     }
@@ -93,7 +104,7 @@ Vector* fuzzer_run(Fuzzer* f,
     if (new_bits > 0) {
       corpus_add(f->corpus, child);
       stagnant_iterations = 0;
-    } else if ((rand() % 1000) == 0) {
+    } else if ((rand() % 500) == 0) {
       corpus_add(f->corpus, child);
     } else {
       testcase_free(child);
@@ -176,7 +187,17 @@ bool parse (const uint8_t* data,const size_t length,
           return false;
         }
 
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c:", type_char);
+        // Write element type
+        APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", type_char);
+
+        // EMPTY ARRAY → close immediately
+        if (array_length == 0) {
+          APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
+          break;
+        }
+
+        // Non-empty → write colon
+        APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ':');
 
       for (int j = 0; j < array_length; j++) {
         switch (arr_type -> kind) {
@@ -225,9 +246,12 @@ bool parse (const uint8_t* data,const size_t length,
   buffer[buffer_cursor]   = '\0'; // append )\0
 
 
-  free(out_opts -> parameters);
-  out_opts -> parameters = strdup(buffer);
-
+  free(out_opts->parameters);
+  out_opts->parameters = strdup(buffer);
+  if (!out_opts->parameters) {
+    // Out of memory – treat as parse failure
+    return false;
+  }
 
   return true;
 }

@@ -17,7 +17,7 @@
 // todo: use hashmap
 typedef struct ITItem ITItem;
 struct ITItem {
-    char* method_id;
+    const Method* method;
     InstructionTable* instruction_table;
     ITItem* next;
 };
@@ -28,15 +28,16 @@ ITItem* it_map = NULL;
 InstructionTable* get_instruction_table(const Method* m, const Config* cfg)
 {
     for (ITItem* it = it_map; it != NULL; it = it->next) {
-        if (strcmp(method_get_id(m), it->method_id) == 0) {
-            return it->instruction_table;
-        }
+     if (it->method == m) {
+       return it->instruction_table;
+     }
     }
 
     ITItem* it = malloc(sizeof(ITItem));
+    it->method = m;
     it->instruction_table = instruction_table_build(m, cfg);
     it->next = it_map;
-    it->method_id = strdup(method_get_id(m));
+    it_map = it;
 
     return it->instruction_table;
 }
@@ -314,89 +315,74 @@ static int parse_next_parameter(Type* type, char* token, Value* value)
 
 static Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
 {
-    char* arguments = strdup(method_get_arguments(m));
-    if (!arguments) {
-        return NULL;
-    }
-    char* arguments_pointer = arguments;
+  *locals_count = 0;
 
-    if (*arguments_pointer == '(') {
-        arguments_pointer++;
-    }
+  if (!parameters) {
+    LOG_ERROR("build_locals_from_str received NULL parameters");
+    return NULL;
+  }
 
-    int capacity = 10;
-    Value* locals = malloc(capacity * sizeof(Value));
-    if (!locals) {
-        free(arguments);
-        return NULL;
-    }
+  Vector* arg_types = method_get_arguments_as_types(m);
+  if (!arg_types) {
+    LOG_ERROR("method_get_arguments_as_types returned NULL");
+    return NULL;
+  }
 
-    Vector* arg_types = method_get_arguments_as_types(m);
-    if (!arg_types) {
-        free(arguments);
-        free(locals);
-        return NULL;
-    }
+  const int args_expected = vector_length(arg_types);
 
-    parameter_fix(parameters);
-    char* strtok_state = NULL;
-    char* token = strtok_r(parameters, "(), ", &strtok_state);
-    while (token != NULL) {
-
-        if (*arguments_pointer == ')') {
-            break;
-        }
-
-        if (*locals_count >= capacity) {
-            capacity *= 2;
-            Value* new_locals = realloc(locals, capacity * sizeof(Value));
-            if (!new_locals) {
-                vector_delete(arg_types);
-                free(arguments);
-                free(locals);
-                return NULL;
-            }
-            locals = new_locals;
-        }
-
-        Type* type = *(Type**) vector_get(arg_types, *locals_count);
-        if (!type) {
-            vector_delete(arg_types);
-            free(arguments);
-            free(locals);
-            return NULL;
-        }
-
-        Value value;
-        if (parse_next_parameter(type, token, &value)) {
-            vector_delete(arg_types);
-            free(arguments);
-            free(locals);
-            return NULL;
-        }
-
-        // todo check for int, ref, float
-        locals[*locals_count] = value;
-
-        token = strtok_r(NULL, "), ", &strtok_state);
-        (*locals_count)++;
-    }
-
-    if (!(*locals_count)) {
-        free(locals);
-        locals = NULL;
-    } else {
-        Value* shrunk = realloc(locals, *locals_count * sizeof(Value));
-        if (shrunk) {
-            locals = shrunk;
-        }
-    }
-
+  int capacity = args_expected > 0 ? args_expected : 1;
+  Value* locals = malloc(capacity * sizeof(Value));
+  if (!locals) {
     vector_delete(arg_types);
-    free(arguments);
+    return NULL;
+  }
 
-    return locals;
+  parameter_fix(parameters);
+
+  char* state = NULL;
+  char* token = strtok_r(parameters, "(), ", &state);
+
+  while (token && *locals_count < args_expected) {
+
+    Type* type = *(Type**) vector_get(arg_types, *locals_count);
+    if (!type) {
+      LOG_ERROR("arg_types[%d] is NULL!", *locals_count);
+      free(locals);
+      vector_delete(arg_types);
+      return NULL;
+    }
+
+    if (token[0] == '\0') {
+      token = strtok_r(NULL, "(), ", &state);
+      continue;
+    }
+
+    Value v;
+    if (parse_next_parameter(type, token, &v)) {
+      LOG_ERROR("Failed to parse parameter '%s'", token);
+      free(locals);
+      vector_delete(arg_types);
+      return NULL;
+    }
+
+    locals[*locals_count] = v;
+    (*locals_count)++;
+
+    token = strtok_r(NULL, "(), ", &state);
+  }
+
+  if (*locals_count == 0) {
+    free(locals);
+    locals = NULL;
+  } else {
+    Value* shrunk = realloc(locals, *locals_count * sizeof(Value));
+    if (shrunk) locals = shrunk;
+  }
+
+  vector_delete(arg_types);
+  return locals;
 }
+
 
 // todo: handle pop error
 static Value* build_locals_from_frame(const Method* m, Frame* frame, int* locals_count)
@@ -1144,6 +1130,11 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     Value* locals = build_locals_from_str(m, parameters, &locals_count);
     free(parameters);
 
+    if (!locals) {
+      printf("FATAL: locals_str is NULL\n");
+      exit(1);
+    }
+
     Frame* frame = build_frame(m, cfg, locals, locals_count);
     LOG_DEBUG("LOCALS COUNT: %d", locals_count);
 
@@ -1162,6 +1153,8 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     vm_context->cfg = cfg;
 
     vm_context->coverage_bitmap = thread_bitmap;
+
+
 
     return vm_context;
 }
@@ -1263,4 +1256,18 @@ void interpreter_free(VMContext* vm) {
 
 
     free(vm);
+}
+
+void instruction_table_map_free() {
+  ITItem* it = it_map;
+  while (it) {
+    ITItem* next = it->next;
+
+    instruction_table_free(it->instruction_table);
+
+    free(it);
+    it = next;
+  }
+
+  it_map = NULL;
 }

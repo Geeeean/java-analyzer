@@ -788,7 +788,7 @@ parse_bytecode(cJSON* method)
     return instruction_table;
 
 cleanup:
-    instruction_table_delete(instruction_table);
+  instruction_table_free(instruction_table);
     return NULL;
 }
 
@@ -832,18 +832,6 @@ cleanup:
     return instruction_table;
 }
 
-void instruction_table_delete(InstructionTable* instruction_table)
-{
-
-    if (instruction_table) {
-        for (int i = 0; i < INSTRUCTION_TABLE_SIZE; i++) {
-            free(instruction_table->instructions[i]);
-        }
-    }
-
-    free(instruction_table);
-}
-
 const char* opcode_print(Opcode opcode)
 {
     if (opcode < 0 && opcode >= OP_COUNT) {
@@ -851,4 +839,36 @@ const char* opcode_print(Opcode opcode)
     }
 
     return opcode_signature[opcode];
+}
+
+
+static void instruction_free(Instruction* inst) {
+  if (!inst) return;
+
+  switch (inst->opcode) {
+  case OP_INVOKE: {
+    InvokeOP* iv = &inst->data.invoke;
+
+    free(iv->method_name);
+    free(iv->ref_name);
+
+    free(iv->args);
+
+    break;
+  }
+  default:
+    break;
+  }
+
+  free(inst);
+}
+
+void instruction_table_free(InstructionTable* table) {
+  if (!table) return;
+
+  for (int i = 0; i < table->count; i++) {
+    instruction_free(table->instructions[i]);
+  }
+
+  free(table);
 }
