@@ -169,14 +169,7 @@ void apply_last(IrInstruction* last,
             interval_join(X_in[*successor_false], out_false, &dummy);
         }
     } else if (last->opcode == OP_INVOKE) {
-        IntervalState* state = interval_new_top_state(0);
-        int invoke_head = *(int*)vector_get(block->successors, 0);
-
-        BasicBlock* successor = *(BasicBlock**)vector_get(ctx->cfg->blocks, invoke_head);
-
-        interval_transfer_invoke(state, X_out[current_node], successor->num_locals);
-
-        interval_join(X_in[invoke_head], state, &dummy);
+        LOG_DEBUG("INVOKE");
     } else {
         interval_transfer(out, last);
     }
@@ -223,7 +216,7 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
         interval_join(in, out, &dummy);
     }
 
-    return ir_instruction_is_conditional(last) || last->opcode == OP_INVOKE;
+    return ir_instruction_is_conditional(last);
 }
 
 int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out)

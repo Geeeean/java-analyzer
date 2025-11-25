@@ -1008,6 +1008,27 @@ int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* 
     return SUCCESS;
 }
 
+int interval_transfer_invoke(IntervalState* out_state, IntervalState* in_state, int locals_num)
+{
+    if (!out_state || !in_state) {
+        return FAILURE;
+    }
+
+    for (int i = locals_num - 1; i >= 0; i--) {
+        int id;
+        vector_pop(in_state->stack, &id);
+
+        Interval* iv = vector_get(in_state->env, id);
+
+        int name = vector_length(out_state->env);
+
+        vector_push(out_state->locals, &name);
+        vector_push(out_state->env, iv);
+    }
+
+    return SUCCESS;
+}
+
 void interval_state_print(const IntervalState* st)
 {
     if (!st) {
