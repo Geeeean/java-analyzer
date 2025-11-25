@@ -179,49 +179,89 @@ static void parameter_fix(char* parameters)
 // todo: handle any dimensional array
 static int parse_array(Type* type, char* token, ObjectValue* array)
 {
-    char* values = strtok(token, ":_;[]");
-    int capacity = 10;
-    int* len = &array->array.elements_count;
-    array->array.elements = malloc(sizeof(Value) * capacity);
+  // ALWAYS initialize count
+  array->array.elements_count = 0;
+  int* len = &array->array.elements_count;
 
-    array->type = type;
+  // Initial allocation
+  int capacity = 10;
+  array->array.elements = malloc(sizeof(Value) * capacity);
+  if (!array->array.elements) return 1;
 
-    if (type == make_array_type(TYPE_INT)) {
-        while ((values = strtok(NULL, ";[]_")) != NULL) {
-            if (*len >= capacity) {
-                capacity *= 2;
-                array->array.elements = realloc(array->array.elements, sizeof(Value) * capacity);
-            }
+  array->type = type;
 
-            Value value = { .type = TYPE_INT, .data.int_value = strtol(values, NULL, 10) };
-            array->array.elements[(*len)] = value;
+  // Skip the type part (I:, C:, etc.)
+  char* values = strtok(token, ":_;[]");
 
-            (*len)++;
-        }
+  // --- INT ARRAY ---
+  if (type->kind == TK_ARRAY && type->array.element_type->kind == TK_INT) {
 
-        array->array.elements = realloc(array->array.elements, sizeof(Value) * (*len));
-    } else if (type == make_array_type(TYPE_CHAR)) {
-        while ((values = strtok(NULL, ";[]_'\"")) != NULL) {
-            if (*len >= capacity) {
-                capacity *= 2;
-                array->array.elements = realloc(array->array.elements, sizeof(Value) * capacity);
-            }
+    while ((values = strtok(NULL, ";[]_")) != NULL) {
 
-            Value value = { .type = TYPE_CHAR, .data.char_value = values[0] };
-            array->array.elements[(*len)] = value;
+      if (*values == '\0') continue;   // skip empty tokens
 
-            (*len)++;
-        }
+      if (*len >= capacity) {
+        capacity *= 2;
+        Value* newbuf = realloc(array->array.elements,
+                                sizeof(Value) * capacity);
+        if (!newbuf) return 1;
+        array->array.elements = newbuf;
+      }
 
-        array->array.elements = realloc(array->array.elements, sizeof(Value) * (*len));
+      Value value = { .type = TYPE_INT, .data.int_value = strtol(values, NULL, 10) };
+      array->array.elements[*len] = value;
+
+      (*len)++;
+    }
+
+    // Safe shrink: never realloc(ptr, 0)
+    if (*len > 0) {
+      Value* shrink = realloc(array->array.elements, sizeof(Value) * (*len));
+      if (shrink) array->array.elements = shrink;
     } else {
-        LOG_ERROR("Dont know how to handle this array type interpreter.c: %s", token);
-        return 1;
+      free(array->array.elements);
+      array->array.elements = NULL;
     }
 
     return 0;
-}
+  }
 
+  // --- CHAR ARRAY ---
+  if (type->kind == TK_ARRAY && type->array.element_type->kind == TK_CHAR) {
+
+    while ((values = strtok(NULL, ";[]_'\"")) != NULL) {
+
+      if (*values == '\0') continue;   // skip empty tokens
+
+      if (*len >= capacity) {
+        capacity *= 2;
+        Value* newbuf = realloc(array->array.elements,
+                                sizeof(Value) * capacity);
+        if (!newbuf) return 1;
+        array->array.elements = newbuf;
+      }
+
+      Value value = { .type = TYPE_CHAR, .data.char_value = values[0] };
+      array->array.elements[*len] = value;
+
+      (*len)++;
+    }
+
+    // Safe shrink
+    if (*len > 0) {
+      Value* shrink = realloc(array->array.elements, sizeof(Value) * (*len));
+      if (shrink) array->array.elements = shrink;
+    } else {
+      free(array->array.elements);
+      array->array.elements = NULL;
+    }
+
+    return 0;
+  }
+
+  LOG_ERROR("Dont know how to handle this array type interpreter.c: %s", token);
+  return 1;
+}
 static int parse_next_parameter(Type* type, char* token, Value* value)
 
 {
@@ -231,6 +271,7 @@ static int parse_next_parameter(Type* type, char* token, Value* value)
 
     if (type_is_array(type)) {
         ObjectValue* array = malloc(sizeof(ObjectValue));
+        array->array.elements_count = 0;
         if (parse_array(type, token, array)) {
             LOG_ERROR("While handling parse array");
             return 10;

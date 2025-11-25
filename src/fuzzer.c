@@ -55,7 +55,7 @@ Vector* fuzzer_run(Fuzzer* f,
                    const Options* options,
                    Vector* arg_types) {
   int stagnant_iterations = 0;
-  const size_t STAGNATION_LIMIT = 5000;
+  const size_t STAGNATION_LIMIT = 1000;
 
   while (stagnant_iterations < STAGNATION_LIMIT) {
 
