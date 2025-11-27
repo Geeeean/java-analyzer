@@ -323,7 +323,7 @@ static int parse_next_parameter(Type* type, char* token, Value* value)
     return 3;
 }
 
-static Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
+Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
 {
   *locals_count = 0;
 
@@ -393,6 +393,116 @@ static Value* build_locals_from_str(const Method* m, char* parameters, int* loca
   return locals;
 }
 
+Value* build_locals_fast(const Method* m,
+                         const uint8_t* data,
+                         size_t len,
+                         int* locals_count)
+{
+    *locals_count = 0;
+
+    Vector* types = method_get_arguments_as_types(m);
+    int argc = vector_length(types);
+
+    if (argc == 0) {
+        vector_delete(types);
+        return NULL;
+    }
+
+    Value* locals = malloc(sizeof(Value) * argc);
+    if (!locals) {
+        vector_delete(types);
+        return NULL;
+    }
+
+    size_t pos = 0;
+
+    for (int i = 0; i < argc; i++) {
+        Type* t = *(Type**)vector_get(types, i);
+
+        if (pos >= len) break;
+
+        Value v;
+
+        switch (t->kind) {
+        case TK_INT: {
+            int8_t raw = (int8_t)data[pos++];
+            v.type = TYPE_INT;
+            v.data.int_value = raw;
+            break;
+        }
+
+        case TK_BOOLEAN: {
+            uint8_t raw = data[pos++];
+            v.type = TYPE_BOOLEAN;
+            v.data.bool_value = raw & 1;
+            break;
+        }
+
+        case TK_CHAR: {
+            char raw = (char)data[pos++];
+            v.type = TYPE_CHAR;
+            v.data.char_value = raw;
+            break;
+        }
+
+        case TK_ARRAY: {
+            if (pos >= len) goto fail;
+            uint8_t array_len = data[pos++];
+
+            ObjectValue* arr = malloc(sizeof(ObjectValue));
+            arr->type = t;
+            arr->array.elements_count = array_len;
+            arr->array.elements = malloc(sizeof(Value) * array_len);
+
+            Type* inner = t->array.element_type;
+
+            for (int j = 0; j < array_len; j++) {
+                if (pos >= len) array_len = j;
+
+                switch (inner->kind) {
+                case TK_INT:
+                    arr->array.elements[j].type = TYPE_INT;
+                    arr->array.elements[j].data.int_value = (int8_t)data[pos++];
+                    break;
+
+                case TK_BOOLEAN:
+                    arr->array.elements[j].type = TYPE_BOOLEAN;
+                    arr->array.elements[j].data.bool_value = data[pos++] & 1;
+                    break;
+
+                case TK_CHAR:
+                    arr->array.elements[j].type = TYPE_CHAR;
+                    arr->array.elements[j].data.char_value = (char)data[pos++];
+                    break;
+
+                default:
+                    goto fail;
+                }
+            }
+
+            v.type = TYPE_REFERENCE;
+            if (heap_insert(arr, &v.data.ref_value))
+                goto fail;
+
+            break;
+        }
+
+        default:
+            goto fail;
+        }
+
+        locals[*locals_count] = v;
+        (*locals_count)++;
+    }
+
+    vector_delete(types);
+    return locals;
+
+fail:
+    free(locals);
+    vector_delete(types);
+    return NULL;
+}
 
 // todo: handle pop error
 static Value* build_locals_from_frame(const Method* m, Frame* frame, int* locals_count)
@@ -1169,33 +1279,116 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     return vm_context;
 }
 
-VMContext* persistent_interpreter_setup(Method* m, Options* opts, Config* cfg, uint8_t* thread_bitmap) {
-
-}
-
-static Frame* build_empty_frame(const Method* m, const Config* cfg)
+void VMContext_set_locals(VMContext* vm, Value* new_locals, int count)
 {
-  Frame* frame = calloc(1, sizeof(Frame));
-  if (!frame) return NULL;
+    Frame* f = vm->frame;
 
-  frame->pc = 0;
-  frame->locals = NULL;
-  frame->locals_count = 0;
-
-  int max_stack = method_max_stack(m);  // or your equivalent
-  frame->operand_stack.capacity = max_stack;
-  frame->operand_stack.data = calloc(max_stack, sizeof(Value));
-
-  if (!frame->operand_stack.data) {
-    free(frame);
-    return NULL;
-  }
-
-  frame->method = m;
-  frame->cfg = cfg;
-
-  return frame;
+    free(f->locals);
+    f->locals = new_locals;
+    f->locals_count = count;
 }
+
+static Frame* build_persistent_frame(const Method* m,
+                                     const Config* cfg,
+                                     Value* locals,
+                                     int locals_count)
+{
+    Frame* frame = calloc(1, sizeof(Frame));
+    if (!frame) return NULL;
+
+    frame->pc = 0;
+    frame->locals = locals;
+    frame->locals_count = locals_count;
+
+    frame->stack = stack_new();   // persistent, reused, cleared manually
+    if (!frame->stack) {
+        free(frame);
+        return NULL;
+    }
+
+    frame->instruction_table = get_instruction_table(m, cfg);
+    if (!frame->instruction_table) {
+        stack_delete(frame->stack);
+        free(frame);
+        return NULL;
+    }
+
+    return frame;
+}
+
+void VMContext_reset(VMContext* vm)
+{
+    if (!vm || !vm->frame || !vm->call_stack) return;
+
+    Frame* f = vm->frame;
+    f->pc = 0;
+    stack_clear(f->stack);
+
+    CallStack* cs = vm->call_stack;
+
+    while (cs->top) {
+        CallStackNode* n = cs->top;
+        cs->top = n->next;
+        free(n);
+    }
+    cs->count = 0;
+
+    call_stack_push(cs, f);
+}
+
+static void frame_free(Frame* frame) {
+    if (!frame) return;
+
+    free(frame->locals);
+
+    stack_delete(frame->stack);
+
+    free(frame);
+}
+
+VMContext* persistent_interpreter_setup(const Method* m,
+                                        const Options* opts,
+                                        const Config* cfg,
+                                        uint8_t* thread_bitmap)
+{
+    if (!m || !opts || !cfg) return NULL;
+
+    int locals_count = 0;
+    Value* locals = NULL;
+
+    Frame* frame = build_persistent_frame(m, cfg, locals, locals_count);
+    if (!frame) {
+        return NULL;
+    }
+
+    CallStack* call_stack = calloc(1, sizeof(CallStack));
+    if (!call_stack) {
+        frame_free(frame);
+        return NULL;
+    }
+
+    call_stack_push(call_stack, frame);
+
+    VMContext* vm = calloc(1, sizeof(VMContext));
+    if (!vm) {
+        while (call_stack->top) {
+            CallStackNode* n = call_stack->top;
+            call_stack->top = n->next;
+            free(n->frame);
+            free(n);
+        }
+        free(call_stack);
+        return NULL;
+    }
+
+    vm->call_stack = call_stack;
+    vm->frame = frame;
+    vm->cfg = cfg;
+    vm->coverage_bitmap = thread_bitmap;
+
+    return vm;
+}
+
 
 RuntimeResult interpreter_run(VMContext* vm_context)
 {
@@ -1259,16 +1452,6 @@ size_t interpreter_instruction_count(const Method* m, const Config* cfg)
   return table ? table->count : 0;
 }
 
-static void frame_free(Frame* frame) {
-    if (!frame) return;
-
-    free(frame->locals);
-
-    stack_delete(frame->stack);
-
-    free(frame);
-}
-
 void interpreter_free(VMContext* vm) {
     if (!vm) return;
 
@@ -1308,4 +1491,10 @@ void instruction_table_map_free() {
   }
 
   it_map = NULL;
+}
+
+void VMContext_set_coverage_bitmap(VMContext* vm, uint8_t* bitmap)
+{
+    if (!vm) return;
+    vm->coverage_bitmap = bitmap;
 }

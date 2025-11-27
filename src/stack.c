@@ -96,3 +96,14 @@ void stack_delete(Stack* stack)
 
     free(stack);
 }
+
+void stack_clear(Stack* stack)
+{
+    if (!stack) return;
+
+    while (stack->top) {
+        stack_pop(stack, NULL);
+    }
+
+    stack->size = 0;
+}

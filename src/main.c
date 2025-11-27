@@ -262,16 +262,6 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
 
     Vector* results = fuzzer_run(f, m, cfg, &opts, arg_types);
 
-    printf("Fuzzing found %zu interesting testcases:\n", vector_length(results));
-
-    for (size_t i = 0; i < vector_length(results); i++) {
-        TestCase* tc = *(TestCase**) vector_get(results, i);
-        printf("[%zu] len=%zu fuzz_count=%u\n",
-               i,
-               tc->len,
-               tc->fuzz_count);
-    }
-
     fuzzer_free(f);
     instruction_table_map_free();
 

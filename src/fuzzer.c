@@ -5,7 +5,7 @@
 #include "interpreter.h"
 #include "type.h"
 #include "vector.h"
-
+#include "value.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -39,6 +39,8 @@ static bool append_escaped_char(char *buffer, size_t *cursor, size_t max, char c
 
 
 Fuzzer * fuzzer_init(size_t instruction_count) {
+
+
   Fuzzer* f = malloc(sizeof(Fuzzer));
   f -> instruction_count = instruction_count;
   f -> cov_bytes = instruction_count;
@@ -63,7 +65,9 @@ Vector* fuzzer_run(Fuzzer* f,
                    const Options* options,
                    Vector* arg_types) {
   int stagnant_iterations = 0;
-  const size_t STAGNATION_LIMIT = 1000000;
+  const size_t STAGNATION_LIMIT = 100;
+
+  VMContext* persistent_vm = NULL;
 
   while (stagnant_iterations < STAGNATION_LIMIT) {
 
@@ -71,32 +75,135 @@ Vector* fuzzer_run(Fuzzer* f,
     TestCase* child  = testCase_copy(parent);
     child = mutate(child);
 
+
+    /* printf("[FUZZ] bytes (%zu): ", child->len);
+    for (size_t i = 0; i < child->len; i++)
+      printf("%02x ", child->data[i]);
+    printf("\n");
+*/
+
+    printf("[FUZZ] bytes (%zu): ", child->len);
+    for (size_t i = 0; i < child->len; i++)
+      printf("%02x ", child->data[i]);
+    printf("\n");
+
+
     Options local_opts = *options;
     local_opts.parameters = NULL;
-
-    if (!parse(child->data, child->len, arg_types, &local_opts) ||
-        !local_opts.parameters || local_opts.parameters[0] == '\0') {
-      free(local_opts.parameters);
-      local_opts.parameters = NULL;
-      testcase_free(child);
-      continue;
-    }
 
     uint8_t* thread_bitmap = child->coverage_bitmap;
     coverage_reset_thread_bitmap(thread_bitmap);
 
-    VMContext* vm = interpreter_setup(method, &local_opts, config, thread_bitmap);
-    if (!vm) {
-      free(local_opts.parameters);
+    if (!persistent_vm) {
+      persistent_vm =
+          persistent_interpreter_setup(method, &local_opts, config, thread_bitmap);
+      if (!persistent_vm) {
+        testcase_free(child);
+        continue;
+      }
+    }
+
+    heap_reset();
+
+    int locals_count = 0;
+    Value* new_locals =
+        build_locals_fast(method, child->data, child->len, &locals_count);
+
+
+    printf("[FUZZ] locals_count = %d\n", locals_count);
+
+for (int i = 0; i < locals_count; i++) {
+    Value v = new_locals[i];
+
+    if (!v.type) {
+        printf("  local[%d] = <NULL TYPE>\n", i);
+        continue;
+    }
+
+    switch (v.type->kind) {
+    case TK_INT:
+        printf("  local[%d] = INT %d\n", i, v.data.int_value);
+        break;
+
+    case TK_BOOLEAN:
+        printf("  local[%d] = BOOL %d\n", i, v.data.bool_value);
+        break;
+
+    case TK_CHAR:
+        printf("  local[%d] = CHAR '%c' (%d)\n", i,
+               v.data.char_value, v.data.char_value);
+        break;
+
+    case TK_ARRAY:
+        // This is for the (rare) case where the *value itself* is an array,
+        // not a reference. You probably won't see this for ([C)V params.
+        printf("  local[%d] = <RAW ARRAY VALUE>\n", i);
+        break;
+
+    case TK_REFERENCE: {
+        ObjectValue* obj = heap_get(v.data.ref_value);
+        if (!obj) {
+            printf("  local[%d] = <NULL REF>\n", i);
+            break;
+        }
+
+        if (obj->type && obj->type->kind == TK_ARRAY) {
+            printf("  local[%d] = ARRAY(len=%d): ",
+                   i, obj->array.elements_count);
+
+            for (int j = 0; j < obj->array.elements_count; j++) {
+                Value e = obj->array.elements[j];
+
+                if (!e.type) {
+                    printf("<?>");
+                    continue;
+                }
+
+                switch (e.type->kind) {
+                case TK_INT:
+                    printf("%d,", e.data.int_value);
+                    break;
+                case TK_CHAR:
+                    printf("'%c',", e.data.char_value);
+                    break;
+                case TK_BOOLEAN:
+                    printf("%d,", e.data.bool_value);
+                    break;
+                default:
+                    printf("<?>");
+                    break;
+                }
+            }
+            printf("\n");
+        } else {
+            printf("  local[%d] = <OBJ REF kind=%d>\n",
+                   i, obj->type ? obj->type->kind : -1);
+        }
+        break;
+    }
+
+    default:
+        printf("  local[%d] = <UNKNOWN TYPE %d>\n", i, v.type->kind);
+        break;
+    }
+}
+
+
+
+
+    if (!new_locals) {
       testcase_free(child);
       continue;
     }
 
-    RuntimeResult r = interpreter_run(vm);
-    (void)r;
+    VMContext_set_locals(persistent_vm, new_locals, locals_count);
 
-    interpreter_free(vm);
-    heap_reset();
+    VMContext_reset(persistent_vm);
+
+    VMContext_set_coverage_bitmap(persistent_vm, thread_bitmap);
+
+    RuntimeResult r = interpreter_run(persistent_vm);
+    (void)r;
 
     size_t new_bits = coverage_commit_thread(thread_bitmap);
 
@@ -109,10 +216,11 @@ Vector* fuzzer_run(Fuzzer* f,
       testcase_free(child);
       stagnant_iterations++;
     }
-
-    free(local_opts.parameters);
   }
 
+  if (persistent_vm) {
+    interpreter_free(persistent_vm);
+  }
   return f->corpus;
 }
 
