@@ -3,7 +3,6 @@
 #include "coverage.h"
 #include "heap.h"
 #include "interpreter.h"
-#include "log.h"
 #include "type.h"
 #include "vector.h"
 

@@ -110,6 +110,16 @@ struct VMContext {
     uint8_t* coverage_bitmap;
 };
 
+struct PersistentVMContext {
+  CallStack* callStack;
+  const Config* cfg;
+  Frame* frame;
+  uint8_t* coverage_bitmap;
+
+  Value* locals;
+  int locals_count;
+};
+
 static void call_stack_push(CallStack* call_stack, Frame* frame)
 {
     if (!call_stack || !frame)
@@ -1157,6 +1167,34 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
 
 
     return vm_context;
+}
+
+VMContext* persistent_interpreter_setup(Method* m, Options* opts, Config* cfg, uint8_t* thread_bitmap) {
+
+}
+
+static Frame* build_empty_frame(const Method* m, const Config* cfg)
+{
+  Frame* frame = calloc(1, sizeof(Frame));
+  if (!frame) return NULL;
+
+  frame->pc = 0;
+  frame->locals = NULL;
+  frame->locals_count = 0;
+
+  int max_stack = method_max_stack(m);  // or your equivalent
+  frame->operand_stack.capacity = max_stack;
+  frame->operand_stack.data = calloc(max_stack, sizeof(Value));
+
+  if (!frame->operand_stack.data) {
+    free(frame);
+    return NULL;
+  }
+
+  frame->method = m;
+  frame->cfg = cfg;
+
+  return frame;
 }
 
 RuntimeResult interpreter_run(VMContext* vm_context)

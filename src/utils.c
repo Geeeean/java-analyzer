@@ -1,5 +1,6 @@
 #include "utils.h"
 
+#include "time.h"
 #include <string.h>
 
 void replace_char(char* str, char find, char replace)
@@ -10,4 +11,10 @@ void replace_char(char* str, char find, char replace)
         *pos = replace;
         pos++;
     }
+}
+
+double get_current_time() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double) ts.tv_sec * 1000.0 + (double) ts.tv_nsec / 1e6;
 }

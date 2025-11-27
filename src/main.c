@@ -11,8 +11,7 @@
 #include "coverage.h"
 
 #include "tree_sitter/api.h"
-#include "type.h"
-
+#include "utils.h"
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -233,6 +232,8 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
 }
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
+
+    double start_time = get_current_time();
     write(2, "FUZZER REACHED\n", 15);
 
     size_t instruction_count = interpreter_instruction_count(m, cfg);
@@ -287,6 +288,13 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     // Cleanup
     vector_delete(arg_types);
     coverage_reset_all();
+
+    double end_time = get_current_time();
+
+    double run_time = end_time - start_time;
+
+    printf("Total runtime: %f milliseconds \n", run_time);
+
 }
 
 
