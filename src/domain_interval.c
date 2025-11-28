@@ -63,12 +63,16 @@ static Interval interval_widen_single(Interval old, Interval newer)
         r.lower = INT_MIN;
     }
 
+    r.lower = MIN(r.lower, MIN(newer.lower, old.lower));
+
     LOG_DEBUG("NEW UPPER %d", newer.upper);
     LOG_DEBUG("OLD UPPER %d", old.upper);
 
     if (newer.upper > old.upper) {
         r.upper = INT_MAX;
     }
+
+    r.upper = MAX(r.upper, MAX(newer.upper, old.upper));
 
     return r;
 }
@@ -206,7 +210,7 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
     int lenA = vector_length(acc->stack);
     int lenB = vector_length(new->stack);
 
-    for (int i = 0; i < MIN(lenA, lenB); i++) {
+    for (int i = 0; i < MAX(lenA, lenB); i++) {
         int* nameA = vector_get(acc->stack, i);
         int* nameB = vector_get(new->stack, i);
 
@@ -320,6 +324,7 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
 
         Interval r = interval_widen_single(*in_iv, *new_iv);
 
+        LOG_DEBUG("AAAAAAAAAAAAAAAAAAAAAA");
         if (r.lower != new_iv->lower || r.upper != new_iv->upper) {
             LOG_DEBUG("UA BOSS");
             int* a = vector_get(acc->locals, i);
@@ -657,7 +662,6 @@ static int handle_new(IntervalState* st, IrInstruction* ins)
 
 static int handle_incr(IntervalState* st, IrInstruction* ins)
 {
-    LOG_DEBUG("CIAOOOOOOOOOO");
     if (!st || !ins) {
         return FAILURE;
     }
@@ -666,8 +670,8 @@ static int handle_incr(IntervalState* st, IrInstruction* ins)
     int* iv_id = vector_get(st->locals, incr->index);
 
     Interval iv = *(Interval*)vector_get(st->env, *iv_id);
-    if (iv.lower < INT_MAX)
-        iv.lower++;
+
+    iv.lower++;
 
     if (iv.upper < INT_MAX)
         iv.upper++;
@@ -1014,16 +1018,30 @@ int interval_transfer_invoke(IntervalState* out_state, IntervalState* in_state, 
         return FAILURE;
     }
 
+    LOG_INFO("IN STATE ENV LEN: %ld, OUT STATE LEN %ld", vector_length(in_state->env), vector_length(out_state->env));
+    LOG_INFO("LOCALS NUM: %d", locals_num);
     for (int i = locals_num - 1; i >= 0; i--) {
+        interval_state_print(in_state);
         int id;
         vector_pop(in_state->stack, &id);
 
+        LOG_INFO("1");
         Interval* iv = vector_get(in_state->env, id);
+        LOG_INFO("2");
 
         int name = vector_length(out_state->env);
+        LOG_INFO("3");
 
+        if (!iv) {
+            interval_state_print(in_state);
+            LOG_INFO("AH");
+        }
+
+        Interval new_iv = { .lower = iv->lower, .upper = iv->upper };
         vector_push(out_state->locals, &name);
-        vector_push(out_state->env, iv);
+        LOG_INFO("4");
+        vector_push(out_state->env, &new_iv);
+        LOG_INFO("5");
     }
 
     return SUCCESS;

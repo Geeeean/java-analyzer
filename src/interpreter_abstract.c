@@ -28,13 +28,18 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     }
 
     Cfg* control_flow_graph = ir_program_get_cfg(m, cfg);
-    LOG_INFO("BEFORE");
+
+#ifdef DEBUG
+    LOG_DEBUG("BEFORE");
     cfg_print(control_flow_graph);
+#endif
 
     cfg_inline(control_flow_graph, (Config*)cfg, (Method*)m);
 
-    LOG_INFO("AFTER");
+#ifdef DEBUG
+    LOG_DEBUG("AFTER");
     cfg_print(control_flow_graph);
+#endif
 
 #ifdef DEBUG
     cfg_print(control_flow_graph);
@@ -178,6 +183,12 @@ void apply_last(IrInstruction* last,
         interval_transfer_invoke(state, X_out[current_node], successor->num_locals);
 
         interval_join(X_in[invoke_head], state, &dummy);
+    } else if (last->opcode == OP_RETURN) {
+        if (vector_length(X_out[current_node]->stack)) {
+            int iv_id;
+            vector_pop(X_out[current_node]->stack, &iv_id);
+            Interval* iv = vector_get(X_out[current_node]->env, iv_id);
+        }
     } else {
         interval_transfer(out, last);
     }
@@ -218,7 +229,6 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
                                     vector_get(block->ir_function->ir_instructions, ip);
             interval_transfer(out, ir);
         }
-
         apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 0);
 
         interval_join(in, out, &dummy);
@@ -251,11 +261,14 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
         Interval* in = vector_get(test_in->env, in_id);
         Interval* out = vector_get(test_out->env, out_id);
 
+        LOG_DEBUG("IN: [%d, %d]", in->lower, in->upper);
+        LOG_DEBUG("out: [%d, %d]", out->lower, out->upper);
+
         if (out->lower == in->lower && out->upper == in->upper && (in->lower == INT_MIN || in->upper == INT_MAX)) {
             continue;
         }
 
-        if ((out->lower < in->lower) || (out->upper > in->lower)) {
+        if ((out->lower < in->lower) || (out->upper > in->upper)) {
             return 0;
         }
     }
@@ -297,7 +310,17 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     X_out[current_node] = interval_new_bottom_state(entry_block->num_locals);
 
     for (int i = current_node + 1; i < nodes_num; i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
+        BasicBlock* block;
+        LOG_DEBUG("NODE: %d", i);
+
+        // node is an exit
+        if (i < ctx->block_count) {
+            block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
+        } else {
+            int exit_component = ctx->wpo.node_to_component[i];
+            int head = *(int*)vector_get(ctx->wpo.heads, exit_component);
+            block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
+        }
 
         X_in[i] = interval_new_bottom_state(block->num_locals);
         X_out[i] = interval_new_bottom_state(block->num_locals);
@@ -308,10 +331,9 @@ void* interpreter_abstract_run(AbstractContext* ctx)
 
     while (!vector_pop(worklist, &current_node)) {
 #ifdef DEBUG
-        LOG_DEBUG("NODE %d STATE:", current_node);
+        LOG_DEBUG("NODE %d STATE BEFORE:", current_node);
         interval_state_print(X_in[current_node]);
 #endif
-
         if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
             /*** NonExit ***/
             if (current_node < ctx->block_count) {
@@ -351,11 +373,12 @@ void* interpreter_abstract_run(AbstractContext* ctx)
                 }
             }
 
-            printf("worklist:\n");
+#ifdef DEBUG
+            LOG_DEBUG("worklist:\n");
             for (int i = 0; i < vector_length(worklist); i++) {
-                printf("%d ", *(int*)vector_get(worklist, i));
+                LOG_DEBUG("%d ", *(int*)vector_get(worklist, i));
             }
-            printf("\n");
+#endif
         }
 
 #ifdef DEBUG
