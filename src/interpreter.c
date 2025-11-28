@@ -6,6 +6,8 @@
 #include "interpreter.h"
 #include "cli.h"
 #include "heap.h"
+#include "ir_function.h"
+#include "ir_program.h"
 #include "log.h"
 #include "opcode.h"
 #include "stack.h"
@@ -1444,6 +1446,10 @@ VMContext* interpreter_setup(const Method* m,
     vm_context->coverage_bitmap = thread_bitmap;
 
     return vm_context;
+
+cleanup:
+    // todo: free objects
+    return NULL;
 }
 
 void VMContext_set_locals(VMContext* vm, Value* new_locals, int count)

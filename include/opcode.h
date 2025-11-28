@@ -1,7 +1,7 @@
 #ifndef BYTECODE_PARSER_H
 #define BYTECODE_PARSER_H
 
-#include "config.h"
+#include "cJSON/cJSON.h"
 #include "method.h"
 #include "type.h"
 #include "value.h"
@@ -169,6 +169,9 @@ BinaryResult value_rem(Value* value1, Value* value2, Value* result);
 BinaryResult value_div(Value* value1, Value* value2, Value* result);
 
 const char* opcode_print(Opcode opcode);
+Opcode opcode_parse(cJSON* instruction_json);
+
+cJSON* opcode_get_method(Method* m, cJSON* methods);
 
 static void instruction_free(Instruction* inst);
 void instruction_table_free(InstructionTable* table);
