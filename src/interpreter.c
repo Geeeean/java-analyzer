@@ -1389,6 +1389,85 @@ VMContext* persistent_interpreter_setup(const Method* m,
     return vm;
 }
 
+void dump_locals(Value *locals, int locals_count)
+{
+  printf("[FUZZ] locals_count = %d\n", locals_count);
+
+  for (int i = 0; i < locals_count; i++) {
+    Value v = locals[i];
+
+    if (!v.type) {
+      printf("  local[%d] = <NULL TYPE>\n", i);
+      continue;
+    }
+
+    switch (v.type->kind) {
+    case TK_INT:
+      printf("  local[%d] = INT %d\n", i, v.data.int_value);
+      break;
+
+    case TK_BOOLEAN:
+      printf("  local[%d] = BOOL %d\n", i, v.data.bool_value);
+      break;
+
+    case TK_CHAR:
+      printf("  local[%d] = CHAR '%c' (%d)\n", i,
+             v.data.char_value, v.data.char_value);
+      break;
+
+    case TK_ARRAY:
+      // value itself is a raw array, not a reference
+      printf("  local[%d] = <RAW ARRAY VALUE>\n", i);
+      break;
+
+    case TK_REFERENCE: {
+      ObjectValue *obj = heap_get(v.data.ref_value);
+      if (!obj) {
+        printf("  local[%d] = <NULL REF>\n", i);
+        break;
+      }
+
+      if (obj->type && obj->type->kind == TK_ARRAY) {
+        printf("  local[%d] = ARRAY(len=%d): ",
+               i, obj->array.elements_count);
+
+        for (int j = 0; j < obj->array.elements_count; j++) {
+          Value e = obj->array.elements[j];
+
+          if (!e.type) {
+            printf("<?>");
+            continue;
+          }
+
+          switch (e.type->kind) {
+          case TK_INT:
+            printf("%d,", e.data.int_value);
+            break;
+          case TK_CHAR:
+            printf("'%c',", e.data.char_value);
+            break;
+          case TK_BOOLEAN:
+            printf("%d,", e.data.bool_value);
+            break;
+          default:
+            printf("<?>");
+            break;
+          }
+        }
+        printf("\n");
+      } else {
+        printf("  local[%d] = <OBJ REF kind=%d>\n",
+               i, obj->type ? obj->type->kind : -1);
+      }
+      break;
+    }
+
+    default:
+      printf("  local[%d] = <UNKNOWN TYPE %d>\n", i, v.type->kind);
+      break;
+    }
+  }
+}
 
 RuntimeResult interpreter_run(VMContext* vm_context)
 {

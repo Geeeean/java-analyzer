@@ -43,4 +43,6 @@ Value* build_locals_fast(const Method* m,
                          size_t len,
                          int* locals_count);
 
+void dump_locals(Value *locals, int count);
+
 #endif
