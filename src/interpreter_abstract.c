@@ -5,7 +5,9 @@
 #include "ir_program.h"
 #include "log.h"
 #include "wpo.h"
+
 #include <limits.h>
+#include <omp.h>
 
 int x = 0;
 
@@ -103,31 +105,30 @@ static void set_n_for_component(int* N, int exit_node, AbstractContext* ctx, Vec
     }
 }
 
-static void update_scheduling_successors(
-    Graph* graph,
-    int current_node,
-    int* N,
-    Vector* worklist,
-    int* num_sched_pred,
-    IntervalState** X_in,
-    IntervalState** X_out,
-    int is_conditional)
-{
-    Node* node = vector_get(graph->nodes, current_node);
-    for (int i = 0; i < vector_length(node->successors); i++) {
-        int successor = *(int*)vector_get(node->successors, i);
-        N[successor]++;
-
-        if (!(is_conditional && (i == 0 || i == 1))) {
-            int dummy;
-            interval_join(X_in[successor], X_out[current_node], &dummy);
-        }
-
-        if (num_sched_pred[successor] == N[successor]) {
-            vector_push(worklist, &successor);
-        }
-    }
-}
+// static void update_scheduling_successors(
+//     Graph* graph,
+//     int current_node,
+//     int* N,
+//     int* num_sched_pred,
+//     IntervalState** X_in,
+//     IntervalState** X_out,
+//     int is_conditional)
+// {
+//     Node* node = vector_get(graph->nodes, current_node);
+//     for (int i = 0; i < vector_length(node->successors); i++) {
+//         int successor = *(int*)vector_get(node->successors, i);
+//         N[successor]++;
+//
+//         if (!(is_conditional && (i == 0 || i == 1))) {
+//             int dummy;
+//             interval_join(X_in[successor], X_out[current_node], &dummy);
+//         }
+//
+//         if (num_sched_pred[successor] == N[successor]) {
+//             vector_push(worklist, &successor);
+//         }
+//     }
+// }
 
 void apply_last(IrInstruction* last,
     BasicBlock* block,
@@ -137,7 +138,8 @@ void apply_last(IrInstruction* last,
     int current_node,
     int component,
     AbstractContext* ctx,
-    int head)
+    int head,
+    omp_lock_t* locks)
 {
     int dummy = 0;
 
@@ -167,11 +169,15 @@ void apply_last(IrInstruction* last,
         }
 
         if (successor_true) {
+            omp_set_lock(&locks[*successor_true]);
             interval_join(X_in[*successor_true], out_true, &dummy);
+            omp_unset_lock(&locks[*successor_true]);
         }
 
         if (successor_false) {
+            omp_set_lock(&locks[*successor_false]);
             interval_join(X_in[*successor_false], out_false, &dummy);
+            omp_unset_lock(&locks[*successor_false]);
         }
     } else if (last->opcode == OP_INVOKE) {
         IntervalState* state = interval_new_top_state(0);
@@ -182,7 +188,9 @@ void apply_last(IrInstruction* last,
 
         interval_transfer_invoke(state, X_out[current_node], successor->num_locals);
 
+        omp_set_lock(&locks[invoke_head]);
         interval_join(X_in[invoke_head], state, &dummy);
+        omp_unset_lock(&locks[invoke_head]);
     } else if (last->opcode == OP_RETURN) {
         if (vector_length(X_out[current_node]->stack)) {
             int iv_id;
@@ -194,7 +202,7 @@ void apply_last(IrInstruction* last,
     }
 }
 
-int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, int* visited)
+int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, omp_lock_t* locks)
 {
     int dummy;
     int component = ctx->wpo.node_to_component[current_node];
@@ -220,7 +228,7 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
             interval_transfer(out, ir);
         }
 
-        apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 1);
+        apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 1, locks);
     } else {
         interval_state_copy(out, in);
 
@@ -229,7 +237,7 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
                                     vector_get(block->ir_function->ir_instructions, ip);
             interval_transfer(out, ir);
         }
-        apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 0);
+        apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 0, locks);
 
         interval_join(in, out, &dummy);
     }
@@ -276,6 +284,116 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     return 1;
 }
 
+void process_node_task(int current_node, AbstractContext* ctx,
+    int* N, IntervalState** X_in, IntervalState** X_out,
+    omp_lock_t* locks)
+{
+    if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
+        /*** NonExit ***/
+        if (current_node < ctx->block_count) {
+            int is_conditional = apply_f(current_node, ctx, X_in, X_out, locks);
+
+            omp_set_lock(&locks[current_node]);
+            N[current_node] = 0;
+            omp_unset_lock(&locks[current_node]);
+
+            /*** update scheduling successors ***/
+            Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+            for (int i = 0; i < vector_length(node->successors); i++) {
+                int successor = *(int*)vector_get(node->successors, i);
+
+                /*** CRITICAL SECTION ***/
+                omp_set_lock(&locks[successor]);
+
+                if (!(is_conditional && (i == 0 || i == 1))) {
+                    int dummy;
+                    interval_join(X_in[successor], X_out[current_node], &dummy);
+                }
+
+                N[successor]++;
+                int ready = (N[successor] == ctx->wpo.num_sched_pred[successor]);
+
+                omp_unset_lock(&locks[successor]);
+                /*** END CRITICAL SECTION ***/
+
+                if (ready) {
+#pragma omp task
+                    process_node_task(successor, ctx, N, X_in, X_out, locks);
+                }
+            }
+        }
+        /*** Exit ***/
+        else {
+            interval_state_copy(X_out[current_node], X_in[current_node]);
+
+            omp_set_lock(&locks[current_node]);
+            N[current_node] = 0;
+            omp_unset_lock(&locks[current_node]);
+
+            if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
+                Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+                int exit_component = ctx->wpo.node_to_component[current_node];
+                int head = *(int*)vector_get(ctx->wpo.heads, exit_component);
+
+                for (int i = 0; i < vector_length(node->successors); i++) {
+                    int successor = *(int*)vector_get(node->successors, i);
+                    if (successor != head) {
+
+                        /*** CRITICAL SECTION ***/
+                        omp_set_lock(&locks[successor]);
+
+                        int dummy = 0;
+                        interval_join(X_in[successor], X_out[current_node], &dummy);
+                        N[successor]++;
+                        int ready = (N[successor] == ctx->wpo.num_sched_pred[successor]);
+
+                        omp_unset_lock(&locks[successor]);
+                        /*** END CRITICAL SECTION ***/
+
+                        if (ready) {
+#pragma omp task
+                            process_node_task(successor, ctx, N, X_in, X_out, locks);
+                        }
+                    }
+                }
+            } else {
+                // update cycle successor
+                Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
+                int loop_head = *(int*)vector_get(node->successors, vector_length(node->successors) - 1);
+
+                omp_set_lock(&locks[loop_head]);
+                int dummy = 0;
+                interval_join(X_in[loop_head], X_out[current_node], &dummy);
+                omp_unset_lock(&locks[loop_head]);
+
+                // set n for component
+                int component_id = ctx->wpo.node_to_component[current_node];
+                C* component = vector_get(ctx->wpo.Cx, component_id);
+                Vector* component_nodes = component->components;
+
+                for (int i = 0; i < vector_length(component_nodes); i++) {
+                    int node = *(int*)vector_get(component_nodes, i);
+                    omp_set_lock(&locks[node]);
+                    N[node] = ctx->wpo.num_outer_sched_pred[component_id][node];
+
+                    int ready = (N[node] == ctx->wpo.num_sched_pred[node]);
+                    omp_unset_lock(&locks[node]);
+
+                    if (ready) {
+#pragma omp task
+                        process_node_task(node, ctx, N, X_in, X_out, locks);
+                    }
+                }
+            }
+        }
+    }
+
+#ifdef DEBUG
+    LOG_DEBUG("NODE %d STATE AFTER:", current_node);
+    interval_state_print(X_out[current_node]);
+#endif
+}
+
 void* interpreter_abstract_run(AbstractContext* ctx)
 {
     int nodes_num = ctx->block_count + ctx->exit_count;
@@ -288,11 +406,15 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     }
 
     int* N = calloc(nodes_num, sizeof(int));
-    int* visited = calloc(nodes_num, sizeof(int));
     IntervalState** X_in = calloc(nodes_num, sizeof(IntervalState));
     IntervalState** X_out = calloc(nodes_num, sizeof(IntervalState));
 
-    if (!N || !X_in || !X_out) {
+    omp_lock_t* node_locks = malloc(sizeof(omp_lock_t) * nodes_num);
+    for (int i = 0; i < nodes_num; i++) {
+        omp_init_lock(&node_locks[i]);
+    }
+
+    if (!N || !X_in || !X_out || !node_locks) {
         goto cleanup;
     }
 
@@ -326,66 +448,15 @@ void* interpreter_abstract_run(AbstractContext* ctx)
         X_out[i] = interval_new_bottom_state(block->num_locals);
     }
 
-    Vector* worklist = vector_new(sizeof(int));
-    vector_push(worklist, &current_node);
-
-    while (!vector_pop(worklist, &current_node)) {
-#ifdef DEBUG
-        LOG_DEBUG("NODE %d STATE BEFORE:", current_node);
-        interval_state_print(X_in[current_node]);
-#endif
-        if (N[current_node] == ctx->wpo.num_sched_pred[current_node]) {
-            /*** NonExit ***/
-            if (current_node < ctx->block_count) {
-                int is_conditional = apply_f(current_node, ctx, X_in, X_out, visited);
-
-                N[current_node] = 0;
-
-                update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, is_conditional);
+#pragma omp parallel
+    {
+#pragma omp single
+        {
+#pragma omp task
+            {
+                process_node_task(0, ctx, N, X_in, X_out, node_locks);
             }
-            /*** Exit ***/
-            else {
-                interval_state_copy(X_out[current_node], X_in[current_node]);
-                N[current_node] = 0;
-                if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
-                    Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-                    // update_scheduling_successors(ctx->wpo.wpo, current_node, N, worklist, ctx->wpo.num_sched_pred, X_in, X_out, 0);
-                    int exit_component = ctx->wpo.node_to_component[current_node];
-                    int head = *(int*)vector_get(ctx->wpo.heads, exit_component);
-                    for (int i = 0; i < vector_length(node->successors); i++) {
-                        int successor = *(int*)vector_get(node->successors, i);
-                        if (successor != head) {
-                            N[successor]++;
-                            if (N[successor] == ctx->wpo.num_sched_pred[successor]) {
-                                vector_push(worklist, &successor);
-                                int dummy;
-                                interval_join(X_in[successor], X_out[current_node], &dummy);
-                            }
-                        }
-                    }
-                } else {
-                    // update cycle successor
-                    Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-                    int node_id = *(int*)vector_get(node->successors, vector_length(node->successors) - 1);
-                    int dummy = 0;
-                    interval_join(X_in[node_id], X_out[current_node], &dummy);
-                    set_n_for_component(N, current_node, ctx, worklist);
-                }
-            }
-
-#ifdef DEBUG
-            LOG_DEBUG("worklist:\n");
-            for (int i = 0; i < vector_length(worklist); i++) {
-                LOG_DEBUG("%d ", *(int*)vector_get(worklist, i));
-            }
-#endif
         }
-
-#ifdef DEBUG
-        LOG_DEBUG("NODE %d STATE AFTER:", current_node);
-        interval_state_print(X_out[current_node]);
-#endif
-        visited[current_node] = 1;
     }
 
     LOG_INFO("RESULTS:");
@@ -395,6 +466,10 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     }
 
 cleanup:
+    for (int i = 0; i < nodes_num; i++) {
+        omp_destroy_lock(&node_locks[i]);
+    }
+    free(node_locks);
     LOG_ERROR("TODO interpreter abstract run cleanup");
     return NULL;
 }
