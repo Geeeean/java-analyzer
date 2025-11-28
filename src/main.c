@@ -196,7 +196,7 @@ int main(int argc, char** argv)
     long useconds = end.tv_usec - start.tv_usec;
 
     long total_microseconds = seconds * 1000000L + useconds;
-    LOG_INFO("Elapsed time: %ld microseconds\n", total_microseconds);
+    LOG_BENCHMARK("Elapsed time: %ld microseconds\n", total_microseconds);
 
 cleanup:
     ts_tree_delete(tree);

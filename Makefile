@@ -15,6 +15,7 @@ LIBS = tree-sitter
 LLIBS := $(patsubst %,-l%,$(LIBS))
 
 TARGET = analyzer
+NO_LOG_TARGET = analyzer_no_log
 DEBUG_TARGET = analyzer_debug
 
 LOCAL_DEPS := $(wildcard $(INCLUDE_DIR)/*.h)
@@ -29,7 +30,6 @@ DEBUG_OBJ = $(patsubst %.c,$(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o, $(SOURCES))
 
 all: $(TARGET)
 
-
 $(TARGET): $(OBJ)
 	@mkdir -p $(BIN_DIR)
 	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS)
@@ -37,6 +37,16 @@ $(TARGET): $(OBJ)
 $(BUILD_DIR)/$(BUILD_RELEASE_DIR)/%.o: %.c $(DEPS)
 	@ mkdir -p $(dir $@)
 	$(CC) -c -o $@ $< $(IFLAGS)
+
+no_log: $(NO_LOG_TARGET)
+
+$(NO_LOG_TARGET): $(OBJ)
+	@mkdir -p $(BIN_DIR)
+	$(CC) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LLIBS)
+
+$(BUILD_DIR)/$(BUILD_RELEASE_DIR)/%.o: %.c $(DEPS)
+	@ mkdir -p $(dir $@)
+	$(CC) -c -o $@ $< $(IFLAGS) -DNO_PRINT=1
 
 debug: $(DEBUG_TARGET)
 
