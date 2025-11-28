@@ -2,7 +2,9 @@
 #define INTERPRETER_H
 
 #include "cli.h"
+#include "heap.h"
 #include "method.h"
+#include "opcode.h"
 #include "value.h"
 
 #include <stdint.h>
@@ -37,12 +39,24 @@ void interpreter_free(VMContext* vm);
 void instruction_table_map_free();
 void VMContext_set_coverage_bitmap(VMContext* vm, uint8_t* bitmap);
 void VMContext_set_locals(VMContext* vm, Value* locals, int locals_count);
-Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count);
-Value* build_locals_fast(const Method* m,
+Value* build_locals_from_str(
+  Heap* heap,
+  const Method* m,
+  char* parameters,
+  int* locals_count);
+
+Value* build_locals_fast(Heap* heap,
+                         const Method* m,
                          const uint8_t* data,
                          size_t len,
                          int* locals_count);
 
-void dump_locals(Value *locals, int count);
+void dump_locals(Heap* heap, Value *locals, int count);
+
+InstructionTable* instruction_table_get_persistent(const Method* m);
+void instruction_table_persistent_free_all(void);
+void instruction_table_persistent_build_all(const Method* root, const Config* cfg);
+Heap* VMContext_get_heap(VMContext* vm);
+char* get_method_signature(InvokeOP* invoke);
 
 #endif

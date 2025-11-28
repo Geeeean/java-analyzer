@@ -1,4 +1,8 @@
 // todo handle pop error, use vector
+#define _GNU_SOURCE
+#include <stdlib.h>
+#include <pthread.h>
+
 #include "interpreter.h"
 #include "cli.h"
 #include "heap.h"
@@ -9,9 +13,10 @@
 #include "utils.h"
 #include "value.h"
 #include "coverage.h"
+#include "itgraph.h"
 
-#include <stdlib.h>
 
+static pthread_rwlock_t persistent_it_lock = PTHREAD_RWLOCK_INITIALIZER;
 #define ITERATION 100000
 
 // todo: use hashmap
@@ -22,8 +27,32 @@ struct ITItem {
     ITItem* next;
 };
 
+typedef struct {
+    char* method_id;
+    InstructionTable* table;
+    bool occupied;
+} ITEntry;
+
+#define IT_MAP_CAPACITY 4096
+
+static ITEntry it_map_persistent[IT_MAP_CAPACITY];
+static bool it_map_built = false;
+
 // to be freed
-ITItem* it_map = NULL;
+static __thread ITItem* it_map = NULL;
+
+static uint32_t hash_str(const char* s)
+{
+    // djb2-ish, small & simple
+    uint32_t h = 5381u;
+    int c;
+    while ((c = (unsigned char)*s++) != 0) {
+        h = ((h << 5) + h) ^ (uint32_t)c; // h * 33 ^ c
+    }
+    return h;
+}
+
+
 
 InstructionTable* get_instruction_table(const Method* m, const Config* cfg)
 {
@@ -108,6 +137,7 @@ struct VMContext {
     const Config* cfg;
     Frame* frame;
     uint8_t* coverage_bitmap;
+    Heap* heap;
 };
 
 struct PersistentVMContext {
@@ -119,6 +149,65 @@ struct PersistentVMContext {
   Value* locals;
   int locals_count;
 };
+
+static uint32_t hash_ptr(const void* p)
+{
+    uintptr_t x = (uintptr_t)p;
+    x ^= x >> 16;
+    x *= 0x7feb352d;
+    x ^= x >> 15;
+    x *= 0x846ca68b;
+    x ^= x >> 16;
+    return (uint32_t)x;
+}
+
+InstructionTable* instruction_table_get_persistent(const Method* m)
+{
+    pthread_rwlock_rdlock(&persistent_it_lock);
+
+    if (!it_map_built) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return NULL;
+    }
+
+    if (!m) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return NULL;
+    }
+
+    const char* target = method_get_id(m);
+    if (!target) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return NULL;
+    }
+
+    // Debug:
+    // printf("[LOOKUP] searching for %s\n", target);
+
+    uint32_t h = hash_str(target) % IT_MAP_CAPACITY;
+
+    for (int i = 0; i < IT_MAP_CAPACITY; i++) {
+        uint32_t idx = (h + i) % IT_MAP_CAPACITY;
+
+        if (!it_map_persistent[idx].occupied)
+            continue;
+
+        const char* stored = it_map_persistent[idx].method_id;
+        if (!stored)
+            continue;
+
+        if (strcmp(stored, target) == 0) {
+            InstructionTable* table = it_map_persistent[idx].table;
+            pthread_rwlock_unlock(&persistent_it_lock);
+            return table;
+        }
+    }
+
+    pthread_rwlock_unlock(&persistent_it_lock);
+    return NULL;
+}
+
+
 
 static void call_stack_push(CallStack* call_stack, Frame* frame)
 {
@@ -188,20 +277,18 @@ static void parameter_fix(char* parameters)
 }
 
 // todo: handle any dimensional array
+
 static int parse_array(Type* type, char* token, ObjectValue* array)
 {
-  // ALWAYS initialize count
   array->array.elements_count = 0;
   int* len = &array->array.elements_count;
 
-  // Initial allocation
   int capacity = 10;
   array->array.elements = malloc(sizeof(Value) * capacity);
   if (!array->array.elements) return 1;
 
   array->type = type;
 
-  // Skip the type part (I:, C:, etc.)
   char* values = strtok(token, ":_;[]");
 
   // --- INT ARRAY ---
@@ -258,7 +345,6 @@ static int parse_array(Type* type, char* token, ObjectValue* array)
       (*len)++;
     }
 
-    // Safe shrink
     if (*len > 0) {
       Value* shrink = realloc(array->array.elements, sizeof(Value) * (*len));
       if (shrink) array->array.elements = shrink;
@@ -273,25 +359,40 @@ static int parse_array(Type* type, char* token, ObjectValue* array)
   LOG_ERROR("Dont know how to handle this array type interpreter.c: %s", token);
   return 1;
 }
-static int parse_next_parameter(Type* type, char* token, Value* value)
-
+static int parse_next_parameter(Heap* heap, Type* type, char* token, Value* value)
 {
-    if (!type || !token || !value) {
+    if (!heap || !type || !token || !value) {
         return 1;
     }
 
     if (type_is_array(type)) {
         ObjectValue* array = malloc(sizeof(ObjectValue));
+        if (!array) {
+            LOG_ERROR("malloc failed in parse_next_parameter (array)");
+            return 1;
+        }
         array->array.elements_count = 0;
+        array->array.elements = NULL;
+        array->type = type;
+
         if (parse_array(type, token, array)) {
             LOG_ERROR("While handling parse array");
+            // clean up possible elements allocated by parse_array
+            if (array->array.elements) {
+                free(array->array.elements);
+            }
+            free(array);
             return 10;
         }
 
         value->type = TYPE_REFERENCE;
 
-        if (heap_insert(array, &value->data.ref_value)) {
+        if (heap_insert(heap, array, &value->data.ref_value)) {
             LOG_ERROR("While inserting array into heap");
+            if (array->array.elements) {
+                free(array->array.elements);
+            }
+            free(array);
             return 11;
         }
 
@@ -323,7 +424,7 @@ static int parse_next_parameter(Type* type, char* token, Value* value)
     return 3;
 }
 
-Value* build_locals_from_str(const Method* m, char* parameters, int* locals_count)
+Value* build_locals_from_str(Heap* heap, const Method* m, char* parameters, int* locals_count)
 {
   *locals_count = 0;
 
@@ -368,7 +469,7 @@ Value* build_locals_from_str(const Method* m, char* parameters, int* locals_coun
     }
 
     Value v;
-    if (parse_next_parameter(type, token, &v)) {
+    if (parse_next_parameter(heap, type, token, &v)) {
       LOG_ERROR("Failed to parse parameter '%s'", token);
       free(locals);
       vector_delete(arg_types);
@@ -393,22 +494,29 @@ Value* build_locals_from_str(const Method* m, char* parameters, int* locals_coun
   return locals;
 }
 
-Value* build_locals_fast(const Method* m,
+Value* build_locals_fast(Heap* heap,
+                         const Method* m,
                          const uint8_t* data,
                          size_t len,
                          int* locals_count)
 {
     *locals_count = 0;
 
-    Vector* types = method_get_arguments_as_types(m);
-    int argc = vector_length(types);
+    if (!heap) {
+        LOG_ERROR("build_locals_fast called with NULL heap");
+        return NULL;
+    }
 
+    Vector* types = method_get_arguments_as_types(m);
+    if (!types) return NULL;
+
+    int argc = (int)vector_length(types);
     if (argc == 0) {
         vector_delete(types);
         return NULL;
     }
 
-    Value* locals = malloc(sizeof(Value) * argc);
+    Value* locals = malloc(sizeof(Value) * (size_t)argc);
     if (!locals) {
         vector_delete(types);
         return NULL;
@@ -417,72 +525,113 @@ Value* build_locals_fast(const Method* m,
     size_t pos = 0;
 
     for (int i = 0; i < argc; i++) {
-        Type* t = *(Type**)vector_get(types, i);
+        Type* t = *(Type**)vector_get(types, (size_t)i);
+        if (!t) {
+            LOG_ERROR("build_locals_fast: NULL type at index %d", i);
+            goto fail;
+        }
 
         if (pos >= len) break;
 
         Value v;
+        v.type = NULL; // default until assigned
 
         switch (t->kind) {
-        case TK_INT: {
-            int8_t raw = (int8_t)data[pos++];
+
+        // -------- INT --------
+        case TK_INT:
+            if (pos >= len) goto fail;
             v.type = TYPE_INT;
-            v.data.int_value = raw;
+            v.data.int_value = (int8_t)data[pos++];
             break;
-        }
 
-        case TK_BOOLEAN: {
-            uint8_t raw = data[pos++];
+        // -------- BOOLEAN --------
+        case TK_BOOLEAN:
+            if (pos >= len) goto fail;
             v.type = TYPE_BOOLEAN;
-            v.data.bool_value = raw & 1;
+            v.data.bool_value = (data[pos++] & 1);
             break;
-        }
 
-        case TK_CHAR: {
-            char raw = (char)data[pos++];
+        // -------- CHAR --------
+        case TK_CHAR:
+            if (pos >= len) goto fail;
             v.type = TYPE_CHAR;
-            v.data.char_value = raw;
+            v.data.char_value = (char)data[pos++];
             break;
-        }
 
+        // -------- ARRAY --------
         case TK_ARRAY: {
             if (pos >= len) goto fail;
+
             uint8_t array_len = data[pos++];
 
             ObjectValue* arr = malloc(sizeof(ObjectValue));
+            if (!arr) goto fail;
+
             arr->type = t;
             arr->array.elements_count = array_len;
-            arr->array.elements = malloc(sizeof(Value) * array_len);
+            arr->array.elements = NULL;
 
-            Type* inner = t->array.element_type;
-
-            for (int j = 0; j < array_len; j++) {
-                if (pos >= len) array_len = j;
-
-                switch (inner->kind) {
-                case TK_INT:
-                    arr->array.elements[j].type = TYPE_INT;
-                    arr->array.elements[j].data.int_value = (int8_t)data[pos++];
-                    break;
-
-                case TK_BOOLEAN:
-                    arr->array.elements[j].type = TYPE_BOOLEAN;
-                    arr->array.elements[j].data.bool_value = data[pos++] & 1;
-                    break;
-
-                case TK_CHAR:
-                    arr->array.elements[j].type = TYPE_CHAR;
-                    arr->array.elements[j].data.char_value = (char)data[pos++];
-                    break;
-
-                default:
+            if (array_len > 0) {
+                arr->array.elements = malloc(sizeof(Value) * array_len);
+                if (!arr->array.elements) {
+                    free(arr);
                     goto fail;
                 }
             }
 
+            Type* inner = t->array.element_type;
+            int actual_len = 0;
+
+            for (int j = 0; j < array_len; j++) {
+                if (pos >= len) break;  // truncated input
+
+                Value elem;
+                elem.type = NULL;
+
+                switch (inner->kind) {
+                case TK_INT:
+                    elem.type = TYPE_INT;
+                    elem.data.int_value = (int8_t)data[pos++];
+                    break;
+
+                case TK_BOOLEAN:
+                    elem.type = TYPE_BOOLEAN;
+                    elem.data.bool_value = (data[pos++] & 1);
+                    break;
+
+                case TK_CHAR:
+                    elem.type = TYPE_CHAR;
+                    elem.data.char_value = (char)data[pos++];
+                    break;
+
+                default:
+                    if (arr->array.elements) free(arr->array.elements);
+                    free(arr);
+                    goto fail;
+                }
+
+                arr->array.elements[j] = elem;
+                actual_len++;
+            }
+
+            // shrink to actual length
+            arr->array.elements_count = actual_len;
+            if (actual_len == 0) {
+                free(arr->array.elements);
+                arr->array.elements = NULL;
+            } else {
+                Value* shrunk = realloc(arr->array.elements,
+                                        sizeof(Value) * (size_t)actual_len);
+                if (shrunk) arr->array.elements = shrunk;
+            }
+
             v.type = TYPE_REFERENCE;
-            if (heap_insert(arr, &v.data.ref_value))
+            if (heap_insert(heap, arr, &v.data.ref_value)) {
+                if (arr->array.elements) free(arr->array.elements);
+                free(arr);
                 goto fail;
+            }
 
             break;
         }
@@ -499,8 +648,8 @@ Value* build_locals_fast(const Method* m,
     return locals;
 
 fail:
-    free(locals);
     vector_delete(types);
+    free(locals);
     return NULL;
 }
 
@@ -831,7 +980,7 @@ static StepResult handle_dup(VMContext* vm_context, Instruction* instruction)
 }
 
 // todo: handle array
-static char* get_method_signature(InvokeOP* invoke)
+char* get_method_signature(InvokeOP* invoke)
 {
     char* res = NULL;
     char* ref_name = strdup(invoke->ref_name);
@@ -973,7 +1122,7 @@ static StepResult handle_array_length(VMContext* vm_context, Instruction* instru
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(value.data.ref_value);
+    ObjectValue* array = heap_get(vm_context -> heap,value.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -1015,7 +1164,7 @@ static StepResult handle_new_array(VMContext* vm_context, Instruction* instructi
         array->array.elements_count = size.data.int_value;
 
         Value ref = { .type = TYPE_REFERENCE };
-        if (heap_insert(array, &ref.data.ref_value)) {
+        if (heap_insert(vm_context->heap,array, &ref.data.ref_value)) {
             // todo: heap should be dynamic
             return SR_OUT_OF_BOUNDS;
         }
@@ -1059,7 +1208,7 @@ static StepResult handle_array_store(VMContext* vm_context, Instruction* instruc
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(ref.data.ref_value);
+    ObjectValue* array = heap_get(vm_context->heap,ref.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -1103,7 +1252,7 @@ static StepResult handle_array_load(VMContext* vm_context, Instruction* instruct
         return SR_INVALID_TYPE;
     }
 
-    ObjectValue* array = heap_get(ref.data.ref_value);
+    ObjectValue* array = heap_get(vm_context->heap,ref.data.ref_value);
     if (!array) {
         return SR_NULL_POINTER;
     }
@@ -1222,7 +1371,6 @@ static StepResult step(VMContext* vm_context)
     if (!instruction) {
         return SR_NULL_INSTRUCTION;
     }
-    // LOG_DEBUG("Interpreting: %s", opcode_print(instruction->opcode));
 
     Opcode opcode = instruction->opcode;
     if (opcode < 0 || opcode >= OP_COUNT) {
@@ -1235,30 +1383,53 @@ static StepResult step(VMContext* vm_context)
 
 
 
-VMContext* interpreter_setup(const Method* m, const Options* opts, const Config* cfg, uint8_t* thread_bitmap)
+VMContext* interpreter_setup(const Method* m,
+                             const Options* opts,
+                             const Config* cfg,
+                             uint8_t* thread_bitmap)
 {
     if (!m || !opts || !cfg) {
         return NULL;
     }
 
+    // Allocate VMContext early so we can attach the heap to it
+    VMContext* vm_context = calloc(1, sizeof(VMContext));
+    if (!vm_context) return NULL;
+
+    // ----- NEW: create per-VM heap -----
+    vm_context->heap = heap_create();
+    if (!vm_context->heap) {
+        free(vm_context);
+        return NULL;
+    }
+
     const char* raw_params = opts->parameters ? opts->parameters : "";
     char* parameters = strdup(raw_params);
+
     LOG_DEBUG("BUILDING FRAME...");
     LOG_DEBUG("PARAMETERS: %s", parameters);
 
     int locals_count = 0;
-    Value* locals = build_locals_from_str(m, parameters, &locals_count);
+
+    // ----- UPDATED: pass heap into build_locals_from_str -----
+    Value* locals =
+        build_locals_from_str(vm_context->heap, m, parameters, &locals_count);
+
     free(parameters);
 
     if (!locals) {
-      printf("FATAL: locals_str is NULL\n");
-      exit(1);
+        printf("FATAL: locals_str is NULL\n");
+        heap_free(vm_context->heap);
+        free(vm_context);
+        exit(1);
     }
 
     Frame* frame = build_frame(m, cfg, locals, locals_count);
     LOG_DEBUG("LOCALS COUNT: %d", locals_count);
 
     if (!frame) {
+        heap_free(vm_context->heap);
+        free(vm_context);
         return NULL;
     }
 
@@ -1267,14 +1438,10 @@ VMContext* interpreter_setup(const Method* m, const Options* opts, const Config*
     call_stack->count = 0;
     call_stack_push(call_stack, frame);
 
-    VMContext* vm_context = malloc(sizeof(VMContext));
     vm_context->call_stack = call_stack;
     vm_context->frame = frame;
     vm_context->cfg = cfg;
-
     vm_context->coverage_bitmap = thread_bitmap;
-
-
 
     return vm_context;
 }
@@ -1306,8 +1473,12 @@ static Frame* build_persistent_frame(const Method* m,
         return NULL;
     }
 
-    frame->instruction_table = get_instruction_table(m, cfg);
+    frame->instruction_table = instruction_table_get_persistent(m);
+
     if (!frame->instruction_table) {
+        LOG_ERROR("Persistent table lookup failed for method: %s",
+                  method_get_id(m));
+        printf("[LOOKUP] searching for %s\n", method_get_id(m));
         stack_delete(frame->stack);
         free(frame);
         return NULL;
@@ -1381,6 +1552,19 @@ VMContext* persistent_interpreter_setup(const Method* m,
         return NULL;
     }
 
+    vm->heap = heap_create();
+    if (!vm->heap) {
+        while (call_stack->top) {
+            CallStackNode* n = call_stack->top;
+            call_stack->top = n->next;
+            frame_free(n->frame);
+            free(n);
+        }
+        free(call_stack);
+        free(vm);
+        return NULL;
+    }
+
     vm->call_stack = call_stack;
     vm->frame = frame;
     vm->cfg = cfg;
@@ -1389,85 +1573,101 @@ VMContext* persistent_interpreter_setup(const Method* m,
     return vm;
 }
 
-void dump_locals(Value *locals, int locals_count)
+void dump_locals(Heap* heap, Value *locals, int locals_count)
 {
-  printf("[FUZZ] locals_count = %d\n", locals_count);
+    printf("[FUZZ] locals_count = %d\n", locals_count);
 
-  for (int i = 0; i < locals_count; i++) {
-    Value v = locals[i];
+    for (int i = 0; i < locals_count; i++) {
+        Value v = locals[i];
 
-    if (!v.type) {
-      printf("  local[%d] = <NULL TYPE>\n", i);
-      continue;
-    }
-
-    switch (v.type->kind) {
-    case TK_INT:
-      printf("  local[%d] = INT %d\n", i, v.data.int_value);
-      break;
-
-    case TK_BOOLEAN:
-      printf("  local[%d] = BOOL %d\n", i, v.data.bool_value);
-      break;
-
-    case TK_CHAR:
-      printf("  local[%d] = CHAR '%c' (%d)\n", i,
-             v.data.char_value, v.data.char_value);
-      break;
-
-    case TK_ARRAY:
-      // value itself is a raw array, not a reference
-      printf("  local[%d] = <RAW ARRAY VALUE>\n", i);
-      break;
-
-    case TK_REFERENCE: {
-      ObjectValue *obj = heap_get(v.data.ref_value);
-      if (!obj) {
-        printf("  local[%d] = <NULL REF>\n", i);
-        break;
-      }
-
-      if (obj->type && obj->type->kind == TK_ARRAY) {
-        printf("  local[%d] = ARRAY(len=%d): ",
-               i, obj->array.elements_count);
-
-        for (int j = 0; j < obj->array.elements_count; j++) {
-          Value e = obj->array.elements[j];
-
-          if (!e.type) {
-            printf("<?>");
+        if (!v.type) {
+            printf("  local[%d] = <NULL TYPE>\n", i);
             continue;
-          }
-
-          switch (e.type->kind) {
-          case TK_INT:
-            printf("%d,", e.data.int_value);
-            break;
-          case TK_CHAR:
-            printf("'%c',", e.data.char_value);
-            break;
-          case TK_BOOLEAN:
-            printf("%d,", e.data.bool_value);
-            break;
-          default:
-            printf("<?>");
-            break;
-          }
         }
-        printf("\n");
-      } else {
-        printf("  local[%d] = <OBJ REF kind=%d>\n",
-               i, obj->type ? obj->type->kind : -1);
-      }
-      break;
-    }
 
-    default:
-      printf("  local[%d] = <UNKNOWN TYPE %d>\n", i, v.type->kind);
-      break;
+        switch (v.type->kind) {
+        // --- PRIMITIVES ---
+        case TK_INT:
+            printf("  local[%d] = INT %d\n", i, v.data.int_value);
+            break;
+
+        case TK_BOOLEAN:
+            printf("  local[%d] = BOOL %d\n", i,
+                   v.data.bool_value ? 1 : 0);
+            break;
+
+        case TK_CHAR:
+            printf("  local[%d] = CHAR '%c' (%d)\n",
+                   i, v.data.char_value, v.data.char_value);
+            break;
+
+        // --- REFERENCES ---
+        case TK_REFERENCE: {
+            ObjectValue *obj = heap_get(heap, v.data.ref_value);
+            if (!obj) {
+                printf("  local[%d] = <NULL REF>\n", i);
+                break;
+            }
+
+            if (!obj->type) {
+                printf("  local[%d] = <OBJ REF (NULL TYPE)>\n", i);
+                break;
+            }
+
+            // --- ARRAY OBJECT ---
+            if (obj->type->kind == TK_ARRAY) {
+                printf("  local[%d] = ARRAY(len=%d): ",
+                       i, obj->array.elements_count);
+
+                for (int j = 0; j < obj->array.elements_count; j++) {
+                    Value e = obj->array.elements[j];
+
+                    if (!e.type) {
+                        printf("<?>");
+                        continue;
+                    }
+
+                    switch (e.type->kind) {
+                    case TK_INT:
+                        printf("%d,", e.data.int_value);
+                        break;
+
+                    case TK_CHAR:
+                        printf("'%c',", e.data.char_value);
+                        break;
+
+                    case TK_BOOLEAN:
+                        printf("%d,", e.data.bool_value ? 1 : 0);
+                        break;
+
+                    default:
+                        printf("<?>");
+                        break;
+                    }
+                }
+                printf("\n");
+                break;
+            }
+
+            // --- OTHER REFERENCE TYPES ---
+            printf("  local[%d] = <OBJ REF kind=%d>\n",
+                   i, obj->type->kind);
+            break;
+        }
+
+        // --- SHOULD NEVER HAPPEN ON LOCALS ---
+        case TK_ARRAY:
+            printf("  local[%d] = <ARRAY TYPE USED AS LOCAL?>\n", i);
+            break;
+
+        default:
+            printf("  local[%d] = <UNKNOWN TYPE %d>\n",
+                   i, v.type->kind);
+            break;
+        }
     }
-  }
 }
+
 
 RuntimeResult interpreter_run(VMContext* vm_context)
 {
@@ -1534,18 +1734,18 @@ size_t interpreter_instruction_count(const Method* m, const Config* cfg)
 void interpreter_free(VMContext* vm) {
     if (!vm) return;
 
-    CallStack* cs = vm->call_stack;
+    if (vm->heap) {
+        heap_free(vm->heap);
+    }
 
+    CallStack* cs = vm->call_stack;
     if (cs) {
         CallStackNode* node = cs->top;
 
         while (node) {
             CallStackNode* next = node->next;
 
-            // free the frame object
             frame_free(node->frame);
-
-            // free the stack node
             free(node);
 
             node = next;
@@ -1554,26 +1754,104 @@ void interpreter_free(VMContext* vm) {
         free(cs);
     }
 
-
     free(vm);
 }
 
 void instruction_table_map_free() {
-  ITItem* it = it_map;
-  while (it) {
-    ITItem* next = it->next;
-
-    instruction_table_free(it->instruction_table);
-
-    free(it);
-    it = next;
-  }
-
-  it_map = NULL;
+    ITItem* it = it_map;
+    while (it) {
+        ITItem* next = it->next;
+        instruction_table_free(it->instruction_table);
+        free(it);
+        it = next;
+    }
+    it_map = NULL;
 }
+
+
+void instruction_table_persistent_free_all(void)
+{
+    pthread_rwlock_wrlock(&persistent_it_lock);
+
+    if (!it_map_built) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return;
+    }
+
+    for (int i = 0; i < IT_MAP_CAPACITY; i++) {
+        if (it_map_persistent[i].occupied) {
+            instruction_table_free(it_map_persistent[i].table);
+            free(it_map_persistent[i].method_id);
+            it_map_persistent[i].method_id = NULL;
+            it_map_persistent[i].table = NULL;
+            it_map_persistent[i].occupied = false;
+        }
+    }
+
+    it_map_built = false;
+
+    pthread_rwlock_unlock(&persistent_it_lock);
+}
+
 
 void VMContext_set_coverage_bitmap(VMContext* vm, uint8_t* bitmap)
 {
     if (!vm) return;
     vm->coverage_bitmap = bitmap;
+}
+
+void instruction_table_persistent_build_all(const Method* root,
+                                            const Config* cfg)
+{
+    pthread_rwlock_wrlock(&persistent_it_lock);
+
+    if (it_map_built) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return;
+    }
+
+    memset(it_map_persistent, 0, sizeof(it_map_persistent));
+
+    Vector* all_methods = resolve_all_methods_reachable_from(root, cfg);
+    if (!all_methods) {
+        pthread_rwlock_unlock(&persistent_it_lock);
+        return;
+    }
+
+    for (size_t i = 0; i < vector_length(all_methods); i++) {
+        const Method* m = *(Method**)vector_get(all_methods, i);
+        if (!m) continue;
+
+        const char* id = method_get_id(m);
+        if (!id) continue;
+
+        uint32_t h = hash_str(id) % IT_MAP_CAPACITY;
+        while (it_map_persistent[h].occupied) {
+            h = (h + 1) % IT_MAP_CAPACITY;
+        }
+
+        InstructionTable* table = instruction_table_build(m, cfg);
+        if (!table) {
+            // optional: log error, but continue building others
+            continue;
+        }
+
+        it_map_persistent[h].method_id = strdup(id);
+        it_map_persistent[h].table = table;
+        it_map_persistent[h].occupied = true;
+
+        // Optional debug:
+        // printf("[PERSISTENT] added %s at %u\n", id, h);
+    }
+
+    vector_delete(all_methods);
+    it_map_built = true;
+
+    pthread_rwlock_unlock(&persistent_it_lock);
+}
+
+
+Heap* VMContext_get_heap(VMContext* vm) {
+    if (!vm) return NULL;
+    return vm->heap;
 }

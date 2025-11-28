@@ -1,10 +1,13 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <stdio.h>
+
 #include "opcode.h"
 #include "log.h"
 
 #include "cJSON/cJSON.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 typedef enum {
     IPR_OK,

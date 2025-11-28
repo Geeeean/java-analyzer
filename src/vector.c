@@ -81,11 +81,34 @@ void* vector_get(const Vector* v, size_t index)
 
 void* vector_pop(Vector* v)
 {
-    LOG_ERROR("TODO: Vector pop");
-    return NULL;
+    if (!v || v->length == 0) return NULL;
+    v->length--;
+    return (char*)v->data + v->length * v->element_size;
 }
 
 size_t vector_length(const Vector* v)
 {
     return v->length;
 }
+
+Vector* vector_copy(const Vector* src)
+{
+    if (!src) return NULL;
+
+    Vector* v = malloc(sizeof(Vector));
+    if (!v) return NULL;
+
+    v->length = src->length;
+    v->capacity = src->capacity;
+    v->element_size = src->element_size;
+
+    v->data = malloc(v->capacity * v->element_size);
+    if (!v->data) {
+        free(v);
+        return NULL;
+    }
+
+    memcpy(v->data, src->data, v->length * v->element_size);
+    return v;
+}
+

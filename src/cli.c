@@ -1,9 +1,11 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <stdio.h>
+
 #include "cli.h"
 #include "info.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define OPTIONS_NUM 2
 #define MANDATORY_ARGS_NUM 1

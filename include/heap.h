@@ -2,9 +2,20 @@
 #define HEAP_H
 
 #include "value.h"
+#define HEAP_SIZE 100000
 
-int heap_insert(ObjectValue* obj, int* index);
-ObjectValue* heap_get(int index);
+typedef struct {
+  ObjectValue* fields[HEAP_SIZE];
+  int len;
+} Heap;
 
-void heap_reset(void);
+Heap* heap_create();
+void heap_free(Heap* h);
+
+// Per-heap operations:
+void heap_init(Heap* h);
+void heap_reset(Heap* h);
+int  heap_insert(Heap* h, ObjectValue* obj, int* index);
+ObjectValue* heap_get(Heap* h, int index);
+
 #endif

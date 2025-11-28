@@ -1,12 +1,14 @@
-//
-// Created by marti on 22/11/2025.
-//
 #ifndef TESTCASECORPUS_H
 #define TESTCASECORPUS_H
 
-#include "vector.h"
 #include <stdint.h>
-#include <string.h>
+#include <stddef.h>
+#include <stdatomic.h>
+#include <pthread.h>
+
+// ------------------------------------
+// TestCase
+// ------------------------------------
 
 typedef struct {
   uint8_t* data;
@@ -18,19 +20,29 @@ typedef struct {
   unsigned int fuzz_count;
 } TestCase;
 
-Vector* corpus_init(void);
-void corpus_free(Vector* corpus);
+typedef struct {
+  TestCase** items;
+  atomic_size_t size;
+  size_t capacity;
+  pthread_mutex_t resize_lock;
+} Corpus;
 
+// API
+Corpus* corpus_init(void);
+void corpus_free(Corpus* c);
+
+void corpus_add(Corpus* c, TestCase* tc);
+size_t corpus_size(Corpus* c);
+TestCase* corpus_get(Corpus* c, size_t idx);
+
+// TestCase helpers
 TestCase* create_testCase(const uint8_t* data,
-                             size_t len,
-                             const uint8_t* cov,
-                             size_t cov_bytes);
+                          size_t len,
+                          const uint8_t* cov,
+                          size_t cov_bytes);
 
 void testcase_free(TestCase* tc);
-
-void corpus_add(Vector* corpus, TestCase* tc);
-
-TestCase* corpus_choose(Vector* corpus, size_t* index);
-#endif
-
 TestCase* testCase_copy(TestCase* parent);
+uint64_t testcase_hash(const TestCase* tc);
+
+#endif

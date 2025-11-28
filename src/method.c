@@ -1,11 +1,12 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <stdio.h>
 #include "method.h"
 #include "log.h"
 #include "type.h"
 #include "utils.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/stat.h>
 
 #define METHOD_CLASS_SEP '.'

@@ -1,6 +1,8 @@
 #include "cli.h"
 #include "config.h"
+#include "coverage.h"
 #include "fuzzer.h"
+#include "heap.h"
 #include "info.h"
 #include "interpreter.h"
 #include "log.h"
@@ -8,7 +10,6 @@
 #include "outcome.h"
 #include "syntax.h"
 #include "vector.h"
-#include "coverage.h"
 
 #include "tree_sitter/api.h"
 #include "utils.h"
@@ -18,6 +19,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 /* Forward declarations */
 void run_interpreter(const Method* m, Options opts, const Config* cfg);
@@ -233,6 +235,12 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
 
+#ifdef _OPENMP
+    printf("OpenMP ENABLED (_OPENMP=%d)\n", _OPENMP);
+#else
+    printf("OpenMP DISABLED\n");
+#endif
+
     double start_time = get_current_time();
     write(2, "FUZZER REACHED\n", 15);
 
@@ -244,7 +252,6 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     }
 
     Fuzzer* f = fuzzer_init(instruction_count);
-
     if (!f) {
         LOG_ERROR("Fuzzer init failed.");
         coverage_reset_all();
@@ -252,7 +259,6 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     }
 
     Vector* arg_types = method_get_arguments_as_types(m);
-
     if (!arg_types) {
         LOG_ERROR("Argument types missing.");
         fuzzer_free(f);
@@ -260,32 +266,99 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
         return;
     }
 
-    Vector* results = fuzzer_run(f, m, cfg, &opts, arg_types);
+    int thread_count = 1;
 
-    fuzzer_free(f);
-    instruction_table_map_free();
+    /* 1. Prefer OpenMP if available */
+
+#ifdef _OPENMP
+    int omp_threads = omp_get_max_threads();
+
+    char* env = getenv("OMP_NUM_THREADS");
+    if (env) {
+        int env_threads = atoi(env);
+        if (env_threads > 0)
+            omp_threads = env_threads;
+    }
+
+    if (omp_threads > 1)
+        thread_count = omp_threads;
+#endif
+
+    if (cfg->threads_set && cfg->threads > 0)
+        thread_count = cfg->threads;
+
+    printf("[FUZZ] Using %d thread(s)\n", thread_count);
+
+
+    Vector* results = NULL;
+
+    results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
 
     size_t covered = coverage_global_count();
+   /* printf("\n=== INTERESTING TESTCASES ===\n");
+
+    for (size_t i = 0; i < vector_length(results); i++) {
+
+        TestCase* tc = *(TestCase**) vector_get(results, i);
+
+        printf("\n--- Case %zu ---\n", i);
+
+        printf("Raw bytes (%zu): ", tc->len);
+        for (size_t j = 0; j < tc->len; j++)
+            printf("%02x ", tc->data[j]);
+        printf("\n");
+
+        Heap* tmp_heap = heap_create();
+        if (!tmp_heap) {
+            printf("  <FAILED TO CREATE TEMP HEAP>\n");
+            continue;
+        }
+
+        heap_reset(tmp_heap);
+
+        int locals_count = 0;
+        Value* locals = build_locals_fast(tmp_heap,
+                                          m,
+                                          tc->data,
+                                          tc->len,
+                                          &locals_count);
+
+        if (!locals) {
+            printf("  <FAILED TO RECONSTRUCT LOCALS>\n");
+            heap_free(tmp_heap);
+            continue;
+        }
+
+        dump_locals(tmp_heap, locals, locals_count);
+
+        free(locals);
+        heap_free(tmp_heap);
+    } */
+
     printf("\n=== FINAL COVERAGE REPORT ===\n");
     printf("Instructions covered: %zu / %zu\n", covered, instruction_count);
+
     if (instruction_count > 0) {
         printf("Coverage: %.2f%%\n", (covered * 100.0) / instruction_count);
     }
+
     printf("Coverage bitmap (first 64 PCs): ");
     coverage_global_print(instruction_count);
 
 
-    // Cleanup
+
+    fuzzer_free(f);
+    instruction_table_map_free();
+
     vector_delete(arg_types);
+    vector_delete(results);
+
     coverage_reset_all();
 
     double end_time = get_current_time();
-
-    double run_time = end_time - start_time;
-
-    printf("Total runtime: %f milliseconds \n", run_time);
-
+    printf("Total runtime: %f milliseconds\n", end_time - start_time);
 }
+
 
 
 /*

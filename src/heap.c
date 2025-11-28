@@ -1,54 +1,57 @@
 #include "heap.h"
 #include <stdlib.h>
 
-#define HEAP_SIZE 100000
+Heap* heap_create() {
+    Heap* h = malloc(sizeof(Heap));
+    if (!h) return NULL;
+    heap_init(h);
+    return h;
+}
 
-typedef struct {
-    ObjectValue* fields[HEAP_SIZE];
-    int len;
-} Heap;
+void heap_free(Heap* h) {
+    if (!h) return;
 
-static Heap heap = { .len = 1, .fields = { NULL } };
+    heap_reset(h);
+    free(h);
+}
 
-int heap_insert(ObjectValue* obj, int* index)
+void heap_init(Heap* h) {
+    h->len = 1;
+    for (int i = 0; i < HEAP_SIZE; i++)
+        h->fields[i] = NULL;
+}
+
+int heap_insert(Heap* h, ObjectValue* obj, int* index)
 {
-    if (heap.len >= HEAP_SIZE) {
+    if (h->len >= HEAP_SIZE)
         return 1;
-    }
 
-    *index = heap.len;
-
-    heap.fields[heap.len] = obj;
-
-    heap.len++;
-
+    *index = h->len;
+    h->fields[h->len] = obj;
+    h->len++;
     return 0;
 }
 
-ObjectValue* heap_get(int index)
+ObjectValue* heap_get(Heap* h, int index)
 {
-    if (index < 0 || index >= heap.len) {
+    if (index < 0 || index >= h->len)
         return NULL;
-    }
-
-    return heap.fields[index];
+    return h->fields[index];
 }
 
-void heap_reset(void)
+void heap_reset(Heap* h)
 {
-    for (int i = 1; i < heap.len; i++) {
-        ObjectValue* obj = heap.fields[i];
+    for (int i = 1; i < h->len; i++) {
+        ObjectValue* obj = h->fields[i];
         if (!obj) continue;
 
         if (obj->type && obj->type->kind == TK_ARRAY) {
             free(obj->array.elements);
-            obj->array.elements = NULL;
-            obj->array.elements_count = 0;
         }
 
         free(obj);
-        heap.fields[i] = NULL;
+        h->fields[i] = NULL;
     }
 
-    heap.len = 1;
+    h->len = 1;
 }

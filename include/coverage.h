@@ -25,6 +25,7 @@ int check_bits(const uint8_t* bitmap, size_t size);
 
 void coverage_global_print(size_t maxBits);
 
+bool coverage_is_complete(void);
 
 
 #endif //COVERAGE_H

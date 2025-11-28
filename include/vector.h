@@ -15,4 +15,6 @@ void* vector_get(const Vector* v, size_t index);
 
 size_t vector_length(const Vector* v);
 
+Vector* vector_copy(const Vector* src);
+
 #endif

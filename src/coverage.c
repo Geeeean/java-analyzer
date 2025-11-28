@@ -112,3 +112,13 @@ void coverage_global_print(size_t maxBits) {
     putchar('\n');
 }
 
+bool coverage_is_complete(void) {
+    if (!coverage.is_initialized) return false;
+
+    for (size_t i = 0; i < coverage.nBits; i++) {
+        if (coverage.global_bits[i] == 0) {
+            return false;
+        }
+    }
+    return true;
+}
