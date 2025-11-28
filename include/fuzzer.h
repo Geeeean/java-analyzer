@@ -10,7 +10,7 @@
 #include <stdbool.h>
 
 typedef struct {
-  Vector* corpus;
+  Corpus* corpus;
   size_t corpus_index;
   size_t cov_bytes;
   size_t instruction_count;
