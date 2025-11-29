@@ -33,5 +33,6 @@ Graph* graph_create_test_4_nodes();
 Graph* graph_create_test_8_nodes();
 
 void graph_print(Graph* graph);
+void graph_delete(Graph* graph);
 
 #endif

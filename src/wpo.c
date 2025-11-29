@@ -438,3 +438,23 @@ cleanup:
     LOG_ERROR("TODO wpo construct aux cleanup");
     return SUCCESS;
 }
+
+void wpo_delete(WPO wpo)
+{
+    if (wpo.num_outer_sched_pred) {
+        int num_components = vector_length(wpo.Cx);
+        for (int i = 0; i < num_components; i++) {
+            free(wpo.num_outer_sched_pred[i]);
+        }
+        free(wpo.num_outer_sched_pred);
+    }
+
+    graph_delete(wpo.wpo);
+
+    free(wpo.num_sched_pred);
+    free(wpo.node_to_component);
+
+    vector_delete(wpo.Cx);
+    vector_delete(wpo.heads);
+    vector_delete(wpo.exits);
+}

@@ -22,4 +22,6 @@ void cfg_print(Cfg* cfg);
 
 int cfg_inline(Cfg* cfg, Config* config, Method* m);
 
+void cfg_delete(Cfg* cfg);
+
 #endif

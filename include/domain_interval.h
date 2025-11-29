@@ -33,5 +33,6 @@ int interval_transfer_invoke(IntervalState* out_state, IntervalState* in_state, 
 int interval_transfer_conditional(IntervalState* out_state_true, IntervalState* out_state_false, IrInstruction* ir_instruction);
 
 void interval_state_print(const IntervalState* st);
+void interval_state_delete(IntervalState* st);
 
 #endif

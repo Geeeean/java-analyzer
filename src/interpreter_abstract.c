@@ -459,17 +459,38 @@ void* interpreter_abstract_run(AbstractContext* ctx)
         }
     }
 
+#ifdef DEBUG
     LOG_INFO("RESULTS:");
     for (int i = 0; i < nodes_num; i++) {
         LOG_INFO("NODE %d", i);
         interval_state_print(X_out[i]);
     }
+#endif
 
 cleanup:
     for (int i = 0; i < nodes_num; i++) {
         omp_destroy_lock(&node_locks[i]);
     }
     free(node_locks);
+
+    free(N);
+
+    if (X_in) {
+        for (int i = 0; i < nodes_num; i++) {
+            interval_state_delete(X_in[i]);
+        }
+        free(X_in);
+    }
+
+    if (X_out) {
+        for (int i = 0; i < nodes_num; i++) {
+            interval_state_delete(X_out[i]);
+        }
+        free(X_out);
+    }
+
+    wpo_delete(ctx->wpo);
+
     LOG_ERROR("TODO interpreter abstract run cleanup");
     return NULL;
 }

@@ -1,3 +1,4 @@
+#include "ir_program.h"
 #include "cli.h"
 #include "config.h"
 #include "fuzzer.h"
@@ -21,8 +22,6 @@
 
 int main(int argc, char** argv)
 {
-    struct timeval start, end;
-    gettimeofday(&start, NULL); // capture start time
 #ifdef DEBUG
     omp_set_num_threads(1);
 #endif
@@ -113,7 +112,19 @@ int main(int argc, char** argv)
         }
     } else if (opts.abstract_only) {
         AbstractContext* abstract_context = interpreter_abstract_setup(m, &opts, cfg);
+
+        struct timeval start, end;
+        gettimeofday(&start, NULL); // capture start time
+
         interpreter_abstract_run(abstract_context);
+
+        gettimeofday(&end, NULL); // capture end time
+
+        long seconds = end.tv_sec - start.tv_sec;
+        long useconds = end.tv_usec - start.tv_usec;
+
+        long total_microseconds = seconds * 1000000L + useconds;
+        LOG_BENCHMARK("Elapsed time: %ld microseconds\n", total_microseconds);
     } else {
         int run = 100;
         Outcome outcome = new_outcome();
@@ -190,15 +201,8 @@ int main(int argc, char** argv)
         print_outcome(outcome);
     }
 
-    gettimeofday(&end, NULL); // capture end time
-
-    long seconds = end.tv_sec - start.tv_sec;
-    long useconds = end.tv_usec - start.tv_usec;
-
-    long total_microseconds = seconds * 1000000L + useconds;
-    LOG_BENCHMARK("Elapsed time: %ld microseconds\n", total_microseconds);
-
 cleanup:
+    ir_program_delete();
     ts_tree_delete(tree);
     method_delete(m);
     config_delete(cfg);

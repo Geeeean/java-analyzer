@@ -329,3 +329,21 @@ void cfg_print(Cfg* cfg)
         printf("\n");
     }
 }
+
+void cfg_delete(Cfg* cfg)
+{
+    if (cfg) {
+        if (cfg->blocks) {
+            for (int i = 0; i < vector_length(cfg->blocks); i++) {
+                BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+                if (block->successors) {
+                    vector_length(block->successors);
+                }
+                free(block);
+            }
+
+            vector_delete(cfg->blocks);
+        }
+        free(cfg);
+    }
+}

@@ -30,6 +30,7 @@ Graph* graph_from_cfg(Cfg* cfg)
         }
 
         vector_delete(block->successors);
+        block->successors = NULL;
         vector_push(graph->nodes, &node);
     }
 
@@ -322,4 +323,21 @@ Graph* graph_from_graph_math_repr(GraphMathRepr* graph_mr)
     }
 
     return graph;
+}
+
+void graph_delete(Graph* graph)
+{
+    if (graph) {
+        if (graph->nodes) {
+            for (int i = 0; i < vector_length(graph->nodes); i++) {
+                Node* node = vector_get(graph->nodes, i);
+                vector_delete(node->successors);
+            }
+
+            vector_delete(graph->nodes);
+        }
+
+        free(graph->not_valid);
+        free(graph);
+    }
 }

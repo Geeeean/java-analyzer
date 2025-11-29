@@ -161,3 +161,19 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
 
     return result;
 }
+
+void ir_program_delete()
+{
+    IRItem* prev = NULL;
+    for (IRItem* it = it_map; it != NULL; it = it->next) {
+        LOG_DEBUG("1");
+        free(prev);
+        LOG_DEBUG("2");
+        free(it->method_id);
+        LOG_DEBUG("3");
+        ir_function_delete(it->ir_function);
+        LOG_DEBUG("4");
+        cfg_delete(it->cfg);
+        prev = it;
+    }
+}
