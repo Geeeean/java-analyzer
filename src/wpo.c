@@ -428,7 +428,6 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
 
 #ifdef DEBUG
     for (int i = 0; i < num_components; i++) {
-        LOG_DEBUG("COMPONENT %d", i);
         for (int j = 0; j < num_nodes; j++) {
             printf("%2d ", j);
         }
