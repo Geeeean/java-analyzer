@@ -1,10 +1,11 @@
 #ifndef TESTCASECORPUS_H
 #define TESTCASECORPUS_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdatomic.h>
 #include <pthread.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 // ------------------------------------
 // TestCase
@@ -18,6 +19,7 @@ typedef struct {
   size_t   cov_bytes;
 
   unsigned int fuzz_count;
+  bool in_corpus;
 } TestCase;
 
 typedef struct {

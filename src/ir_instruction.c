@@ -260,128 +260,45 @@ static IrInstructionParseResult parse_get(IrInstruction* ir_instruction, cJSON* 
     return IPR_OK;
 }
 
-static IrInstructionParseResult parse_invoke(IrInstruction* ir_instruction, cJSON* instruction_json)
+static IrInstructionParseResult
+parse_invoke(IrInstruction* ir_instruction, cJSON* instruction_json)
 {
     InvokeOP* invoke = &ir_instruction->data.invoke;
-    cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
-    if (!method_obj || !cJSON_IsObject(method_obj)) {
-        LOG_ERROR("Invoke instruction missing or invalid 'method' field");
-        return IPR_MALFORMED;
-    }
 
-    cJSON* name_obj = cJSON_GetObjectItem(method_obj, "name");
-    if (!name_obj || !cJSON_IsString(name_obj)) {
-        LOG_ERROR("Invoke instruction missing or invalid 'name' field");
-        return IPR_MALFORMED;
-    }
-    invoke->method_name = strdup(cJSON_GetStringValue(name_obj));
+    // Initialize to safe defaults
+    invoke->ref_name    = NULL;
+    invoke->method_name = NULL;
+    invoke->args        = NULL;
+    invoke->args_len    = 0;
+    invoke->return_type = NULL;
 
-    cJSON* ref_obj = cJSON_GetObjectItem(method_obj, "ref");
-    if (!ref_obj || !cJSON_IsObject(ref_obj)) {
-        LOG_ERROR("Invoke instruction missing or invalid 'ref' field");
-        return IPR_MALFORMED;
-    }
-    cJSON* ref_name_obj = cJSON_GetObjectItem(ref_obj, "name");
-    if (!ref_name_obj || !cJSON_IsString(ref_name_obj)) {
-        LOG_ERROR("Invoke instruction missing or invalid 'name' field in 'ref'");
-        return IPR_MALFORMED;
-    }
-    invoke->ref_name = strdup(cJSON_GetStringValue(ref_name_obj));
-
-    cJSON* args_obj = cJSON_GetObjectItem(method_obj, "args");
-    if (!args_obj || !cJSON_IsArray(args_obj)) {
-        LOG_ERROR("Invoke instruction missing or invalid 'args' field");
-        return IPR_MALFORMED;
-    }
-
-    int capacity = 10;
-    invoke->args = malloc(sizeof(Type*) * capacity);
-    invoke->args_len = 0;
-
-    cJSON* buffer;
-    cJSON_ArrayForEach(buffer, args_obj)
-    {
-        if (!cJSON_IsString(buffer)) {
-            LOG_ERROR("Invoke instruction missing or invalid 'args' field");
-            return IPR_MALFORMED;
-        }
-
-        char* type = cJSON_GetStringValue(buffer);
-
-        Type* to_add;
-
-        if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
-            to_add = TYPE_INT;
-        } else if (strcmp(type, invoke_args_type_signature[TK_BOOLEAN]) == 0) {
-            to_add = TYPE_BOOLEAN;
-        } else {
-            LOG_ERROR("Invoke instruction not supported type in 'args' field: %s", type);
-            return IPR_MALFORMED;
-        }
-
-        if (capacity <= invoke->args_len) {
-            capacity *= 2;
-            invoke->args = realloc(invoke->args, sizeof(Type*) * capacity);
-        }
-
-        invoke->args[invoke->args_len] = to_add;
-        invoke->args_len++;
-    }
-
-    if (invoke->args_len) {
-        invoke->args = realloc(invoke->args, invoke->args_len * sizeof(Type*));
-        if (!invoke->args) {
+    // --- ref (optional) ---
+    cJSON* ref_obj = cJSON_GetObjectItemCaseSensitive(instruction_json, "ref");
+    if (cJSON_IsString(ref_obj) && ref_obj->valuestring) {
+        invoke->ref_name = strdup(ref_obj->valuestring);
+        if (!invoke->ref_name) {
+            LOG_ERROR("invoke: OOM duplicating ref_name");
             return IPR_ALLOC_ERROR;
         }
-    } else {
-        invoke->args = NULL;
     }
 
-    cJSON* returns_obj = cJSON_GetObjectItem(method_obj, "returns");
-    if (!returns_obj) {
-        LOG_ERROR("Invoke instruction missing or invalid 'returns' field");
-        return IPR_MALFORMED;
-    }
-
-    if (cJSON_IsNull(returns_obj)) {
-        invoke->return_type = TYPE_VOID;
-    } else if (cJSON_IsString(returns_obj)) {
-        char* type = cJSON_GetStringValue(returns_obj);
-        if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
-            invoke->return_type = TYPE_INT;
-        } else {
-            LOG_ERROR("Unable to handle invoke instruction 'returns' type");
-            return IPR_MALFORMED;
+    // --- method (optional) ---
+    cJSON* method_obj =
+        cJSON_GetObjectItemCaseSensitive(instruction_json, "method");
+    if (cJSON_IsString(method_obj) && method_obj->valuestring) {
+        invoke->method_name = strdup(method_obj->valuestring);
+        if (!invoke->method_name) {
+            LOG_ERROR("invoke: OOM duplicating method_name");
+            free(invoke->ref_name);
+            invoke->ref_name = NULL;
+            return IPR_ALLOC_ERROR;
         }
-    } else if (cJSON_IsObject(returns_obj)) {
-        cJSON* return_kind = cJSON_GetObjectItem(returns_obj, "kind");
-        cJSON* return_type = cJSON_GetObjectItem(returns_obj, "type");
-        if (!return_kind || !return_type || !cJSON_IsString(return_kind) || !cJSON_IsString(return_type)) {
-            LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
-            return IPR_MALFORMED;
-        }
-
-        char* kind = cJSON_GetStringValue(return_kind);
-        char* type = cJSON_GetStringValue(return_type);
-
-        if (strcmp(kind, invoke_args_type_signature[TK_ARRAY]) == 0) {
-            if (strcmp(type, invoke_args_type_signature[TK_INT]) == 0) {
-                invoke->return_type = make_array_type(TYPE_INT);
-            } else {
-                LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
-                return IPR_MALFORMED;
-            }
-        } else {
-            LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
-            return IPR_MALFORMED;
-        }
-    } else {
-        LOG_ERROR("Unable to handle invoke instruction 'returns' field: %s", cJSON_Print(returns_obj));
-        return IPR_MALFORMED;
     }
 
     return IPR_OK;
 }
+
+
 
 static IrInstructionParseResult parse_throw(IrInstruction* ir_instruction, cJSON* instruction_json)
 {
@@ -601,11 +518,11 @@ ir_instruction_parse(cJSON* instruction_json)
 
     ir_instruction->opcode = opcode_parse(instruction_json);
     if (ir_instruction->opcode < 0 || ir_instruction->opcode >= OP_COUNT) {
-        LOG_ERROR("Unknown opcode: %d", ir_instruction->opcode);
+        LOG_ERROR("Unknown opcode: %s", opcode_print(ir_instruction->opcode));
         goto cleanup;
     }
 
-    LOG_DEBUG("Parsing opcode: %s", opcode_print(instruction->opcode));
+    LOG_DEBUG("Parsing opcode: %s", opcode_print(ir_instruction->opcode));
 
     if (ir_instruction_table[ir_instruction->opcode](ir_instruction, instruction_json)) {
         goto cleanup;
@@ -617,3 +534,50 @@ cleanup:
     free(ir_instruction);
     return NULL;
 }
+
+void ir_instruction_delete(IrInstruction* instr)
+{
+    if (!instr) return;
+
+    switch (instr->opcode) {
+
+    case OP_INVOKE:
+        if (instr->data.invoke.ref_name)
+            free(instr->data.invoke.ref_name);
+        if (instr->data.invoke.method_name)
+            free(instr->data.invoke.method_name);
+        // args, args_len, return_type are unused → nothing to free
+        break;
+
+    case OP_PUSH:
+        // PushOP contains only primitive values
+        break;
+
+    case OP_LOAD:
+    case OP_STORE:
+    case OP_BINARY:
+    case OP_RETURN:
+    case OP_IF_ZERO:
+    case OP_IF:
+    case OP_GOTO:
+    case OP_DUP:
+    case OP_NEW:
+    case OP_CAST:
+    case OP_THROW:
+    case OP_NEW_ARRAY:
+    case OP_ARRAY_LENGTH:
+    case OP_ARRAY_LOAD:
+    case OP_ARRAY_STORE:
+    case OP_INCR:
+    case OP_GET:
+        // All POD-only instructions → nothing to free
+        break;
+
+    default:
+        // Unknown opcode, nothing to free
+        break;
+    }
+
+    free(instr);
+}
+

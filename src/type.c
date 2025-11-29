@@ -66,10 +66,16 @@ Type* get_type(char** t)
         type = TYPE_VOID;
         break;
 
-    case '[': // array
-        (*t)++;               // consume '['
-        type = make_array_type(get_type(t));
+    case '[': {
+        (*t)++;
+        Type* element = get_type(t);
+        if (!element) {
+            LOG_ERROR("Array element type malformed");
+            return NULL;
+        }
+        type = make_array_type(element);
         break;
+    }
 
     case 'L': { // class / reference type: L...;
         (*t)++; // skip 'L'
@@ -98,6 +104,11 @@ Type* get_type(char** t)
 
 Type* make_array_type(Type* element_type)
 {
+    if (!element_type) {
+        LOG_ERROR("make_array_type: element_type NULL");
+        return NULL;
+    }
+
     for (Type* t = type_table; t != NULL; t = t->next) {
         if (t->kind == TK_ARRAY && t->array.element_type == element_type)
             return t;

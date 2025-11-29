@@ -36,7 +36,6 @@ RuntimeResult interpreter_run(VMContext* vm_context);
 
 size_t interpreter_instruction_count(const Method* m, const Config* cfg);
 void interpreter_free(VMContext* vm);
-void instruction_table_map_free();
 void VMContext_set_coverage_bitmap(VMContext* vm, uint8_t* bitmap);
 void VMContext_set_locals(VMContext* vm, Value* locals, int locals_count);
 Value* build_locals_from_str(
@@ -53,10 +52,11 @@ Value* build_locals_fast(Heap* heap,
 
 void dump_locals(Heap* heap, Value *locals, int count);
 
-InstructionTable* instruction_table_get_persistent(const Method* m);
-void instruction_table_persistent_free_all(void);
-void instruction_table_persistent_build_all(const Method* root, const Config* cfg);
 Heap* VMContext_get_heap(VMContext* vm);
 char* get_method_signature(InvokeOP* invoke);
-
+VMContext* persistent_ir_interpreter_setup(
+    const Method* m,
+    const Options* opts,
+    const Config* cfg,
+    uint8_t* thread_bitmap);
 #endif

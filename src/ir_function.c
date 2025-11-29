@@ -1,5 +1,7 @@
 #include "ir_function.h"
+
 #include "cJSON/cJSON.h"
+#include "log.h"
 #include "method.h"
 
 static IrFunction*
@@ -11,8 +13,8 @@ parse_bytecode(cJSON* method)
     }
 
     ir_function->capacity = IR_FUNCTION_SIZE;
-    ir_function->count = 0;
-;
+    ir_function->count    = 0;
+
     cJSON* code = cJSON_GetObjectItem(method, "code");
     if (!code) {
         goto cleanup;
@@ -24,24 +26,32 @@ parse_bytecode(cJSON* method)
     }
 
     cJSON* buffer;
-    int i = 0;
     cJSON_ArrayForEach(buffer, bytecode)
     {
-        IrInstruction* ir_instruction = ir_instruction_parse(buffer);
-        ir_function->count++;
-        ir_instruction->seq = i;
-        if (!ir_instruction) {
+        // Always use count as the write index
+        int idx = ir_function->count;
+
+        if (idx >= IR_FUNCTION_SIZE) {
+            LOG_ERROR("IR function too large (max=%d), truncating", IR_FUNCTION_SIZE);
             goto cleanup;
         }
 
-        ir_function->ir_instructions[i] = ir_instruction;
-        i++;
+        IrInstruction* ir_instruction = ir_instruction_parse(buffer);
+        if (!ir_instruction) {
+            LOG_ERROR("Failed to parse IR instruction at index %d", idx);
+            goto cleanup;
+        }
+
+        ir_instruction->seq = idx;
+        ir_function->ir_instructions[idx] = ir_instruction;
+
+        ir_function->count++;
     }
 
     return ir_function;
 
-cleanup:
-    ir_function_delete(ir_function);
+    cleanup:
+        ir_function_delete(ir_function);
     return NULL;
 }
 
@@ -87,10 +97,13 @@ cleanup:
 
 void ir_function_delete(IrFunction* ir_function)
 {
-    if (ir_function) {
-        for (int i = 0; i < IR_FUNCTION_SIZE; i++) {
-            free(ir_function->ir_instructions[i]);
-        }
+    if (!ir_function)
+        return;
+
+    for (int i = 0; i < ir_function->count; i++) {
+        IrInstruction* instr = ir_function->ir_instructions[i];
+        if (instr)
+            ir_instruction_delete(instr);
     }
 
     free(ir_function);

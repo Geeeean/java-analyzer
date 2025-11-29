@@ -2,13 +2,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdatomic.h>
 
 #define CORPUS_INITIAL_CAPACITY  1000000UL  // 1 million entries; adjust if needed
 
-
-// -----------------------------
-// TestCase helpers
-// -----------------------------
+// Single global lock protecting all Corpus mutations and reads.
+// If you ever want per-corpus locks, move this into the Corpus struct instead.
+static pthread_mutex_t corpus_lock = PTHREAD_MUTEX_INITIALIZER;
 
 uint64_t testcase_hash(const TestCase *tc)
 {
@@ -49,6 +50,7 @@ TestCase* create_testCase(const uint8_t* data,
     tc->cov_bytes = cov_bytes;
 
     tc->fuzz_count = 0;
+    tc->in_corpus = false;
 
     return tc;
 }
@@ -124,10 +126,16 @@ void corpus_free(Corpus* corpus)
         return;
     }
 
+    // In normal usage, you should only call this when no other threads
+    // are touching the corpus anymore.
+    pthread_mutex_lock(&corpus_lock);
+
     size_t n = atomic_load(&corpus->size);
     for (size_t i = 0; i < n; i++) {
         testcase_free(corpus->items[i]);
     }
+
+    pthread_mutex_unlock(&corpus_lock);
 
     free(corpus->items);
     free(corpus);
@@ -139,37 +147,47 @@ void corpus_add(Corpus* corpus, TestCase* tc)
         return;
     }
 
-    size_t idx = atomic_fetch_add_explicit(
-        &corpus->size,
-        (size_t)1,
-        memory_order_relaxed
-    );
+    pthread_mutex_lock(&corpus_lock);
 
+    size_t idx = atomic_load_explicit(&corpus->size, memory_order_relaxed);
     if (idx >= corpus->capacity) {
         // Corpus full → drop this testcase (or handle as you like)
-        // Clamp size so it doesn't keep growing
-        atomic_store_explicit(&corpus->size, corpus->capacity, memory_order_relaxed);
+        pthread_mutex_unlock(&corpus_lock);
         testcase_free(tc);
         return;
     }
 
+    // Write the pointer first, then publish the updated size.
     corpus->items[idx] = tc;
+    atomic_store_explicit(&corpus->size, idx + 1, memory_order_release);
+    tc->in_corpus = true;
+    pthread_mutex_unlock(&corpus_lock);
 }
 
 size_t corpus_size(Corpus* corpus)
 {
     if (!corpus) return 0;
-    return atomic_load_explicit(&corpus->size, memory_order_acquire);
+
+    pthread_mutex_lock(&corpus_lock);
+    size_t n = atomic_load_explicit(&corpus->size, memory_order_acquire);
+    pthread_mutex_unlock(&corpus_lock);
+
+    return n;
 }
 
 TestCase* corpus_get(Corpus* corpus, size_t idx)
 {
     if (!corpus) return NULL;
 
+    pthread_mutex_lock(&corpus_lock);
+
     size_t n = atomic_load_explicit(&corpus->size, memory_order_acquire);
-    if (idx >= n) {
-        return NULL;
+    TestCase* tc = NULL;
+    if (idx < n) {
+        tc = corpus->items[idx];
     }
 
-    return corpus->items[idx];
+    pthread_mutex_unlock(&corpus_lock);
+
+    return tc;
 }

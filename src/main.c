@@ -5,6 +5,7 @@
 #include "heap.h"
 #include "info.h"
 #include "interpreter.h"
+#include "ir_program.h"
 #include "log.h"
 #include "method.h"
 #include "outcome.h"
@@ -228,21 +229,9 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
     }
 
     interpreter_free(vm_context);
-    instruction_table_map_free();
-
-    /*add VMContext cleanup */
 }
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
-
-#ifdef _OPENMP
-    printf("OpenMP ENABLED (_OPENMP=%d)\n", _OPENMP);
-#else
-    printf("OpenMP DISABLED\n");
-#endif
-
-    double start_time = get_current_time();
-    write(2, "FUZZER REACHED\n", 15);
 
     size_t instruction_count = interpreter_instruction_count(m, cfg);
 
@@ -251,113 +240,43 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
         return;
     }
 
-    Fuzzer* f = fuzzer_init(instruction_count);
-    if (!f) {
-        LOG_ERROR("Fuzzer init failed.");
+    Vector* arg_types = method_get_arguments_as_types(m);
+    if (!arg_types) {
+        LOG_ERROR("Argument types missing.");
         coverage_reset_all();
         return;
     }
 
-    Vector* arg_types = method_get_arguments_as_types(m);
-    if (!arg_types) {
-        LOG_ERROR("Argument types missing.");
-        fuzzer_free(f);
+    Fuzzer* f = fuzzer_init(instruction_count, arg_types);
+    if (!f) {
+        LOG_ERROR("Fuzzer init failed.");
+        vector_delete(arg_types);
         coverage_reset_all();
         return;
     }
 
     int thread_count = 1;
-
-    /* 1. Prefer OpenMP if available */
-
 #ifdef _OPENMP
     int omp_threads = omp_get_max_threads();
-
-    char* env = getenv("OMP_NUM_THREADS");
-    if (env) {
-        int env_threads = atoi(env);
-        if (env_threads > 0)
-            omp_threads = env_threads;
-    }
-
-    if (omp_threads > 1)
-        thread_count = omp_threads;
+    thread_count = omp_threads;
 #endif
 
-    if (cfg->threads_set && cfg->threads > 0)
-        thread_count = cfg->threads;
-
-    printf("[FUZZ] Using %d thread(s)\n", thread_count);
-
-
-    Vector* results = NULL;
-
-    results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
+    Vector* results =
+        fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
 
     size_t covered = coverage_global_count();
-   /* printf("\n=== INTERESTING TESTCASES ===\n");
-
-    for (size_t i = 0; i < vector_length(results); i++) {
-
-        TestCase* tc = *(TestCase**) vector_get(results, i);
-
-        printf("\n--- Case %zu ---\n", i);
-
-        printf("Raw bytes (%zu): ", tc->len);
-        for (size_t j = 0; j < tc->len; j++)
-            printf("%02x ", tc->data[j]);
-        printf("\n");
-
-        Heap* tmp_heap = heap_create();
-        if (!tmp_heap) {
-            printf("  <FAILED TO CREATE TEMP HEAP>\n");
-            continue;
-        }
-
-        heap_reset(tmp_heap);
-
-        int locals_count = 0;
-        Value* locals = build_locals_fast(tmp_heap,
-                                          m,
-                                          tc->data,
-                                          tc->len,
-                                          &locals_count);
-
-        if (!locals) {
-            printf("  <FAILED TO RECONSTRUCT LOCALS>\n");
-            heap_free(tmp_heap);
-            continue;
-        }
-
-        dump_locals(tmp_heap, locals, locals_count);
-
-        free(locals);
-        heap_free(tmp_heap);
-    } */
 
     printf("\n=== FINAL COVERAGE REPORT ===\n");
     printf("Instructions covered: %zu / %zu\n", covered, instruction_count);
 
-    if (instruction_count > 0) {
-        printf("Coverage: %.2f%%\n", (covered * 100.0) / instruction_count);
-    }
-
-    printf("Coverage bitmap (first 64 PCs): ");
-    coverage_global_print(instruction_count);
-
-
-
     fuzzer_free(f);
-    instruction_table_map_free();
-
     vector_delete(arg_types);
     vector_delete(results);
 
     coverage_reset_all();
-
-    double end_time = get_current_time();
-    printf("Total runtime: %f milliseconds\n", end_time - start_time);
+    ir_program_free_all();
 }
+
 
 
 

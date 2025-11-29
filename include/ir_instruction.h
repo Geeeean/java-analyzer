@@ -29,5 +29,6 @@ typedef struct {
 
 IrInstruction*
 ir_instruction_parse(cJSON* instruction_json);
+void ir_instruction_delete(IrInstruction* inst);
 
 #endif

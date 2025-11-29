@@ -1,12 +1,15 @@
 #include "itgraph.h"
-#include "interpreter.h"
-#include "opcode.h"
-#include "vector.h"
 #include "config.h"
+#include "interpreter.h"
+#include "ir_program.h"      // ⬅ use the IR cache API, not raw ir_function.h
+#include "ir_function.h"
+#include "ir_instruction.h"
+#include "method.h"
+#include "vector.h"
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-
 
 typedef struct {
     char* sig;
@@ -28,10 +31,21 @@ static Method* intern_method(const char* sig)
     Method* m = method_create(sig);
     if (!m) return NULL;
 
-    method_cache = realloc(method_cache,
-                           sizeof(MethodEntry) * (method_cache_count + 1));
+    MethodEntry* new_cache =
+        realloc(method_cache, sizeof(MethodEntry) * (method_cache_count + 1));
+    if (!new_cache) {
+        method_delete(m);
+        return NULL;
+    }
+    method_cache = new_cache;
 
-    method_cache[method_cache_count].sig = strdup(sig);
+    char* sig_copy = strdup(sig);
+    if (!sig_copy) {
+        method_delete(m);
+        return NULL;
+    }
+
+    method_cache[method_cache_count].sig = sig_copy;
     method_cache[method_cache_count].method = m;
     method_cache_count++;
 
@@ -47,25 +61,24 @@ static bool seen_before(const Method* m, Vector* seen)
     return false;
 }
 
-
 static void dfs_collect(const Method* m,
                         const Config* cfg,
                         Vector* out,
                         Vector* seen)
 {
     if (!m) return;
-
     if (seen_before(m, seen))
         return;
 
     vector_push(seen, &m);
     vector_push(out, &m);
 
-    InstructionTable* t = instruction_table_build(m, cfg);
-    if (!t) return;
+    // Use the shared IR cache
+    IrFunction* ir = ir_program_get_function(m, cfg);
+    if (!ir) return;
 
-    for (int pc = 0; pc < t->count; pc++) {
-        Instruction* inst = t->instructions[pc];
+    for (int pc = 0; pc < ir->count; pc++) {
+        IrInstruction* inst = ir->ir_instructions[pc];
         if (!inst) continue;
 
         if (inst->opcode == OP_INVOKE) {
@@ -76,22 +89,20 @@ static void dfs_collect(const Method* m,
             char* sig = get_method_signature(iv);
             if (!sig) continue;
 
-            // Deduplicate and keep stable Method pointer
             Method* callee = intern_method(sig);
             free(sig);
 
-            if (!callee) continue;
-
-            dfs_collect(callee, cfg, out, seen);
+            if (callee)
+                dfs_collect(callee, cfg, out, seen);
         }
     }
-}
 
+}
 
 Vector* resolve_all_methods_reachable_from(const Method* root,
                                            const Config* cfg)
 {
-    Vector* out = vector_new(sizeof(Method*));
+    Vector* out  = vector_new(sizeof(Method*));
     Vector* seen = vector_new(sizeof(Method*));
 
     dfs_collect(root, cfg, out, seen);

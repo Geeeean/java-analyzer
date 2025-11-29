@@ -17,7 +17,8 @@ typedef struct {
 } Fuzzer;
 
 
-Fuzzer* fuzzer_init(size_t instruction_count);
+Fuzzer* fuzzer_init(size_t instruction_count,
+                     Vector* arg_types);
 void    fuzzer_free(Fuzzer* f);
 
 Vector* fuzzer_run_single(Fuzzer* f,

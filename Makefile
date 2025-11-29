@@ -5,6 +5,7 @@ LFLAGS = -L$(LIBRARY_DIR) -Llib/tree_sitter
 CFLAGS ?= -O2 -g -std=c11 -Wall -Wextra
 CFLAGS += -fopenmp
 LDFLAGS += -fopenmp
+ASAN_FLAGS = -fsanitize=address -fno-omit-frame-pointer
 
 DEBUG_FLAGS = -O0 -DDEBUG=1 -g
 
@@ -53,6 +54,16 @@ $(DEBUG_TARGET): $(DEBUG_OBJ)
 $(BUILD_DIR)/$(BUILD_DEBUG_DIR)/%.o: %.c $(DEPS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(IFLAGS) $(DEBUG_FLAGS) -c $< -o $@
+
+ASAN_TARGET = analyzer_asan
+ASAN_OBJ = $(DEBUG_OBJ)
+
+asan: $(ASAN_TARGET)
+
+$(ASAN_TARGET): $(ASAN_OBJ)
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(CFLAGS) $(ASAN_FLAGS) -o $(BIN_DIR)/$@ $^ $(LFLAGS) $(LDFLAGS) $(ASAN_FLAGS) $(LLIBS)
+
 
 .PHONY: clean
 clean:
