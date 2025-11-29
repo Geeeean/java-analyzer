@@ -1,6 +1,7 @@
 #ifndef IR_PROGRAM
 #define IR_PROGRAM
 
+#include "cfg.h"
 #include "config.h"
 #include "ir_function.h"
 #include "method.h"

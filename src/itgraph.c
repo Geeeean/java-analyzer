@@ -1,6 +1,6 @@
 #include "itgraph.h"
 #include "config.h"
-#include "interpreter.h"
+#include "interpreter_concrete.h"
 #include "ir_program.h"      // ⬅ use the IR cache API, not raw ir_function.h
 #include "ir_function.h"
 #include "ir_instruction.h"

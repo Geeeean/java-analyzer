@@ -80,13 +80,6 @@ void* vector_get(const Vector* v, size_t index)
     return (char*)v->data + index * v->element_size;
 }
 
-void* vector_pop(Vector* v)
-{
-    if (!v || v->length == 0) return NULL;
-    v->length--;
-    return (char*)v->data + v->length * v->element_size;
-}
-
 size_t vector_length(const Vector* v)
 {
     return v->length;

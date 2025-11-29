@@ -1,14 +1,17 @@
 #ifndef IR_FUNCTION_H
 #define IR_FUNCTION_H
 
-#include "config.h"
-#include "method.h"
+#include "ir_instruction.h"
 
-typedef struct {
-    Vector* ir_instructions;
+#define IR_FUNCTION_SIZE 4096
+
+typedef struct IrFunction {
+    int count;
+    int capacity;
+    IrInstruction* ir_instructions[IR_FUNCTION_SIZE];
 } IrFunction;
 
 IrFunction* ir_function_build(const Method* m, const Config* cfg);
-void ir_function_delete(IrFunction* ir_function);
+void ir_function_delete(IrFunction* ir);
 
 #endif

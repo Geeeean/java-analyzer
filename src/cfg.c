@@ -11,17 +11,18 @@
 
 static BasicBlock* basic_block_new(int id)
 {
-    BasicBlock* basic_block = malloc(sizeof(BasicBlock));
-    if (!basic_block) {
-        return NULL;
-    }
+    BasicBlock* b = malloc(sizeof(BasicBlock));
+    if (!b) return NULL;
 
-    basic_block->id = id;
-    basic_block->og_id = id;
-    basic_block->successors = vector_new(sizeof(BasicBlock*));
-    basic_block->num_locals = 0;
+    b->id = id;
+    b->og_id = id;
+    b->successors = vector_new(sizeof(BasicBlock*));
+    b->num_locals = 0;
+    b->ir_function = NULL;
+    b->ip_start = 0;
+    b->ip_end = 0;
 
-    return basic_block;
+    return b;
 }
 
 Cfg* cfg_build(IrFunction* ir_function, int num_locals)
@@ -40,111 +41,65 @@ Cfg* cfg_build(IrFunction* ir_function, int num_locals)
     int len = vector_length(ir_function->ir_instructions);
 
     is_leader = calloc(len, sizeof(int8_t));
-    if (!is_leader) {
-        result = FAILURE;
-        goto cleanup;
-    }
-
     block_map = calloc(len, sizeof(BasicBlock*));
-    if (!block_map) {
+    if (!is_leader || !block_map) {
         result = FAILURE;
         goto cleanup;
     }
 
-    // leaders assignment
+    // mark leaders
     is_leader[0] = 1;
     for (int i = 0; i < len; i++) {
-        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
-        if (!ir_instruction) {
-            result = FAILURE;
-            goto cleanup;
-        }
-
-        switch (ir_instruction->opcode) {
-        case OP_IF_ZERO:
-        case OP_IF: {
-            int target = ir_instruction->data.ift.target;
-            is_leader[target] = 1;
-            if (i + 1 < len) {
-                is_leader[i + 1] = 1;
-            }
-            break;
-        };
-        case OP_GOTO: {
-            int target = ir_instruction->data.go2.target;
-            is_leader[target] = 1;
-            break;
-        };
-        default:
-            break;
+        IrInstruction* ins = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
+        switch (ins->opcode) {
+            case OP_IF_ZERO:
+            case OP_IF:
+                is_leader[ins->data.ift.target] = 1;
+                if (i + 1 < len) is_leader[i + 1] = 1;
+                break;
+            case OP_GOTO:
+                is_leader[ins->data.go2.target] = 1;
+                break;
+            default:
+                break;
         }
     }
 
     cfg = malloc(sizeof(Cfg));
-    if (!cfg) {
-        result = FAILURE;
-        goto cleanup;
-    }
-
     cfg->blocks = vector_new(sizeof(BasicBlock*));
-    if (!cfg->blocks) {
-        result = FAILURE;
-        goto cleanup;
-    }
 
     int id = 0;
     BasicBlock* last = NULL;
 
-    // basic blocks build
+    // build blocks
     for (int i = 0; i < len; i++) {
-        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
-        if (!ir_instruction) {
-            result = FAILURE;
-            goto cleanup;
-        }
 
-        Opcode opcode = ir_instruction->opcode;
+        IrInstruction* ins = *(IrInstruction**)vector_get(ir_function->ir_instructions, i);
+        Opcode op = ins->opcode;
 
-        int8_t is_terminator = opcode == OP_THROW
-            || opcode == OP_RETURN
-            || opcode == OP_GOTO
-            || opcode == OP_IF
-            || opcode == OP_IF_ZERO;
+        int is_term =
+            op == OP_THROW ||
+            op == OP_RETURN ||
+            op == OP_GOTO ||
+            op == OP_IF ||
+            op == OP_IF_ZERO;
 
-        // start a new block
         if (is_leader[i]) {
             if (last) {
                 last->ip_end = i - 1;
                 vector_push(cfg->blocks, &last);
                 block_map[last->ip_start] = last;
-                last = NULL;
             }
-
-            last = basic_block_new(id);
-            if (!last) {
-                result = FAILURE;
-                goto cleanup;
-            }
-
+            last = basic_block_new(id++);
             last->ip_start = i;
-            id++;
         }
 
-        // close the block here
-        if (is_terminator) {
+        if (is_term) {
             if (!last) {
-                last = basic_block_new(id);
-                if (!last) {
-                    result = FAILURE;
-                    goto cleanup;
-                }
-
+                last = basic_block_new(id++);
                 last->ip_start = i;
-                id++;
             }
-
             last->ip_end = i;
-
             vector_push(cfg->blocks, &last);
             block_map[last->ip_start] = last;
             last = NULL;
@@ -153,163 +108,151 @@ Cfg* cfg_build(IrFunction* ir_function, int num_locals)
 
     if (last) {
         last->ip_end = len - 1;
-        block_map[last->ip_start] = last;
         vector_push(cfg->blocks, &last);
-
-        last = NULL;
+        block_map[last->ip_start] = last;
     }
 
-    // assign successors
+    // successors
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        if (!block) {
-            result = FAILURE;
-            goto cleanup;
-        }
 
-        IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, block->ip_end);
-        if (!ir_instruction) {
-            result = FAILURE;
-            goto cleanup;
-        }
-
-        switch (ir_instruction->opcode) {
-        case OP_RETURN:
-        case OP_THROW:
-            break;
-        case OP_GOTO: {
-            BasicBlock* target_block = block_map[ir_instruction->data.go2.target];
-            if (!target_block) {
-                result = FAILURE;
-                goto cleanup;
-            }
-            vector_push(block->successors, &target_block);
-            break;
-        }
-        case OP_IF:
-        case OP_IF_ZERO: {
-            BasicBlock* target_block = block_map[ir_instruction->data.ift.target];
-            if (!target_block) {
-                result = FAILURE;
-                goto cleanup;
-            }
-            vector_push(block->successors, &target_block);
-
-            if (i + 1 < vector_length(cfg->blocks)) {
-                BasicBlock* next_block = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
-                vector_push(block->successors, &next_block);
-            }
-            break;
-        }
-        default: {
-            if (i + 1 < vector_length(cfg->blocks)) {
-                BasicBlock* next_block = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
-                vector_push(block->successors, &next_block);
-            }
-            break;
-        }
-        }
-    }
-
-    visited = calloc(vector_length(cfg->blocks), sizeof(int8_t));
-    if (!visited) {
-        result = FAILURE;
-        goto cleanup;
-    }
-
-    for (int i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
         block->ir_function = ir_function;
         block->num_locals = num_locals;
+
+        IrInstruction* ins = *(IrInstruction**)vector_get(
+            ir_function->ir_instructions, block->ip_end);
+
+        switch (ins->opcode) {
+            case OP_RETURN:
+            case OP_THROW:
+                break;
+
+            case OP_GOTO: {
+                BasicBlock* tgt = block_map[ins->data.go2.target];
+                vector_push(block->successors, &tgt);
+                break;
+            }
+
+            case OP_IF:
+            case OP_IF_ZERO: {
+                BasicBlock* tgt = block_map[ins->data.ift.target];
+                vector_push(block->successors, &tgt);
+
+                if (i + 1 < vector_length(cfg->blocks)) {
+                    BasicBlock* fall = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
+                    vector_push(block->successors, &fall);
+                }
+                break;
+            }
+
+            default:
+                if (i + 1 < vector_length(cfg->blocks)) {
+                    BasicBlock* fall = *(BasicBlock**)vector_get(cfg->blocks, i + 1);
+                    vector_push(block->successors, &fall);
+                }
+        }
     }
 
 cleanup:
-    free(visited);
-    free(block_map);
     free(is_leader);
-    if (result) {
-        vector_delete(cfg->blocks);
-        free(cfg);
-        cfg = NULL;
-    }
+    free(block_map);
+    free(visited);
 
     return cfg;
 }
 
 int cfg_inline(Cfg* cfg, Config* config, Method* m)
 {
-    if (!cfg) {
-        return FAILURE;
-    }
+    if (!cfg) return FAILURE;
 
     IrFunction* ir_function = ir_program_get_function_ir(m, config);
     BasicBlock* entry = *(BasicBlock**)vector_get(cfg->blocks, 0);
 
     int length = vector_length(cfg->blocks);
+
     for (int i = 0; i < length; i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
+
         for (int j = block->ip_start; j <= block->ip_end; j++) {
-            IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, j);
-            if (ir_instruction->opcode == OP_INVOKE) {
-                int id = vector_length(cfg->blocks);
-                // split the current block
-                BasicBlock* invoke_exit = basic_block_new(id);
-                invoke_exit->ip_start = j + 1;
-                invoke_exit->ip_end = block->ip_end;
-                invoke_exit->ir_function = block->ir_function;
 
-                vector_copy(invoke_exit->successors, block->successors);
-                vector_delete(block->successors);
+            IrInstruction* ins =
+                *(IrInstruction**)vector_get(ir_function->ir_instructions, j);
 
-                block->successors = vector_new(sizeof(BasicBlock*));
-                // vector_push(block->successors, &invoke_exit);
+            if (ins->opcode != OP_INVOKE) continue;
 
-                InvokeOP* invoke = &ir_instruction->data.invoke;
-                char* method_id = get_method_signature(invoke);
-                if (!method_id) {
-                    return FAILURE;
-                }
+            // split block
+            int new_id = vector_length(cfg->blocks);
 
-                char* method_id_copy = strdup(method_id);
-                char* root = strtok(method_id_copy, ".");
+            BasicBlock* invoke_exit = basic_block_new(new_id);
+            invoke_exit->ip_start = j + 1;
+            invoke_exit->ip_end = block->ip_end;
+            invoke_exit->ir_function = block->ir_function;
 
-                if (strcmp(root, "jpamb") != 0) {
-                    continue;
-                }
-
-                free(method_id_copy);
-
-                Method* invoke_method = method_create(method_id);
-                // recursive
-                if (strcmp(method_get_id(invoke_method), method_get_id(m)) == 0) {
-                    vector_push(block->successors, &entry);
-                    exit(1);
-                } else {
-                    Cfg* invoke_cfg = ir_program_get_cfg(invoke_method, config);
-                    cfg_inline(invoke_cfg, config, invoke_method);
-
-                    IrFunction* invoke_function = ir_program_get_function_ir(invoke_method, config);
-
-                    vector_push(cfg->blocks, &invoke_exit);
-                    int actual_len = vector_length(cfg->blocks);
-                    for (int k = 0; k < vector_length(invoke_cfg->blocks); k++) {
-                        BasicBlock* invoke_cfg_block = *(BasicBlock**)vector_get(invoke_cfg->blocks, k);
-                        invoke_cfg_block->id = invoke_cfg_block->id + actual_len;
-
-                        vector_push(cfg->blocks, &invoke_cfg_block);
-
-                        IrInstruction* last = *(IrInstruction**)vector_get(invoke_cfg_block->ir_function->ir_instructions, invoke_cfg_block->ip_end);
-                        if (last->opcode == OP_RETURN) {
-                            vector_push(invoke_cfg_block->successors, &invoke_exit);
-                        }
-                    }
-
-                    BasicBlock* invoke_cfg_entry = *(BasicBlock**)vector_get(invoke_cfg->blocks, 0);
-                    vector_push(block->successors, &invoke_cfg_entry);
-                }
-
-                block->ip_end = j;
+            // copy successors manually
+            for (int s = 0; s < vector_length(block->successors); s++) {
+                BasicBlock* succ = *(BasicBlock**)vector_get(block->successors, s);
+                vector_push(invoke_exit->successors, &succ);
             }
+
+            vector_delete(block->successors);
+            block->successors = vector_new(sizeof(BasicBlock*));
+
+            // resolve invoked method
+            InvokeOP* inv = &ins->data.invoke;
+
+            char* method_id = get_method_signature(inv);
+            if (!method_id) return FAILURE;
+
+            char* method_id_copy = strdup(method_id);  // strtok needs writable
+            char* root = strtok(method_id_copy, ".");
+
+            if (strcmp(root, "jpamb") != 0) {
+                free(method_id_copy);
+                free(method_id);
+                continue;
+            }
+
+            free(method_id_copy);
+
+            Method* invoked = method_create(method_id);
+            free(method_id);
+
+            // detect recursive invoke
+            if (strcmp(method_get_id(invoked), method_get_id(m)) == 0) {
+                vector_push(block->successors, &entry);
+                continue;
+            }
+
+            Cfg* invoked_cfg = ir_program_get_cfg(invoked, config);
+            cfg_inline(invoked_cfg, config, invoked);
+
+            // insert split block
+            vector_push(cfg->blocks, &invoke_exit);
+
+            int base = vector_length(cfg->blocks);
+
+            // insert invoked cfg blocks
+            for (int k = 0; k < vector_length(invoked_cfg->blocks); k++) {
+
+                BasicBlock* b2 =
+                    *(BasicBlock**)vector_get(invoked_cfg->blocks, k);
+
+                b2->id += base;
+                vector_push(cfg->blocks, &b2);
+
+                IrInstruction* last =
+                    *(IrInstruction**)vector_get(
+                        b2->ir_function->ir_instructions, b2->ip_end);
+
+                if (last->opcode == OP_RETURN)
+                    vector_push(b2->successors, &invoke_exit);
+            }
+
+            // entry edge into invoked cfg
+            BasicBlock* entry2 = *(BasicBlock**)vector_get(invoked_cfg->blocks, 0);
+            vector_push(block->successors, &entry2);
+
+            block->ip_end = j;
         }
     }
 
@@ -318,34 +261,33 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
 
 void cfg_print(Cfg* cfg)
 {
-    LOG_DEBUG("PRINT");
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
-        BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        LOG_INFO("BLOCK %d (OG ID: %d), [%d-%d] ir_function: %p, num locals: %d", block->id, block->og_id, block->ip_start, block->ip_end, block->ir_function, block->num_locals);
 
-        if (block->successors)
-            for (int j = 0; j < vector_length(block->successors); j++) {
-                BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
-                LOG_INFO("%2d ", successor->id);
-            }
-        printf("\n");
+        BasicBlock* b = *(BasicBlock**)vector_get(cfg->blocks, i);
+
+        LOG_INFO("BLOCK %d (OG %d) [%d-%d] locals:%d",
+                 b->id, b->og_id, b->ip_start, b->ip_end, b->num_locals);
+
+        for (int s = 0; s < vector_length(b->successors); s++) {
+            BasicBlock* succ = *(BasicBlock**)vector_get(b->successors, s);
+            LOG_INFO("  -> %d", succ->id);
+        }
     }
 }
 
 void cfg_delete(Cfg* cfg)
 {
-    if (cfg) {
-        if (cfg->blocks) {
-            for (int i = 0; i < vector_length(cfg->blocks); i++) {
-                BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-                if (block->successors) {
-                    vector_length(block->successors);
-                }
-                free(block);
-            }
+    if (!cfg) return;
 
-            vector_delete(cfg->blocks);
+    if (cfg->blocks) {
+        for (int i = 0; i < vector_length(cfg->blocks); i++) {
+            BasicBlock* b = *(BasicBlock**)vector_get(cfg->blocks, i);
+            if (b->successors)
+                vector_delete(b->successors);
+            free(b);
         }
-        free(cfg);
+        vector_delete(cfg->blocks);
     }
+
+    free(cfg);
 }

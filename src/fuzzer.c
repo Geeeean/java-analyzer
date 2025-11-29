@@ -6,14 +6,13 @@
 #include "coverage.h"
 #include "fuzzer.h"
 #include "heap.h"
-#include "interpreter.h"
+#include "interpreter_concrete.h"
 #include "log.h"
 #include "type.h"
 #include "value.h"
 #include "vector.h"
 #include <ctype.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <time.h>
 

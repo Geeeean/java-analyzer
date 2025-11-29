@@ -2,7 +2,7 @@
 #define FUZZER_H
 
 #include "cli.h"
-#include "interpreter.h"
+#include "interpreter_concrete.h"
 #include "method.h"
 #include "testCaseCorpus.h"
 #include "vector.h"
