@@ -15,19 +15,20 @@
 #include "tree_sitter/api.h"
 #include "utils.h"
 #include <omp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <signal.h>
 
 /* Forward declarations */
 void run_interpreter(const Method* m, Options opts, const Config* cfg);
 void run_fuzzer(const Method* m, Options opts, const Config* cfg);
 void run_base(Method* m, Options opts, const Config* cfg);
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     int result = 0;
     Config* cfg = NULL;
     Method* m = NULL;
@@ -81,9 +82,9 @@ int main(int argc, char** argv) {
     if (opts.interpreter_only) {
         run_interpreter(m, opts, cfg);
     } else if (opts.fuzzer) {
-        run_fuzzer(m,opts,cfg);
+        run_fuzzer(m, opts, cfg);
     } else {
-        run_base(m,opts,cfg);
+        run_base(m, opts, cfg);
     }
 
 cleanup:
@@ -95,104 +96,100 @@ cleanup:
     return result;
 }
 
-void run_base(Method* m, Options opts, const Config* cfg) {
+void run_base(Method* m, Options opts, const Config* cfg)
+{
     int run = 100;
-        Outcome outcome = new_outcome();
+    Outcome outcome = new_outcome();
 
-        size_t instruction_count = interpreter_instruction_count(m, cfg);
+    size_t instruction_count = interpreter_instruction_count(m, cfg);
 
-        coverage_init(instruction_count);
+    coverage_init(instruction_count);
 
 #pragma omp parallel
-        {
-            struct timespec ts;
-            clock_gettime(CLOCK_REALTIME, &ts);
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
 
-            unsigned int seed = (unsigned int)(
-                ts.tv_nsec ^
-                (ts.tv_sec << 16) ^
-                omp_get_thread_num()
-            );
+        unsigned int seed = (unsigned int)(ts.tv_nsec ^ (ts.tv_sec << 16) ^ omp_get_thread_num());
 
-            srand(seed);
-            srandom(seed);
+        srand(seed);
+        srandom(seed);
 
-            Outcome private = new_outcome();
+        Outcome private = new_outcome();
 
 #pragma omp for
-            for (int i = 0; i < run; i++) {
-                char*start_params = NULL;
+        for (int i = 0; i < run; i++) {
+            char* start_params = NULL;
 
-                Options local_opts = opts;
-                local_opts.parameters = start_params;
+            Options local_opts = opts;
+            local_opts.parameters = start_params;
 
+            VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
 
-                VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
-
-                if (!vm_context) {
-                    LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
-                    continue;
-                }
-                RuntimeResult interpreter_result = interpreter_run(vm_context);
-
-                interpreter_free(vm_context);
-
-                switch (interpreter_result) {
-                case RT_OK:
-                    private.oc_ok = 100;
-                    break;
-                case RT_DIVIDE_BY_ZERO:
-                    private.oc_divide_by_zero = 100;
-                    break;
-                case RT_ASSERTION_ERR:
-                    private.oc_assertion_error = 100;
-                    break;
-                case RT_INFINITE:
-                    private.oc_infinite_loop = 75;
-                    break;
-                case RT_OUT_OF_BOUNDS:
-                    private.oc_out_of_bounds = 100;
-                    break;
-                case RT_NULL_POINTER:
-                    private.oc_null_pointer = 100;
-                    break;
-                case RT_CANT_BUILD_FRAME:
-                case RT_NULL_PARAMETERS:
-                case RT_UNKNOWN_ERROR:
-                default:
-                    LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
-                }
+            if (!vm_context) {
+                LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
+                continue;
             }
+            RuntimeResult interpreter_result = interpreter_run(vm_context);
 
-#pragma omp critical
-            {
-                if (private.oc_assertion_error != 50) {
-                    outcome.oc_assertion_error = private.oc_assertion_error;
-                }
-                if (private.oc_divide_by_zero != 50) {
-                    outcome.oc_divide_by_zero = private.oc_divide_by_zero;
-                }
-                if (private.oc_infinite_loop != 50) {
-                    outcome.oc_infinite_loop = private.oc_infinite_loop;
-                }
-                if (private.oc_null_pointer != 50) {
-                    outcome.oc_null_pointer = private.oc_null_pointer;
-                }
-                if (private.oc_ok != 50) {
-                    outcome.oc_ok = private.oc_ok;
-                }
-                if (private.oc_out_of_bounds != 50) {
-                    outcome.oc_out_of_bounds = private.oc_out_of_bounds;
-                }
+            interpreter_free(vm_context);
+
+            switch (interpreter_result) {
+            case RT_OK:
+                private.oc_ok = 100;
+                break;
+            case RT_DIVIDE_BY_ZERO:
+                private.oc_divide_by_zero = 100;
+                break;
+            case RT_ASSERTION_ERR:
+                private.oc_assertion_error = 100;
+                break;
+            case RT_INFINITE:
+                private.oc_infinite_loop = 75;
+                break;
+            case RT_OUT_OF_BOUNDS:
+                private.oc_out_of_bounds = 100;
+                break;
+            case RT_NULL_POINTER:
+                private.oc_null_pointer = 100;
+                break;
+            case RT_CANT_BUILD_FRAME:
+            case RT_NULL_PARAMETERS:
+            case RT_UNKNOWN_ERROR:
+            default:
+                LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
             }
         }
 
-        print_outcome(outcome);
+#pragma omp critical
+        {
+            if (private.oc_assertion_error != 50) {
+                outcome.oc_assertion_error = private.oc_assertion_error;
+            }
+            if (private.oc_divide_by_zero != 50) {
+                outcome.oc_divide_by_zero = private.oc_divide_by_zero;
+            }
+            if (private.oc_infinite_loop != 50) {
+                outcome.oc_infinite_loop = private.oc_infinite_loop;
+            }
+            if (private.oc_null_pointer != 50) {
+                outcome.oc_null_pointer = private.oc_null_pointer;
+            }
+            if (private.oc_ok != 50) {
+                outcome.oc_ok = private.oc_ok;
+            }
+            if (private.oc_out_of_bounds != 50) {
+                outcome.oc_out_of_bounds = private.oc_out_of_bounds;
+            }
+        }
+    }
+
+    print_outcome(outcome);
 }
 
-
 /* interpreter-only runner */
-void run_interpreter(const Method* m, Options opts, const Config* cfg) {
+void run_interpreter(const Method* m, Options opts, const Config* cfg)
+{
     VMContext* vm_context = interpreter_setup(m, &opts, cfg, NULL);
     if (!vm_context) {
         LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
@@ -231,7 +228,8 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg) {
     interpreter_free(vm_context);
 }
 
-void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
+void run_fuzzer(const Method* m, Options opts, const Config* cfg)
+{
 
     size_t instruction_count = interpreter_instruction_count(m, cfg);
 
@@ -261,8 +259,7 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     thread_count = omp_threads;
 #endif
 
-    Vector* results =
-        fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
+    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
 
     size_t covered = coverage_global_count();
 
@@ -276,9 +273,6 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg) {
     coverage_reset_all();
     ir_program_free_all();
 }
-
-
-
 
 /*
  * TODO

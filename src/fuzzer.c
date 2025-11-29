@@ -274,6 +274,8 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
       if (done)
           return all_interesting;
   }
+
+  return all_interesting;
 }
 
 Vector* fuzzer_run_single(Fuzzer* f,
