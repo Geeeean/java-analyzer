@@ -251,18 +251,22 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
     return ir_instruction_is_conditional(last) || last->opcode == OP_INVOKE;
 }
 
-int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out)
+int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, omp_lock_t* locks)
 {
     int component_id = ctx->wpo.node_to_component[current_node];
     int head = *(int*)vector_get(ctx->wpo.heads, component_id);
 
     BasicBlock* block = vector_get(ctx->cfg->blocks, head);
 
+    omp_set_lock(&locks[head]);
+
     IntervalState* test_in = interval_new_top_state(block->num_locals);
     IntervalState* test_out = interval_new_top_state(block->num_locals);
 
     interval_state_copy(test_in, X_in[head]);
     interval_state_copy(test_out, X_out[head]);
+
+    omp_unset_lock(&locks[head]);
 
     if (vector_length(test_in->locals) != vector_length(test_out->locals)) {
         interval_state_delete(test_in);
@@ -342,7 +346,7 @@ void process_node_task(int current_node, AbstractContext* ctx,
             N[current_node] = 0;
             omp_unset_lock(&locks[current_node]);
 
-            if (is_component_stabilized(current_node, ctx, X_in, X_out)) {
+            if (is_component_stabilized(current_node, ctx, X_in, X_out, locks)) {
                 Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
                 int exit_component = ctx->wpo.node_to_component[current_node];
                 int head = *(int*)vector_get(ctx->wpo.heads, exit_component);

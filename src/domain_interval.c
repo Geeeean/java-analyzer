@@ -653,7 +653,7 @@ static int handle_binary(IntervalState* out_state, IrInstruction* ir_instruction
 
 static int handle_new(IntervalState* st, IrInstruction* ins)
 {
-    int name = st->name_count++;
+    int name = vector_length(st->env);
     Interval top = interval_top();
     vector_push(st->env, &top);
     vector_push(st->stack, &name);

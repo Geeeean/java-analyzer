@@ -15,7 +15,6 @@ typedef struct {
     Vector* locals; // Vector<int>
     Vector* stack; // Vector<int>
     Vector* env; // Vector<Interval>
-    int name_count;
 } IntervalState;
 
 IntervalState* interval_new_top_state(int num_vars);
