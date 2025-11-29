@@ -254,9 +254,10 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
 int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalState** X_in, IntervalState** X_out, omp_lock_t* locks)
 {
     int component_id = ctx->wpo.node_to_component[current_node];
+
     int head = *(int*)vector_get(ctx->wpo.heads, component_id);
 
-    BasicBlock* block = vector_get(ctx->cfg->blocks, head);
+    BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, head);
 
     omp_set_lock(&locks[head]);
 
@@ -280,9 +281,6 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
 
         Interval* in = vector_get(test_in->env, in_id);
         Interval* out = vector_get(test_out->env, out_id);
-
-        LOG_DEBUG("IN: [%d, %d]", in->lower, in->upper);
-        LOG_DEBUG("out: [%d, %d]", out->lower, out->upper);
 
         if (out->lower == in->lower && out->upper == in->upper && (in->lower == INT_MIN || in->upper == INT_MAX)) {
             continue;
@@ -404,10 +402,10 @@ void process_node_task(int current_node, AbstractContext* ctx,
         }
     }
 
-#ifdef DEBUG
-    LOG_DEBUG("NODE %d STATE AFTER:", current_node);
-    interval_state_print(X_out[current_node]);
-#endif
+    // #ifdef DEBUG
+    //     LOG_DEBUG("NODE %d STATE AFTER:", current_node);
+    //     interval_state_print(X_out[current_node]);
+    // #endif
 }
 
 void* interpreter_abstract_run(AbstractContext* ctx)
@@ -507,6 +505,6 @@ cleanup:
 
     wpo_delete(ctx->wpo);
 
-    LOG_ERROR("TODO interpreter abstract run cleanup");
+    free(ctx);
     return NULL;
 }

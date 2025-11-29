@@ -257,6 +257,7 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
                 invoke_exit->ip_start = j + 1;
                 invoke_exit->ip_end = block->ip_end;
                 invoke_exit->ir_function = block->ir_function;
+
                 vector_copy(invoke_exit->successors, block->successors);
                 vector_delete(block->successors);
 
@@ -320,12 +321,13 @@ void cfg_print(Cfg* cfg)
     LOG_DEBUG("PRINT");
     for (int i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
-        LOG_INFO("BLOCK %d (OG ID: %d), [%d-%d] ir_function: %p", block->id, block->og_id, block->ip_start, block->ip_end, block->ir_function);
+        LOG_INFO("BLOCK %d (OG ID: %d), [%d-%d] ir_function: %p, num locals: %d", block->id, block->og_id, block->ip_start, block->ip_end, block->ir_function, block->num_locals);
 
-        for (int j = 0; j < vector_length(block->successors); j++) {
-            BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
-            LOG_INFO("%2d ", successor->id);
-        }
+        if (block->successors)
+            for (int j = 0; j < vector_length(block->successors); j++) {
+                BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
+                LOG_INFO("%2d ", successor->id);
+            }
         printf("\n");
     }
 }

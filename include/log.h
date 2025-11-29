@@ -2,6 +2,7 @@
 #define LOG_H
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #if DEBUG
 #define LOG_DEBUG(msg, ...) fprintf(stderr, "[DEBUG] " msg "\n", ##__VA_ARGS__)
@@ -20,5 +21,14 @@
 #endif
 
 #define LOG_BENCHMARK(msg, ...) fprintf(stderr, "[BENCHMARK] " msg "\n", ##__VA_ARGS__)
+
+#if defined(__linux__)
+#include <sys/resource.h>
+#include <unistd.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#endif
+
+void print_current_mem(const char* tag);
 
 #endif
