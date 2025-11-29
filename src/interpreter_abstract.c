@@ -85,7 +85,8 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
 #endif
 
 cleanup:
-    LOG_ERROR("TODO cleanup in interpreter abstract setup");
+    graph_delete(graph);
+    // LOG_ERROR("TODO cleanup in interpreter abstract setup");
     return ctx;
 }
 
@@ -179,6 +180,9 @@ void apply_last(IrInstruction* last,
             interval_join(X_in[*successor_false], out_false, &dummy);
             omp_unset_lock(&locks[*successor_false]);
         }
+
+        interval_state_delete(out_true);
+        interval_state_delete(out_false);
     } else if (last->opcode == OP_INVOKE) {
         IntervalState* state = interval_new_top_state(0);
         Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
@@ -191,6 +195,8 @@ void apply_last(IrInstruction* last,
         omp_set_lock(&locks[invoke_head]);
         interval_join(X_in[invoke_head], state, &dummy);
         omp_unset_lock(&locks[invoke_head]);
+
+        interval_state_delete(state);
     } else if (last->opcode == OP_RETURN) {
         if (vector_length(X_out[current_node]->stack)) {
             int iv_id;
@@ -259,6 +265,8 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     interval_state_copy(test_out, X_out[head]);
 
     if (vector_length(test_in->locals) != vector_length(test_out->locals)) {
+        interval_state_delete(test_in);
+        interval_state_delete(test_out);
         return 0;
     }
 
@@ -277,10 +285,14 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
         }
 
         if ((out->lower < in->lower) || (out->upper > in->upper)) {
+            interval_state_delete(test_in);
+            interval_state_delete(test_out);
             return 0;
         }
     }
 
+    interval_state_delete(test_in);
+    interval_state_delete(test_out);
     return 1;
 }
 
