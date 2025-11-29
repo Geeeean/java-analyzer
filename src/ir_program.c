@@ -1,4 +1,3 @@
-// TODO: handle delete (avoid mem leak)
 #include "ir_program.h"
 #include "log.h"
 
@@ -61,14 +60,14 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg)
     const char* id = method_get_id(m);
 
     // First check: no lock (fast)
-    IRItem* item = find_item(id);
+    // IRItem* item = find_item(id);
     IrFunction* result = NULL;
-    if (item) {
-        result = item->ir_function;
-        if (result) {
-            return result;
-        }
-    }
+    // if (item) {
+    //     result = item->ir_function;
+    //     if (result) {
+    //         return result;
+    //     }
+    // }
 
 #pragma omp critical(ir_program_map)
     {
@@ -99,15 +98,15 @@ Cfg* ir_program_get_cfg(const Method* m, const Config* cfg)
     const char* id = method_get_id(m);
 
     // First check: no lock (fast)
-    IRItem* item = find_item(id);
+    // IRItem* item = find_item(id);
     Cfg* result = NULL;
 
-    if (item) {
-        result = item->cfg;
-        if (result) {
-            return result;
-        }
-    }
+    // if (item) {
+    //     result = item->cfg;
+    //     if (result) {
+    //         return result;
+    //     }
+    // }
 
 #pragma omp critical(ir_program_map)
     {
@@ -164,16 +163,18 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
 
 void ir_program_delete()
 {
-    IRItem* prev = NULL;
-    for (IRItem* it = it_map; it != NULL; it = it->next) {
-        LOG_DEBUG("1");
-        free(prev);
-        LOG_DEBUG("2");
-        free(it->method_id);
-        LOG_DEBUG("3");
-        ir_function_delete(it->ir_function);
-        LOG_DEBUG("4");
-        cfg_delete(it->cfg);
-        prev = it;
+    IRItem* current = it_map;
+    while (current != NULL) {
+        IRItem* next_node = current->next; 
+
+        free(current->method_id);
+        ir_function_delete(current->ir_function);
+        cfg_delete(current->cfg);
+
+        free(current);
+
+        current = next_node;
     }
+
+    it_map = NULL;
 }
