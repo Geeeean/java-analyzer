@@ -31,6 +31,7 @@ typedef enum {
     OP_ARRAY_STORE,
     OP_ARRAY_LENGTH,
     OP_INCR,
+    OP_NEGATE,
     OP_COUNT
 } Opcode;
 
@@ -167,6 +168,10 @@ BinaryResult value_mul(Value* value1, Value* value2, Value* result);
 BinaryResult value_sub(Value* value1, Value* value2, Value* result);
 BinaryResult value_rem(Value* value1, Value* value2, Value* result);
 BinaryResult value_div(Value* value1, Value* value2, Value* result);
+
+typedef struct {
+    Type* type;
+} NegateOP;
 
 const char* opcode_print(Opcode opcode);
 Opcode opcode_parse(cJSON* instruction_json);

@@ -1,6 +1,5 @@
 #include "cli.h"
 #include "config.h"
-#include "coverage.h"
 #include "fuzzer.h"
 #include "heap.h"
 #include "info.h"
@@ -63,19 +62,19 @@ int main(int argc, char** argv) {
     }
 
     /*** SYNTAX TREE ***/
-    tree = syntax_tree_build(m, cfg);
-    if (!tree) {
-        LOG_ERROR("While parsing code");
-        result = 4;
-        goto cleanup;
-    }
-
-    TSNode node;
-    if (method_node_get(tree, &node)) {
-        LOG_ERROR("Error while getting method node in AST");
-        result = 5;
-        goto cleanup;
-    }
+    // tree = syntax_tree_build(m, cfg);
+    // if (!tree) {
+    //     LOG_ERROR("While parsing code");
+    //     result = 4;
+    //     goto cleanup;
+    // }
+    //
+    // TSNode node;
+    // if (method_node_get(tree, &node)) {
+    //     LOG_ERROR("Error while getting method node in AST");
+    //     result = 5;
+    //     goto cleanup;
+    // }
 
     /*** MODES ***/
     if (opts.interpreter_only) {
@@ -126,14 +125,12 @@ void run_base(Method* m, Options opts, const Config* cfg) {
                 Options local_opts = opts;
                 local_opts.parameters = start_params;
 
-
-                VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
-
+                VMContext* vm_context = interpreter_concrete_setup(m, &opts, cfg);
                 if (!vm_context) {
                     LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
                     continue;
                 }
-                RuntimeResult interpreter_result = interpreter_run(vm_context);
+                RuntimeResult interpreter_result = interpreter_concrete_run(vm_context);
 
                 interpreter_free(vm_context);
 

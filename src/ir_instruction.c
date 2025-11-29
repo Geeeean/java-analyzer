@@ -485,6 +485,32 @@ static IrInstructionParseResult parse_incr(IrInstruction* ir_instruction, cJSON*
     return IPR_OK;
 }
 
+static IrInstructionParseResult parse_negate(IrInstruction* ir_instruction, cJSON* instruction_json)
+{
+    NegateOP* negate = &ir_instruction->data.negate;
+
+    cJSON* type_obj = cJSON_GetObjectItem(instruction_json, "type");
+    if (!type_obj || !cJSON_IsString(type_obj)) {
+        LOG_ERROR("Load instruction missing or invalid 'type' field");
+        return IPR_MALFORMED;
+    }
+
+    char* type = cJSON_GetStringValue(type_obj);
+
+    if (strcmp(type, load_type_signature[TK_INT]) == 0) {
+        negate->type = TYPE_INT;
+    } else if (strcmp(type, load_type_signature[TK_BOOLEAN]) == 0) {
+        negate->type = TYPE_BOOLEAN;
+    } else if (strcmp(type, load_type_signature[TK_REFERENCE]) == 0) {
+        negate->type = TYPE_REFERENCE;
+    } else {
+        LOG_ERROR("Unknown type in negate instruction: %s", type);
+        return IPR_UNABLE_TO_HANDLE_TYPE;
+    }
+
+    return IPR_OK;
+}
+
 static IrInstructionParseHandler ir_instruction_table[OP_COUNT] = {
     [OP_LOAD] = parse_load,
     [OP_PUSH] = parse_push,
@@ -581,3 +607,8 @@ void ir_instruction_delete(IrInstruction* instr)
     free(instr);
 }
 
+
+int ir_instruction_is_conditional(IrInstruction* ir_instruction)
+{
+    return ir_instruction->opcode == OP_IF || ir_instruction->opcode == OP_IF_ZERO;
+}

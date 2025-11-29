@@ -268,3 +268,4 @@ char* method_get_id(const Method* m)
 {
     return m->method_id;
 }
+

@@ -33,6 +33,8 @@ VMContext* persistent_interpreter_setup(const Method* m,
 void VMContext_reset(VMContext* vm);
 
 RuntimeResult interpreter_run(VMContext* vm_context);
+VMContext* interpreter_concrete_setup(const Method* m, const Options* opts, const Config* cfg);
+RuntimeResult interpreter_concrete_run(VMContext* vm_context);
 
 size_t interpreter_instruction_count(const Method* m, const Config* cfg);
 void interpreter_free(VMContext* vm);

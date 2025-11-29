@@ -10,6 +10,11 @@ Heap* heap_create() {
 
 void heap_free(Heap* h) {
     if (!h) return;
+// todo make dynamic
+struct Heap {
+    ObjectValue* fields[HEAP_SIZE];
+    int len;
+};
 
     heap_reset(h);
     free(h);
@@ -54,4 +59,8 @@ void heap_reset(Heap* h)
     }
 
     h->len = 1;
+}
+int heap_length(Heap* heap)
+{
+    return heap->len;
 }

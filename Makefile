@@ -21,6 +21,7 @@ LIBS = tree-sitter
 LLIBS := $(patsubst %,-l%,$(LIBS))
 
 TARGET = analyzer
+NO_LOG_TARGET = analyzer_no_log
 DEBUG_TARGET = analyzer_debug
 
 LOCAL_DEPS := $(wildcard $(INCLUDE_DIR)/*.h)

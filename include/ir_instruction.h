@@ -24,11 +24,13 @@ typedef struct {
         ArrayLoadOP array_load;
         ArrayLengthOP array_length;
         IncrOP incr;
+        NegateOP negate;
     } data;
 } IrInstruction;
 
 IrInstruction*
 ir_instruction_parse(cJSON* instruction_json);
 void ir_instruction_delete(IrInstruction* inst);
+int ir_instruction_is_conditional(IrInstruction* ir_instruction);
 
 #endif

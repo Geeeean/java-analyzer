@@ -7,6 +7,7 @@
 #include "cli.h"
 #include "heap.h"
 #include "ir_function.h"
+#include "ir_instruction.h"
 #include "ir_program.h"
 #include "log.h"
 #include "opcode.h"
@@ -197,6 +198,18 @@ static void parameter_fix(char* parameters)
 
 static int parse_array(Type* type, char* token, ObjectValue* array)
 {
+    if (!array) {
+        return 1;
+    }
+
+    char* values = strtok(token, ":_;[]");
+    int capacity = 10;
+    array->array.elements_count = 0;
+    int* len = &array->array.elements_count;
+    array->array.elements = malloc(sizeof(Value) * capacity);
+    if (!array->array.elements) {
+        return 1;
+    }
   array->array.elements_count = 0;
   int* len = &array->array.elements_count;
 
@@ -604,6 +617,7 @@ static Frame* build_frame(const Method* m, const Config* cfg, Value* locals, int
     frame->locals = locals;
 
     frame->ir_function = ir_program_get_function(m, cfg);
+    frame->ir_function = ir_program_get_function_ir(m, cfg);
     if (!frame->ir_function) {
         LOG_ERROR("Failed to build IR function for method: %s", method_get_id(m));
         stack_delete(frame->stack);
@@ -899,6 +913,7 @@ static StepResult handle_dup(VMContext* vm_context, IrInstruction* instruction)
 }
 
 // todo: handle array
+static StepResult handle_invoke(VMContext* vm_context, IrInstruction* ir_instruction)
 char* get_method_signature(InvokeOP* invoke)
 {
     if (!invoke) {
@@ -1149,7 +1164,7 @@ static StepResult handle_array_length(VMContext* vm_context, IrInstruction* inst
 
 static StepResult handle_new_array(VMContext* vm_context, IrInstruction* instruction)
 {
-    NewArrayOP* new_array = &instruction->data.new_array;
+    NewArrayOP* new_array = &ir_instruction->data.new_array;
     if (!new_array) {
         return SR_NULL_INSTRUCTION;
     }
@@ -1315,6 +1330,41 @@ static StepResult handle_skip(VMContext* vm_context, IrInstruction* instruction)
 
 static StepResult handle_throw(VMContext* vm_context, IrInstruction* instruction)
 {
+    Frame* frame = vm_context->frame;
+    frame->pc++;
+
+    return SR_ASSERTION_ERR;
+}
+
+static StepResult handle_negate(VMContext* vm_context, IrInstruction* ir_instruction)
+{
+    NegateOP* negate = &ir_instruction->data.negate;
+    if (!negate) {
+        return SR_NULL_INSTRUCTION;
+    }
+
+    Frame* frame = vm_context->frame;
+
+    Value value;
+    stack_pop(frame->stack, &value);
+
+    if (value.type != negate->type) {
+        return SR_INVALID_TYPE;
+    }
+
+    if (value.type == TYPE_INT) {
+        value.data.int_value = -value.data.int_value;
+    } else if (value.type == TYPE_BOOLEAN) {
+        value.data.bool_value = -value.data.bool_value;
+    } else if (value.type == TYPE_CHAR) {
+        value.data.char_value = -value.data.char_value;
+    } else {
+        return SR_INVALID_TYPE;
+    }
+
+    stack_push(frame->stack, value);
+
+    frame->pc++;
     return SR_ASSERTION_ERR;
 }
 
@@ -1330,7 +1380,6 @@ static IrInstruction* get_instruction(VMContext* vm_context)
 
     return fn->ir_instructions[frame->pc];
 }
-
 
 static OpHandler opcode_table[OP_COUNT] = {
     [OP_LOAD] = handle_load,
@@ -1390,8 +1439,10 @@ static StepResult step(VMContext* vm_context)
     }
     // ==============================
 
-    Opcode opcode = instruction->opcode;
+    Opcode opcode = ir_instruction->opcode;
+    LOG_DEBUG("Interpreting %s", opcode_print(opcode));
     if (opcode < 0 || opcode >= OP_COUNT) {
+        LOG_ERROR("Opcode: %d", opcode);
         return SR_UNKNOWN_OPCODE;
     }
 
@@ -1406,6 +1457,7 @@ VMContext* interpreter_setup(const Method* m,
                              const Options* opts,
                              const Config* cfg,
                              uint8_t* thread_bitmap)
+VMContext* interpreter_concrete_setup(const Method* m, const Options* opts, const Config* cfg)
 {
     if (!m || !opts || !cfg) {
         return NULL;
@@ -1702,6 +1754,7 @@ void dump_locals(Heap* heap, Value *locals, int locals_count)
 
 
 RuntimeResult interpreter_run(VMContext* vm_context)
+RuntimeResult interpreter_concrete_run(VMContext* vm_context)
 {
     RuntimeResult result = RT_OK;
 
@@ -1732,10 +1785,9 @@ RuntimeResult interpreter_run(VMContext* vm_context)
                 break;
             default:
                 result = RT_UNKNOWN_ERROR;
+                LOG_ERROR("%s", step_result_signature[step_result]);
                 break;
             }
-
-            // LOG_ERROR("%s", step_result_signature[step_result]);
 
             goto cleanup;
         } else {

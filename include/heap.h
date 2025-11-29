@@ -17,5 +17,8 @@ void heap_init(Heap* h);
 void heap_reset(Heap* h);
 int  heap_insert(Heap* h, ObjectValue* obj, int* index);
 ObjectValue* heap_get(Heap* h, int index);
+int heap_insert(Heap* heap, ObjectValue* obj, int* index);
+ObjectValue* heap_get(Heap* heap, int index);
+int heap_length(Heap* heap);
 
 #endif

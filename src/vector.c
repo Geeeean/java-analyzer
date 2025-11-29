@@ -1,4 +1,5 @@
 #include "vector.h"
+#include "common.h"
 #include "log.h"
 
 #include <string.h>
@@ -72,7 +73,7 @@ int vector_push(Vector* v, void* element)
 
 void* vector_get(const Vector* v, size_t index)
 {
-    if (index >= v->length) {
+    if (!v || index >= v->length) {
         return NULL;
     }
 
@@ -112,3 +113,39 @@ Vector* vector_copy(const Vector* src)
     return v;
 }
 
+
+void vector_reverse(Vector* v)
+{
+    if (!v || v->length <= 1) {
+        return;
+    }
+
+    size_t elem_size = v->element_size;
+    char* data = (char*)v->data;
+
+    for (int i = 0; i < v->length / 2; i++) {
+        int j = v->length - 1 - i;
+
+        char tmp[elem_size];
+        memcpy(tmp, data + i * elem_size, elem_size);
+        memcpy(data + i * elem_size, data + j * elem_size, elem_size);
+        memcpy(data + j * elem_size, tmp, elem_size);
+    }
+}
+
+int vector_pop(Vector* v, void* out)
+{
+    if (!v || v->length == 0) {
+        return FAILURE;
+    }
+
+    size_t index = v->length - 1;
+    void* elem = vector_get(v, index);
+
+    if (out) {
+        memcpy(out, elem, v->element_size);
+    }
+
+    v->length -= 1;
+    return SUCCESS;
+}

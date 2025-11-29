@@ -2,16 +2,10 @@
 #define IR_FUNCTION_H
 
 #include "config.h"
-#include "ir_instruction.h"
 #include "method.h"
 
-// todo make dynamic
-#define IR_FUNCTION_SIZE 100
-
 typedef struct {
-    IrInstruction* ir_instructions[IR_FUNCTION_SIZE];
-    int count;
-    int capacity;
+    Vector* ir_instructions;
 } IrFunction;
 
 IrFunction* ir_function_build(const Method* m, const Config* cfg);
