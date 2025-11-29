@@ -202,6 +202,7 @@ cleanup:
     scc->comp_count = comp_count;
     scc->comp_id = comp_id;
     scc->components = components;
+    scc->num_nodes = num_nodes;
 
     return scc;
 
@@ -228,5 +229,17 @@ void scc_print(SCC* scc)
             int node = *(int*)vector_get(component, j);
             LOG_INFO("%d", node);
         }
+    }
+}
+
+void scc_delete(SCC* scc)
+{
+    if (scc) {
+        free(scc->comp_id);
+        for (int i = 0; i < scc->num_nodes; i++) {
+            vector_delete(scc->components[i]);
+        }
+        free(scc->components);
+        free(scc);
     }
 }

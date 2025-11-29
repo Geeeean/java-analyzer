@@ -61,19 +61,19 @@ int main(int argc, char** argv)
     }
 
     /*** SYNTAX TREE ***/
-    tree = syntax_tree_build(m, cfg);
-    if (!tree) {
-        LOG_ERROR("While parsing code");
-        result = 4;
-        goto cleanup;
-    }
-
-    TSNode node;
-    if (method_node_get(tree, &node)) {
-        LOG_ERROR("Error while getting method node in AST");
-        result = 5;
-        goto cleanup;
-    }
+    // tree = syntax_tree_build(m, cfg);
+    // if (!tree) {
+    //     LOG_ERROR("While parsing code");
+    //     result = 4;
+    //     goto cleanup;
+    // }
+    //
+    // TSNode node;
+    // if (method_node_get(tree, &node)) {
+    //     LOG_ERROR("Error while getting method node in AST");
+    //     result = 5;
+    //     goto cleanup;
+    // }
 
     /*** INTERPRETER ***/
     if (opts.interpreter_only) {
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
 
 cleanup:
     ir_program_delete();
-    ts_tree_delete(tree);
+    // ts_tree_delete(tree);
     method_delete(m);
     config_delete(cfg);
     options_cleanup(&opts);

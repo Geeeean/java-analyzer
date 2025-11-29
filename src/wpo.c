@@ -1,6 +1,5 @@
 #include "wpo.h"
 #include "common.h"
-#include "log.h"
 #include "pair.h"
 #include "scc.h"
 #include "stdlib.h"
@@ -102,8 +101,6 @@ compute_b_len(GraphMathRepr* graph, int head)
 
 WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* heads, Vector* exits)
 {
-    Graph* graphh = graph_from_graph_math_repr(graph);
-
     int head = min(graph->nodes);
 
     if (compute_b_len(graph, head) == 0) {
@@ -201,6 +198,11 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
     Pair exit_edge = { .first = new_exit, .second = head };
     vector_push(result.stabilizing_edges, &exit_edge);
 
+    vector_delete(wpo_component.nodes);
+    vector_delete(wpo_component.exits);
+    vector_delete(wpo_component.scheduling_edges);
+    vector_delete(wpo_component.stabilizing_edges);
+
     return result;
 }
 
@@ -272,6 +274,17 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
 
         // heads[i] = wpo_component.head;
         exits[i] = wpo_component.exit;
+
+        free(in_component);
+
+        vector_delete(wpo_component.nodes);
+        vector_delete(wpo_component.exits);
+        vector_delete(wpo_component.scheduling_edges);
+        vector_delete(wpo_component.stabilizing_edges);
+
+        vector_delete(graph_mr_comp->nodes);
+        vector_delete(graph_mr_comp->edges);
+        free(graph_mr_comp);
     }
 
     for (int i = 0; i < vector_length(graph_mr->edges); i++) {
@@ -287,6 +300,9 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
     }
 
 cleanup:
+    free(exits);
+    scc_delete(scc);
+    graph_delete(graph);
 
     return result;
 }
@@ -435,7 +451,15 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
     wpo->exits = exits;
 
 cleanup:
-    LOG_ERROR("TODO wpo construct aux cleanup");
+    vector_delete(graph_mr->nodes);
+    vector_delete(graph_mr->edges);
+    free(graph_mr);
+
+    vector_delete(result.nodes);
+    vector_delete(result.exits);
+    vector_delete(result.scheduling_edges);
+    vector_delete(result.stabilizing_edges);
+
     return SUCCESS;
 }
 
@@ -454,7 +478,16 @@ void wpo_delete(WPO wpo)
     free(wpo.num_sched_pred);
     free(wpo.node_to_component);
 
-    vector_delete(wpo.Cx);
+    if (wpo.Cx) {
+        for (int i = 0; i < vector_length(wpo.Cx); i++) {
+            C* comp = vector_get(wpo.Cx, i);
+            if (comp->components) {
+                vector_delete(comp->components);
+            }
+        }
+        vector_delete(wpo.Cx);
+    }
+
     vector_delete(wpo.heads);
     vector_delete(wpo.exits);
 }
