@@ -34,7 +34,7 @@ typedef struct {
     pthread_mutex_t lock;
 } WorkQueue;
 
-static void workqueue_init(WorkQueue* q, Vector* corpus)
+static void workqueue_init(WorkQueue* q, Corpus* corpus)
 {
     q->items = vector_new(sizeof(TestCase*));
     q->next_index = 0;
