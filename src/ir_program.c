@@ -1,9 +1,10 @@
 #include "ir_program.h"
 #include "log.h"
 
+#include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 
-// todo: use hashmap
 typedef struct IRItem IRItem;
 struct IRItem {
     char* method_id;
@@ -13,8 +14,8 @@ struct IRItem {
     IRItem* next;
 };
 
-// to be freed
-IRItem* it_map = NULL;
+static IRItem* it_map = NULL;
+static pthread_mutex_t ir_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static IRItem* find_item(const char* id)
 {
@@ -59,19 +60,10 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg)
 {
     const char* id = method_get_id(m);
 
-    // First check: no lock (fast)
-    // IRItem* item = find_item(id);
     IrFunction* result = NULL;
-    // if (item) {
-    //     result = item->ir_function;
-    //     if (result) {
-    //         return result;
-    //     }
-    // }
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             if (item->ir_function) {
@@ -97,20 +89,10 @@ Cfg* ir_program_get_cfg(const Method* m, const Config* cfg)
 {
     const char* id = method_get_id(m);
 
-    // First check: no lock (fast)
-    // IRItem* item = find_item(id);
     Cfg* result = NULL;
-
-    // if (item) {
-    //     result = item->cfg;
-    //     if (result) {
-    //         return result;
-    //     }
-    // }
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             if (item->cfg) {
@@ -145,7 +127,6 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             result = item->num_locals;
@@ -165,7 +146,7 @@ void ir_program_delete()
 {
     IRItem* current = it_map;
     while (current != NULL) {
-        IRItem* next_node = current->next; 
+        IRItem* next_node = current->next;
 
         free(current->method_id);
         ir_function_delete(current->ir_function);

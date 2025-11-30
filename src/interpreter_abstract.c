@@ -36,7 +36,9 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     cfg_print(control_flow_graph);
 #endif
 
+    LOG_INFO("A");
     cfg_inline(control_flow_graph, (Config*)cfg, (Method*)m);
+    LOG_INFO("B");
 
 #ifdef DEBUG
     LOG_DEBUG("AFTER");

@@ -15,4 +15,7 @@ int stack_pop(Stack* stack, Value* value);
 int stack_push(Stack* stack, Value value);
 // bool stack_same_type_on_top(Stack* stack);
 
+void stack_clear(Stack* stack);
+
 #endif
+

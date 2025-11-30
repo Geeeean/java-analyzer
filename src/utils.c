@@ -2,6 +2,7 @@
 #include "log.h"
 #include "opcode.h"
 
+#include "time.h"
 #include <limits.h>
 #include <string.h>
 
@@ -18,6 +19,9 @@ void replace_char(char* str, char find, char replace)
 char* get_method_signature(InvokeOP* invoke)
 {
     char* res = NULL;
+    if (!invoke->ref_name) {
+        exit(1);
+    }
     char* ref_name = strdup(invoke->ref_name);
     replace_char(ref_name, '/', '.');
 
@@ -92,4 +96,11 @@ cleanup:
     free(ref_name);
 
     return res;
+}
+
+double get_current_time()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
 }

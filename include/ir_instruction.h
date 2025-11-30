@@ -31,5 +31,6 @@ typedef struct {
 IrInstruction*
 ir_instruction_parse(cJSON* instruction_json);
 int ir_instruction_is_conditional(IrInstruction* ir_instruction);
+void ir_instruction_delete(IrInstruction* inst);
 
 #endif

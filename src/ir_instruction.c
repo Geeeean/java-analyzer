@@ -260,7 +260,8 @@ static IrInstructionParseResult parse_get(IrInstruction* ir_instruction, cJSON* 
     return IPR_OK;
 }
 
-static IrInstructionParseResult parse_invoke(IrInstruction* ir_instruction, cJSON* instruction_json)
+static IrInstructionParseResult
+parse_invoke(IrInstruction* ir_instruction, cJSON* instruction_json)
 {
     InvokeOP* invoke = &ir_instruction->data.invoke;
     cJSON* method_obj = cJSON_GetObjectItem(instruction_json, "method");
@@ -627,7 +628,7 @@ ir_instruction_parse(cJSON* instruction_json)
 
     ir_instruction->opcode = opcode_parse(instruction_json);
     if (ir_instruction->opcode < 0 || ir_instruction->opcode >= OP_COUNT) {
-        LOG_ERROR("Unknown opcode: %d", ir_instruction->opcode);
+        LOG_ERROR("Unknown opcode: %s", opcode_print(ir_instruction->opcode));
         goto cleanup;
     }
 
@@ -647,4 +648,51 @@ cleanup:
 int ir_instruction_is_conditional(IrInstruction* ir_instruction)
 {
     return ir_instruction->opcode == OP_IF || ir_instruction->opcode == OP_IF_ZERO;
+}
+
+void ir_instruction_delete(IrInstruction* instr)
+{
+    if (!instr)
+        return;
+
+    switch (instr->opcode) {
+
+    case OP_INVOKE:
+        if (instr->data.invoke.ref_name)
+            free(instr->data.invoke.ref_name);
+        if (instr->data.invoke.method_name)
+            free(instr->data.invoke.method_name);
+        // args, args_len, return_type are unused → nothing to free
+        break;
+
+    case OP_PUSH:
+        // PushOP contains only primitive values
+        break;
+
+    case OP_LOAD:
+    case OP_STORE:
+    case OP_BINARY:
+    case OP_RETURN:
+    case OP_IF_ZERO:
+    case OP_IF:
+    case OP_GOTO:
+    case OP_DUP:
+    case OP_NEW:
+    case OP_CAST:
+    case OP_THROW:
+    case OP_NEW_ARRAY:
+    case OP_ARRAY_LENGTH:
+    case OP_ARRAY_LOAD:
+    case OP_ARRAY_STORE:
+    case OP_INCR:
+    case OP_GET:
+        // All POD-only instructions → nothing to free
+        break;
+
+    default:
+        // Unknown opcode, nothing to free
+        break;
+    }
+
+    free(instr);
 }

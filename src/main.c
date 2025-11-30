@@ -1,5 +1,6 @@
 #include "cli.h"
 #include "config.h"
+#include "coverage.h"
 #include "fuzzer.h"
 #include "info.h"
 #include "interpreter_abstract.h"
@@ -8,17 +9,23 @@
 #include "log.h"
 #include "method.h"
 #include "outcome.h"
-#include "syntax.h"
 #include "vector.h"
 
 #include "tree_sitter/api.h"
-
+#include "utils.h"
 #include <omp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
+
+/* Forward declarations */
+void run_interpreter(const Method* m, Options opts, const Config* cfg);
+void run_fuzzer(const Method* m, Options opts, const Config* cfg);
+void run_base(Method* m, Options opts, const Config* cfg);
 
 int main(int argc, char** argv)
 {
@@ -75,41 +82,9 @@ int main(int argc, char** argv)
     //     goto cleanup;
     // }
 
-    /*** INTERPRETER ***/
+    /*** MODES ***/
     if (opts.interpreter_only) {
-        VMContext* vm_context = interpreter_concrete_setup(m, &opts, cfg);
-        if (!vm_context) {
-            LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
-            result = 6;
-            goto cleanup;
-        }
-        RuntimeResult interpreter_result = interpreter_concrete_run(vm_context);
-
-        switch (interpreter_result) {
-        case RT_OK:
-            print_interpreter_outcome(OC_OK);
-            break;
-        case RT_DIVIDE_BY_ZERO:
-            print_interpreter_outcome(OC_DIVIDE_BY_ZERO);
-            break;
-        case RT_ASSERTION_ERR:
-            print_interpreter_outcome(OC_ASSERTION_ERROR);
-            break;
-        case RT_INFINITE:
-            print_interpreter_outcome(OC_INFINITE_LOOP);
-            break;
-        case RT_OUT_OF_BOUNDS:
-            print_interpreter_outcome(OC_OUT_OF_BOUNDS);
-            break;
-        case RT_NULL_POINTER:
-            print_interpreter_outcome(OC_NULL_POINTER);
-            break;
-        case RT_CANT_BUILD_FRAME:
-        case RT_NULL_PARAMETERS:
-        case RT_UNKNOWN_ERROR:
-        default:
-            LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
-        }
+        run_interpreter(m, opts, cfg);
     } else if (opts.abstract_only) {
         AbstractContext* abstract_context = interpreter_abstract_setup(m, &opts, cfg);
 
@@ -125,80 +100,10 @@ int main(int argc, char** argv)
 
         long total_microseconds = seconds * 1000000L + useconds;
         LOG_BENCHMARK("Elapsed time: %ld microseconds\n", total_microseconds);
+    } else if (opts.fuzzer) {
+        run_fuzzer(m, opts, cfg);
     } else {
-        int run = 100;
-        Outcome outcome = new_outcome();
-
-#pragma omp parallel
-        {
-            Outcome private = new_outcome();
-
-#pragma omp for
-            for (int i = 0; i < run; i++) {
-                if (!opts.interpreter_only) {
-                    Vector* v = method_get_arguments_as_types(m);
-                    opts.parameters = fuzzer_random_parameters(v);
-                    vector_delete(v);
-                }
-
-                VMContext* vm_context = interpreter_concrete_setup(m, &opts, cfg);
-                if (!vm_context) {
-                    LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
-                    continue;
-                }
-                RuntimeResult interpreter_result = interpreter_concrete_run(vm_context);
-
-                switch (interpreter_result) {
-                case RT_OK:
-                    private.oc_ok = 100;
-                    break;
-                case RT_DIVIDE_BY_ZERO:
-                    private.oc_divide_by_zero = 100;
-                    break;
-                case RT_ASSERTION_ERR:
-                    private.oc_assertion_error = 100;
-                    break;
-                case RT_INFINITE:
-                    private.oc_infinite_loop = 75;
-                    break;
-                case RT_OUT_OF_BOUNDS:
-                    private.oc_out_of_bounds = 100;
-                    break;
-                case RT_NULL_POINTER:
-                    private.oc_null_pointer = 100;
-                    break;
-                case RT_CANT_BUILD_FRAME:
-                case RT_NULL_PARAMETERS:
-                case RT_UNKNOWN_ERROR:
-                default:
-                    LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
-                }
-            }
-
-#pragma omp critical
-            {
-                if (private.oc_assertion_error != 50) {
-                    outcome.oc_assertion_error = private.oc_assertion_error;
-                }
-                if (private.oc_divide_by_zero != 50) {
-                    outcome.oc_divide_by_zero = private.oc_divide_by_zero;
-                }
-                if (private.oc_infinite_loop != 50) {
-                    outcome.oc_infinite_loop = private.oc_infinite_loop;
-                }
-                if (private.oc_null_pointer != 50) {
-                    outcome.oc_null_pointer = private.oc_null_pointer;
-                }
-                if (private.oc_ok != 50) {
-                    outcome.oc_ok = private.oc_ok;
-                }
-                if (private.oc_out_of_bounds != 50) {
-                    outcome.oc_out_of_bounds = private.oc_out_of_bounds;
-                }
-            }
-        }
-
-        print_outcome(outcome);
+        run_base(m, opts, cfg);
     }
 
 cleanup:
@@ -209,6 +114,183 @@ cleanup:
     options_cleanup(&opts);
 
     return result;
+}
+
+void run_base(Method* m, Options opts, const Config* cfg)
+{
+    int run = 100;
+    Outcome outcome = new_outcome();
+
+    size_t instruction_count = interpreter_instruction_count(m, cfg);
+
+    coverage_init(instruction_count);
+
+#pragma omp parallel
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+
+        unsigned int seed = (unsigned int)(ts.tv_nsec ^ (ts.tv_sec << 16) ^ omp_get_thread_num());
+
+        srand(seed);
+        srandom(seed);
+
+        Outcome private = new_outcome();
+
+#pragma omp for
+        for (int i = 0; i < run; i++) {
+            char* start_params = NULL;
+
+            Options local_opts = opts;
+            local_opts.parameters = start_params;
+
+            VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
+
+            if (!vm_context) {
+                LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
+                continue;
+            }
+            RuntimeResult interpreter_result = interpreter_run(vm_context);
+
+            interpreter_free(vm_context);
+
+            switch (interpreter_result) {
+            case RT_OK:
+                private.oc_ok = 100;
+                break;
+            case RT_DIVIDE_BY_ZERO:
+                private.oc_divide_by_zero = 100;
+                break;
+            case RT_ASSERTION_ERR:
+                private.oc_assertion_error = 100;
+                break;
+            case RT_INFINITE:
+                private.oc_infinite_loop = 75;
+                break;
+            case RT_OUT_OF_BOUNDS:
+                private.oc_out_of_bounds = 100;
+                break;
+            case RT_NULL_POINTER:
+                private.oc_null_pointer = 100;
+                break;
+            case RT_CANT_BUILD_FRAME:
+            case RT_NULL_PARAMETERS:
+            case RT_UNKNOWN_ERROR:
+            default:
+                LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+            }
+        }
+
+#pragma omp critical
+        {
+            if (private.oc_assertion_error != 50) {
+                outcome.oc_assertion_error = private.oc_assertion_error;
+            }
+            if (private.oc_divide_by_zero != 50) {
+                outcome.oc_divide_by_zero = private.oc_divide_by_zero;
+            }
+            if (private.oc_infinite_loop != 50) {
+                outcome.oc_infinite_loop = private.oc_infinite_loop;
+            }
+            if (private.oc_null_pointer != 50) {
+                outcome.oc_null_pointer = private.oc_null_pointer;
+            }
+            if (private.oc_ok != 50) {
+                outcome.oc_ok = private.oc_ok;
+            }
+            if (private.oc_out_of_bounds != 50) {
+                outcome.oc_out_of_bounds = private.oc_out_of_bounds;
+            }
+        }
+    }
+
+    print_outcome(outcome);
+}
+
+/* interpreter-only runner */
+void run_interpreter(const Method* m, Options opts, const Config* cfg)
+{
+    VMContext* vm_context = interpreter_setup(m, &opts, cfg, NULL);
+    if (!vm_context) {
+        LOG_ERROR("Interpreter setup failed (null VMContext). See previous errors.");
+        return;
+    }
+
+    RuntimeResult interpreter_result = interpreter_run(vm_context);
+
+    switch (interpreter_result) {
+    case RT_OK:
+        print_interpreter_outcome(OC_OK);
+        break;
+    case RT_DIVIDE_BY_ZERO:
+        print_interpreter_outcome(OC_DIVIDE_BY_ZERO);
+        break;
+    case RT_ASSERTION_ERR:
+        print_interpreter_outcome(OC_ASSERTION_ERROR);
+        break;
+    case RT_INFINITE:
+        print_interpreter_outcome(OC_INFINITE_LOOP);
+        break;
+    case RT_OUT_OF_BOUNDS:
+        print_interpreter_outcome(OC_OUT_OF_BOUNDS);
+        break;
+    case RT_NULL_POINTER:
+        print_interpreter_outcome(OC_NULL_POINTER);
+        break;
+    case RT_CANT_BUILD_FRAME:
+    case RT_NULL_PARAMETERS:
+    case RT_UNKNOWN_ERROR:
+    default:
+        LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
+        break;
+    }
+
+    interpreter_free(vm_context);
+}
+
+void run_fuzzer(const Method* m, Options opts, const Config* cfg)
+{
+
+    size_t instruction_count = interpreter_instruction_count(m, cfg);
+
+    if (!coverage_init(instruction_count)) {
+        LOG_ERROR("Coverage init failed.");
+        return;
+    }
+
+    Vector* arg_types = method_get_arguments_as_types(m);
+    if (!arg_types) {
+        LOG_ERROR("Argument types missing.");
+        coverage_reset_all();
+        return;
+    }
+
+    Fuzzer* f = fuzzer_init(instruction_count, arg_types);
+    if (!f) {
+        LOG_ERROR("Fuzzer init failed.");
+        vector_delete(arg_types);
+        coverage_reset_all();
+        return;
+    }
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    int omp_threads = omp_get_max_threads();
+    thread_count = omp_threads;
+#endif
+
+    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
+
+    size_t covered = coverage_global_count();
+
+    printf("\n=== FINAL COVERAGE REPORT ===\n");
+    printf("Instructions covered: %zu / %zu\n", covered, instruction_count);
+
+    fuzzer_free(f);
+    vector_delete(arg_types);
+    vector_delete(results);
+
+    coverage_reset_all();
 }
 
 /*

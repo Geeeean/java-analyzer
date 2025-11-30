@@ -37,42 +37,78 @@ TypeKind get_tk(char c)
 
 Type* get_type(char** t)
 {
+    if (!t || !*t || **t == '\0') {
+        LOG_ERROR("get_type: end of descriptor or null");
+        return NULL;
+    }
+
+    char c = **t;
     Type* type = NULL;
 
-    TypeKind tk = get_tk(**t);
-    switch (tk) {
-    case TK_INT:
+    switch (c) {
+    case 'I': // int
+        (*t)++;               // consume 'I'
         type = TYPE_INT;
         break;
-    case TK_BOOLEAN:
+
+    case 'Z': // boolean
+        (*t)++;               // consume 'Z'
         type = TYPE_BOOLEAN;
         break;
-    case TK_REFERENCE:
-        type = TYPE_REFERENCE;
-        break;
-    case TK_CLASS:
-        LOG_ERROR("TODO: get type class in type.c: 'get_type'");
-        break;
-    case TK_CHAR:
+
+    case 'C': // char
+        (*t)++;               // consume 'C'
         type = TYPE_CHAR;
         break;
-    case TK_ARRAY:
-        (*t)++;
-        type = make_array_type(get_type(t));
-        break;
-    case TK_VOID:
+
+    case 'V': // void (return type only)
+        (*t)++;               // consume 'V'
         type = TYPE_VOID;
         break;
-    default:
-        LOG_ERROR("Unknown type kind while getting type");
+
+    case '[': {
+        (*t)++;
+        Type* element = get_type(t);
+        if (!element) {
+            LOG_ERROR("Array element type malformed");
+            return NULL;
+        }
+        type = make_array_type(element);
         break;
+    }
+
+    case 'L': { // class / reference type: L...;
+        (*t)++; // skip 'L'
+
+        while (**t && **t != ';') {
+            (*t)++;
+        }
+
+        if (**t == ';') {
+            (*t)++; // consume the ';'
+        }
+
+        type = TYPE_REFERENCE;
+        break;
+    }
+
+    default:
+        LOG_ERROR("Unknown type kind while getting type: '%c' (0x%02X)",
+                  c, (unsigned char)c);
+        return NULL;
     }
 
     return type;
 }
 
+
 Type* make_array_type(Type* element_type)
 {
+    if (!element_type) {
+        LOG_ERROR("make_array_type: element_type NULL");
+        return NULL;
+    }
+
     for (Type* t = type_table; t != NULL; t = t->next) {
         if (t->kind == TK_ARRAY && t->array.element_type == element_type)
             return t;
