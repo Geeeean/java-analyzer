@@ -1,10 +1,11 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "utils.h"
 #include "log.h"
 #include "opcode.h"
 
 #include "time.h"
-#include <limits.h>
-#include <string.h>
 
 void replace_char(char* str, char find, char replace)
 {

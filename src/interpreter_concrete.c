@@ -1,6 +1,7 @@
 // todo handle pop error, use vector
-#include "interpreter_concrete.h"
 #define _GNU_SOURCE
+#include <string.h>
+#include "interpreter_concrete.h"
 #include "cli.h"
 #include "coverage.h"
 #include "heap.h"
@@ -18,7 +19,6 @@
 #include <pthread.h>
 #include <stdlib.h>
 
-static pthread_rwlock_t persistent_it_lock = PTHREAD_RWLOCK_INITIALIZER;
 #define ITERATION 100000
 
 // todo: use hashmap

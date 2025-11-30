@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "ir_function.h"
 
 #include "cJSON/cJSON.h"

@@ -3,10 +3,10 @@
 
 #include "cli.h"
 #include "interpreter_concrete.h"
+#include "interpreter_abstract.h"
 #include "method.h"
 #include "testCaseCorpus.h"
 #include "vector.h"
-
 #include <stdbool.h>
 
 typedef struct {
@@ -59,6 +59,7 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
                                   const Config* config,
                                   const Options* opts,
                                   Vector* arg_types,
-                                  int thread_count);
-
+                                  int thread_count,
+                                  AbstractResult* precomputed_abs);
+void print_corpus(const Corpus* corpus, Vector* arg_types);
 #endif

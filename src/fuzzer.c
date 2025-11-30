@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "interpreter_abstract.h"
+#include "interval_testcase.h"
 #include "coverage.h"
 #include "fuzzer.h"
 #include "heap.h"
@@ -21,7 +23,6 @@
 #define MUTATIONS_PER_PARENT 1000
 static pthread_mutex_t coverage_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// Returns microseconds
 static inline uint64_t now_us()
 {
     struct timespec ts;
@@ -90,9 +91,9 @@ static uint32_t fuzz_rand_u32(void)
         uint32_t t = (uint32_t)time(NULL);
         uint32_t tid = (uint32_t)(uintptr_t)pthread_self();
 
-        fuzz_rng_state = t ^ (tid * 0x9e3779b9u); // simple mixing
+        fuzz_rng_state = t ^ (tid * 0x9e3779b9u);
         if (fuzz_rng_state == 0)
-            fuzz_rng_state = 1; // avoid zero state
+            fuzz_rng_state = 1;
 
         fuzz_rng_inited = 1;
     }
@@ -112,7 +113,7 @@ static bool seen_insert(uint64_t* seen, int* seen_count, uint64_t h)
 {
     for (int i = 0; i < *seen_count; i++)
         if (seen[i] == h)
-            return true; // already seen
+            return true;
 
     if (*seen_count < SEEN_CAPACITY)
         seen[(*seen_count)++] = h;
@@ -123,28 +124,32 @@ static bool seen_insert(uint64_t* seen, int* seen_count, uint64_t h)
 static size_t compute_required_len(Vector* arg_types)
 {
     size_t total = 0;
+
     for (size_t i = 0; i < vector_length(arg_types); i++) {
         Type* t = *(Type**)vector_get(arg_types, i);
         if (!t)
-            continue; // or bail hard if you prefer
+            continue;
 
         switch (t->kind) {
-        case TK_INT:
-        case TK_BOOLEAN:
-        case TK_CHAR:
-            total += 1; // 1 byte each
-            break;
+            case TK_INT:
+                total += 4;
+                break;
 
-        case TK_ARRAY:
-            total += 1; // length byte, initially 0 → no payload
-            break;
+            case TK_BOOLEAN:
+            case TK_CHAR:
+                total += 1;
+                break;
 
-        default:
-            // unknown → still give it 1 byte so we don't create empty testcases
-            total += 1;
-            break;
+            case TK_ARRAY:
+                total += 1;
+                break;
+
+            default:
+                total += 1;
+                break;
         }
     }
+
     return total;
 }
 
@@ -154,26 +159,18 @@ static size_t compute_required_len(Vector* arg_types)
         if (n < 0 || (size_t)n >= (max) - *(cursor))                              \
             return false;                                                         \
         *(cursor) += (size_t)n;                                                   \
-    } while (0) // macro for safe-guarding buffer overflow
+    } while (0)
 
 static bool append_escaped_char(char* buffer, size_t* cursor, size_t max, char c)
 {
-    // Characters that break tokenizer OR require escaping
     if (c == '\'' || c == '\\' || c == '(' || c == ')' || c == ',' || c == ' ' || !isprint((unsigned char)c)) {
         APPEND_FMT(buffer, cursor, max, "'\\x%02x'", (unsigned char)c);
         return true;
     }
 
-    // All other printable characters are safe
     APPEND_FMT(buffer, cursor, max, "'%c'", c);
     return true;
 }
-
-// TODO - Add abstract interpreter to mutation strategy
-// Vector {[-10,10], [-INF, INF]}
-// Vector {{INT_MIN, INT_MAX}}
-
-// TODO - Implement concurrent manipulations
 
 Fuzzer* fuzzer_init(size_t instruction_count, Vector* arg_types)
 {
@@ -218,24 +215,54 @@ Fuzzer* fuzzer_init(size_t instruction_count, Vector* arg_types)
     return f;
 }
 
-Vector* fuzzer_run_until_complete(Fuzzer* f,
+Vector* fuzzer_run_until_complete(
+    Fuzzer* f,
     const Method* method,
     const Config* config,
     const Options* opts,
     Vector* arg_types,
-    int thread_count)
+    int thread_count,
+    AbstractResult* precomputed_abs)
 {
     Vector* all_interesting = vector_new(sizeof(TestCase*));
     uint64_t start = now_us();
     uint64_t timeout_ms = 3000;
 
-    if (thread_count <= 1) {
+    bool has_array_arg = false;
+    for (size_t i = 0; i < vector_length(arg_types); i++) {
+        Type* t = *(Type**)vector_get(arg_types, i);
+        if (t && t->kind == TK_ARRAY) {
+            has_array_arg = true;
+            break;
+        }
+    }
 
+    abstract_result_print(precomputed_abs);
+
+    if (!has_array_arg && precomputed_abs) {
+
+        Vector* interval_seeds =
+            generate_interval_seeds(f, precomputed_abs, arg_types);
+
+        size_t s = vector_length(interval_seeds);
+        for (size_t i = 0; i < s; i++) {
+            TestCase* tc = *(TestCase**)vector_get(interval_seeds, i);
+            vector_push(all_interesting, &tc);
+        }
+
+        vector_delete(interval_seeds);
+    }
+
+    print_corpus(f->corpus, arg_types);
+
+    if (thread_count <= 1) {
         for (;;) {
             if ((now_us() - start) / 1000 > timeout_ms) {
                 LOG_INFO("Timeout reached — stopping fuzzing early");
             }
-            Vector* batch = fuzzer_run_single(f, method, config, opts, arg_types);
+
+            Vector* batch =
+                fuzzer_run_single(f, method, config, opts, arg_types);
 
             size_t n = vector_length(batch);
             for (size_t i = 0; i < n; i++) {
@@ -255,7 +282,9 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
             LOG_INFO("Timeout reached — stopping fuzzing early");
             break;
         }
-        Vector* batch = fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
+
+        Vector* batch =
+            fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
 
         size_t n = vector_length(batch);
         for (size_t i = 0; i < n; i++) {
@@ -282,7 +311,6 @@ Vector* fuzzer_run_single(Fuzzer* f,
     const Options* opts,
     Vector* arg_types)
 {
-    // Build initial work queue from the corpus
     WorkQueue queue;
     workqueue_init(&queue, f->corpus);
 
@@ -301,11 +329,9 @@ Vector* fuzzer_run_single(Fuzzer* f,
 
         for (int m = 0; m < MUTATIONS_PER_PARENT; m++) {
 
-            // ⬇⬇⬇ FIX: let mutate() do the copying
             TestCase* child = mutate(parent, arg_types);
             if (!child)
                 continue;
-            // ⬆⬆⬆ no extra testCase_copy here anymore
 
             uint64_t h = testcase_hash(child);
             bool already_seen = seen_insert(seen, &seen_count, h);
@@ -313,7 +339,6 @@ Vector* fuzzer_run_single(Fuzzer* f,
             uint8_t* thread_bitmap = child->coverage_bitmap;
             coverage_reset_thread_bitmap(thread_bitmap);
 
-            // Lazily create IR-based persistent VM
             if (!vm) {
                 Options base_opts = *opts;
                 base_opts.parameters = NULL;
@@ -338,7 +363,6 @@ Vector* fuzzer_run_single(Fuzzer* f,
                 VMContext_set_coverage_bitmap(vm, thread_bitmap);
             }
 
-            // Reuse heap for next child
             heap_reset(heap);
 
             int locals_count = 0;
@@ -731,16 +755,13 @@ bool parse(const uint8_t* data, const size_t length,
                 return false;
             }
 
-            // Write element type
             APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", type_char);
 
-            // EMPTY ARRAY → close immediately
             if (array_length == 0) {
                 APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
                 break;
             }
 
-            // Non-empty → write colon
             APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ':');
 
             for (int j = 0; j < array_length; j++) {
@@ -774,20 +795,18 @@ bool parse(const uint8_t* data, const size_t length,
             return false;
         }
 
-        if (i + 1 < arguments_len) { // add comma for each new entry
+        if (i + 1 < arguments_len) {
             APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ',');
         }
     }
 
     if (buffer_cursor >= sizeof(buffer) - 1)
         return false;
-    // buffer[buffer_cursor++] = ')';
-    buffer[buffer_cursor] = '\0'; // append )\0
+    buffer[buffer_cursor] = '\0';
 
     free(out_opts->parameters);
     out_opts->parameters = strdup(buffer);
     if (!out_opts->parameters) {
-        // Out of memory – treat as parse failure
         return false;
     }
 
@@ -799,7 +818,6 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     if (!original || original->len == 0)
         return NULL;
 
-    // Always clone the original; mutations NEVER touch input testcase in-place
     TestCase* tc = testCase_copy(original);
     if (!tc)
         return NULL;
@@ -811,13 +829,11 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     if (arg_count == 0)
         return tc;
 
-    // Choose argument to mutate
     size_t arg_index = fuzz_rand_range(arg_count);
     Type* t = *(Type**)vector_get(arg_types, arg_index);
     if (!t)
         return tc;
 
-    // --- Compute offset ---
     size_t offset = 0;
     for (size_t i = 0; i < arg_index; i++) {
         Type* prev = *(Type**)vector_get(arg_types, i);
@@ -847,7 +863,6 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     if (offset >= len)
         return tc;
 
-    // ---- Perform mutation (pure-copy semantics) ----
     switch (t->kind) {
 
     case TK_INT: {
@@ -900,7 +915,7 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
             memcpy(buf, data, offset + 1 + arr_len);
 
             buf[offset] = arr_len + 1;
-            buf[offset + 1 + arr_len] = 'a' + (fuzz_rand_u32() % 26); // Could type-check elem
+            buf[offset + 1 + arr_len] = 'a' + (fuzz_rand_u32() % 26);
 
             memcpy(buf + offset + 1 + arr_len + 1,
                 data + offset + 1 + arr_len,
@@ -912,14 +927,13 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
             return tc;
         }
 
-        // ---- SHRINK ----
         if (action == 1 && arr_len > 0) {
             size_t new_len = len - 1;
             uint8_t* buf = malloc(new_len);
             if (!buf)
                 return tc;
 
-            memcpy(buf, data, offset + 1); // includes len byte
+            memcpy(buf, data, offset + 1);
             buf[offset] = arr_len - 1;
 
             memcpy(buf + offset + 1,
@@ -936,7 +950,6 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
             return tc;
         }
 
-        // ---- MUTATE AN ELEMENT ----
         if (arr_len > 0) {
             size_t i = fuzz_rand_range(arr_len);
             uint8_t* elem = &data[offset + 1 + i];
@@ -971,4 +984,29 @@ void fuzzer_free(Fuzzer* f)
     corpus_free(f->corpus);
 
     free(f);
+}
+
+void print_corpus(const Corpus* corpus, Vector* arg_types) {
+    printf("\n=== CORPUS CONTENTS (%zu testcases) ===\n",
+           corpus_size(corpus));
+
+    for (size_t i = 0; i < corpus_size(corpus); i++) {
+        TestCase* tc = corpus_get(corpus, i);
+        if (!tc) continue;
+
+        Options tmp_opts = { .parameters = NULL };
+
+        if (!parse(tc->data, tc->len, arg_types, &tmp_opts)) {
+            printf("[%zu]  (parse failed, raw bytes): ", i);
+            for (size_t b = 0; b < tc->len; b++)
+                printf("%02x ", tc->data[b]);
+            printf("\n");
+            continue;
+        }
+
+        printf("[%zu]  %s\n", i, tmp_opts.parameters);
+        free(tmp_opts.parameters);
+    }
+
+    printf("=======================================\n");
 }
