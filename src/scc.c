@@ -66,7 +66,7 @@ static void strong_connect(int id,
 
     on_stack[id] = 1;
 
-    for (int i = 0; i < vector_length(node->successors); i++) {
+    for (size_t i = 0; i < vector_length(node->successors); i++) {
         int successor_id = *(int*)vector_get(node->successors, i);
         if (!graph || !graph->not_valid) {
             LOG_ERROR("Graph or not_valid array is NULL in strong_connect.");
@@ -225,7 +225,7 @@ void scc_print(SCC* scc)
     for (int i = 0; i < scc->comp_count; i++) {
         Vector* component = scc->components[i];
         LOG_INFO("COMPONENT %d", i);
-        for (int j = 0; j < vector_length(component); j++) {
+        for (size_t j = 0; j < vector_length(component); j++) {
             int node = *(int*)vector_get(component, j);
             LOG_INFO("%d", node);
         }

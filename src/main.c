@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "config.h"
 #include "coverage.h"
+#include "domain_interval.h"
 #include "fuzzer.h"
 #include "info.h"
 #include "interpreter_abstract.h"
@@ -103,7 +104,21 @@ int main(int argc, char** argv)
     } else if (opts.fuzzer) {
         run_fuzzer(m, opts, cfg);
     } else {
-        run_base(m, opts, cfg);
+        AbstractContext* abstract_context = interpreter_abstract_setup(m, &opts, cfg);
+        AbstractResult abstract_result = interpreter_abstract_run(abstract_context);
+
+#ifdef DEBUG
+        for (int i = 0; i < abstract_result.num_locals; i++) {
+            LOG_INFO("LOCAL[%d]", i);
+            for (int j = 0; j < vector_length(abstract_result.results[i]); j++) {
+                Interval* iv = vector_get(abstract_result.results[i], j);
+                printf("[%d, %d] ", iv->lower, iv->upper);
+            }
+            printf("\n");
+        }
+#endif
+
+        // TODO: use abstract result for starting the fuzzer
     }
 
 cleanup:
@@ -114,97 +129,6 @@ cleanup:
     options_cleanup(&opts);
 
     return result;
-}
-
-void run_base(Method* m, Options opts, const Config* cfg)
-{
-    int run = 100;
-    Outcome outcome = new_outcome();
-
-    size_t instruction_count = interpreter_instruction_count(m, cfg);
-
-    coverage_init(instruction_count);
-
-#pragma omp parallel
-    {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-
-        unsigned int seed = (unsigned int)(ts.tv_nsec ^ (ts.tv_sec << 16) ^ omp_get_thread_num());
-
-        srand(seed);
-        srandom(seed);
-
-        Outcome private = new_outcome();
-
-#pragma omp for
-        for (int i = 0; i < run; i++) {
-            char* start_params = NULL;
-
-            Options local_opts = opts;
-            local_opts.parameters = start_params;
-
-            VMContext* vm_context = interpreter_setup(m, &local_opts, cfg, NULL);
-
-            if (!vm_context) {
-                LOG_ERROR("Interpreter setup failed (null VMContext) in parallel run. Skipping iteration.");
-                continue;
-            }
-            RuntimeResult interpreter_result = interpreter_run(vm_context);
-
-            interpreter_free(vm_context);
-
-            switch (interpreter_result) {
-            case RT_OK:
-                private.oc_ok = 100;
-                break;
-            case RT_DIVIDE_BY_ZERO:
-                private.oc_divide_by_zero = 100;
-                break;
-            case RT_ASSERTION_ERR:
-                private.oc_assertion_error = 100;
-                break;
-            case RT_INFINITE:
-                private.oc_infinite_loop = 75;
-                break;
-            case RT_OUT_OF_BOUNDS:
-                private.oc_out_of_bounds = 100;
-                break;
-            case RT_NULL_POINTER:
-                private.oc_null_pointer = 100;
-                break;
-            case RT_CANT_BUILD_FRAME:
-            case RT_NULL_PARAMETERS:
-            case RT_UNKNOWN_ERROR:
-            default:
-                LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
-            }
-        }
-
-#pragma omp critical
-        {
-            if (private.oc_assertion_error != 50) {
-                outcome.oc_assertion_error = private.oc_assertion_error;
-            }
-            if (private.oc_divide_by_zero != 50) {
-                outcome.oc_divide_by_zero = private.oc_divide_by_zero;
-            }
-            if (private.oc_infinite_loop != 50) {
-                outcome.oc_infinite_loop = private.oc_infinite_loop;
-            }
-            if (private.oc_null_pointer != 50) {
-                outcome.oc_null_pointer = private.oc_null_pointer;
-            }
-            if (private.oc_ok != 50) {
-                outcome.oc_ok = private.oc_ok;
-            }
-            if (private.oc_out_of_bounds != 50) {
-                outcome.oc_out_of_bounds = private.oc_out_of_bounds;
-            }
-        }
-    }
-
-    print_outcome(outcome);
 }
 
 /* interpreter-only runner */
@@ -250,7 +174,6 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg)
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg)
 {
-
     size_t instruction_count = interpreter_instruction_count(m, cfg);
 
     if (!coverage_init(instruction_count)) {

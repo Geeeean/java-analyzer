@@ -18,11 +18,11 @@ Graph* graph_from_cfg(Cfg* cfg)
 
     graph->nodes = vector_new(sizeof(Node));
 
-    for (int i = 0; i < vector_length(cfg->blocks); i++) {
+    for (size_t i = 0; i < vector_length(cfg->blocks); i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
         Node node = { .successors = vector_new(sizeof(int)) };
 
-        for (int j = 0; j < vector_length(block->successors); j++) {
+        for (size_t j = 0; j < vector_length(block->successors); j++) {
             BasicBlock* successor = *(BasicBlock**)vector_get(block->successors, j);
             int successor_id = successor->id;
 
@@ -49,22 +49,22 @@ Graph* graph_from_component(Graph* parent_graph, Vector* component, int* map)
     }
     graph->nodes = vector_new(sizeof(Node));
 
-    for (int i = 0; i < vector_length(parent_graph->nodes); i++) {
+    for (size_t i = 0; i < vector_length(parent_graph->nodes); i++) {
         map[i] = -1;
     }
 
-    for (int i = 0; i < vector_length(component); i++) {
+    for (size_t i = 0; i < vector_length(component); i++) {
         int index = *(int*)vector_get(component, i);
 
         map[i] = index;
     }
 
-    for (int i = 0; i < vector_length(component); i++) {
+    for (size_t i = 0; i < vector_length(component); i++) {
         Node new_node = { .successors = vector_new(sizeof(int)) };
 
         int index = *(int*)vector_get(component, i);
         Node* node = vector_get(parent_graph->nodes, index);
-        for (int j = 0; j < vector_length(node->successors); j++) {
+        for (size_t j = 0; j < vector_length(node->successors); j++) {
             int successor_index = *(int*)vector_get(node->successors, j);
             if (parent_graph->not_valid[successor_index]) {
                 continue;
@@ -220,7 +220,7 @@ void graph_print(Graph* graph)
 
         if (node->successors && vector_length(node->successors) > 0) {
 
-            for (int j = 0; j < vector_length(node->successors); j++) {
+            for (size_t j = 0; j < vector_length(node->successors); j++) {
                 int successor_id = *(int*)vector_get(node->successors, j);
 
                 LOG_INFO("  -> %d", successor_id);
@@ -238,10 +238,10 @@ GraphMathRepr* graph_math_repr_from_graph(Graph* graph)
     graph_mr->nodes = vector_new(sizeof(int));
     graph_mr->edges = vector_new(sizeof(Pair));
 
-    for (int i = 0; i < vector_length(graph->nodes); i++) {
+    for (size_t i = 0; i < vector_length(graph->nodes); i++) {
         vector_push(graph_mr->nodes, &i);
         Node* node = (Node*)vector_get(graph->nodes, i);
-        for (int j = 0; j < vector_length(node->successors); j++) {
+        for (size_t j = 0; j < vector_length(node->successors); j++) {
             Pair edge = {
                 .first = i,
                 .second = *(int*)vector_get(node->successors, j)
@@ -257,7 +257,7 @@ GraphMathRepr* graph_math_repr_from_graph(Graph* graph)
 int get_max_id(Vector* nodes_vector)
 {
     int max_id = -1;
-    for (int i = 0; i < vector_length(nodes_vector); i++) {
+    for (size_t i = 0; i < vector_length(nodes_vector); i++) {
         int id = *(int*)vector_get(nodes_vector, i);
         if (id > max_id) {
             max_id = id;
@@ -297,7 +297,7 @@ Graph* graph_from_graph_math_repr(GraphMathRepr* graph_mr)
         vector_push(graph->nodes, &node);
     }
 
-    for (int i = 0; i < vector_length(graph_mr->nodes); i++) {
+    for (size_t i = 0; i < vector_length(graph_mr->nodes); i++) {
         int sparse_id = *(int*)vector_get(graph_mr->nodes, i);
 
         graph->not_valid[sparse_id] = 0;
@@ -305,7 +305,7 @@ Graph* graph_from_graph_math_repr(GraphMathRepr* graph_mr)
         node_ptr->successors = vector_new(sizeof(int));
     }
 
-    for (int i = 0; i < vector_length(graph_mr->edges); i++) {
+    for (size_t i = 0; i < vector_length(graph_mr->edges); i++) {
         Pair* edge = (Pair*)vector_get(graph_mr->edges, i);
 
         int source_id = edge->first;
@@ -329,7 +329,7 @@ void graph_delete(Graph* graph)
 {
     if (graph) {
         if (graph->nodes) {
-            for (int i = 0; i < vector_length(graph->nodes); i++) {
+            for (size_t i = 0; i < vector_length(graph->nodes); i++) {
                 Node* node = vector_get(graph->nodes, i);
                 vector_delete(node->successors);
             }

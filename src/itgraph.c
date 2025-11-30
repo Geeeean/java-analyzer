@@ -28,7 +28,7 @@ static Method* intern_method(const char* sig)
     }
 
     // create new
-    Method* m = method_create(sig);
+    Method* m = method_create((char*)sig);
     if (!m)
         return NULL;
 
@@ -54,7 +54,7 @@ static Method* intern_method(const char* sig)
 
 static bool seen_before(const Method* m, Vector* seen)
 {
-    for (size_t i = 0; i < vector_length(seen); i++) {
+    for (ssize_t i = 0; i < vector_length(seen); i++) {
         const Method* x = *(const Method**)vector_get(seen, i);
         if (x == m)
             return true;
@@ -80,7 +80,7 @@ static void dfs_collect(const Method* m,
     if (!ir)
         return;
 
-    for (int pc = 0; pc < vector_length(ir->ir_instructions); pc++) {
+    for (size_t pc = 0; pc < vector_length(ir->ir_instructions); pc++) {
         IrInstruction* inst = *(IrInstruction**)vector_get(ir->ir_instructions, pc);
         if (!inst)
             continue;

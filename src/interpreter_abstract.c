@@ -9,8 +9,6 @@
 #include <limits.h>
 #include <omp.h>
 
-int x = 0;
-
 struct AbstractContext {
     Cfg* cfg;
     WPO wpo;
@@ -36,9 +34,7 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     cfg_print(control_flow_graph);
 #endif
 
-    LOG_INFO("A");
     cfg_inline(control_flow_graph, (Config*)cfg, (Method*)m);
-    LOG_INFO("B");
 
 #ifdef DEBUG
     LOG_DEBUG("AFTER");
@@ -77,10 +73,10 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
 #ifdef DEBUG
     graph_print(wpo.wpo);
 
-    for (int i = 0; i < vector_length(ctx->wpo.Cx); i++) {
+    for (size_t i = 0; i < vector_length(ctx->wpo.Cx); i++) {
         LOG_DEBUG("COMPONENT %d, WITH HEAD: %d", i, *(int*)vector_get(ctx->wpo.heads, i));
         C* component = vector_get(ctx->wpo.Cx, i);
-        for (int j = 0; j < vector_length(component->components); j++) {
+        for (size_t j = 0; j < vector_length(component->components); j++) {
             LOG_DEBUG("%d", *(int*)vector_get(component->components, j));
         }
     }
@@ -98,7 +94,7 @@ static void set_n_for_component(int* N, int exit_node, AbstractContext* ctx, Vec
     C* component = vector_get(ctx->wpo.Cx, component_id);
     Vector* component_nodes = component->components;
 
-    for (int i = 0; i < vector_length(component_nodes); i++) {
+    for (size_t i = 0; i < vector_length(component_nodes); i++) {
         int node = *(int*)vector_get(component_nodes, i);
         N[node] = ctx->wpo.num_outer_sched_pred[component_id][node];
 
@@ -118,7 +114,7 @@ static void set_n_for_component(int* N, int exit_node, AbstractContext* ctx, Vec
 //     int is_conditional)
 // {
 //     Node* node = vector_get(graph->nodes, current_node);
-//     for (int i = 0; i < vector_length(node->successors); i++) {
+//     for (size_t i = 0; i < vector_length(node->successors); i++) {
 //         int successor = *(int*)vector_get(node->successors, i);
 //         N[successor]++;
 //
@@ -277,7 +273,7 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
         return 0;
     }
 
-    for (int i = 0; i < vector_length(test_in->locals); i++) {
+    for (size_t i = 0; i < vector_length(test_in->locals); i++) {
         int in_id = *(int*)vector_get(test_in->locals, i);
         int out_id = *(int*)vector_get(test_out->locals, i);
 
@@ -315,7 +311,7 @@ void process_node_task(int current_node, AbstractContext* ctx,
 
             /*** update scheduling successors ***/
             Node* node = vector_get(ctx->wpo.wpo->nodes, current_node);
-            for (int i = 0; i < vector_length(node->successors); i++) {
+            for (size_t i = 0; i < vector_length(node->successors); i++) {
                 int successor = *(int*)vector_get(node->successors, i);
 
                 /*** CRITICAL SECTION ***/
@@ -351,7 +347,7 @@ void process_node_task(int current_node, AbstractContext* ctx,
                 int exit_component = ctx->wpo.node_to_component[current_node];
                 int head = *(int*)vector_get(ctx->wpo.heads, exit_component);
 
-                for (int i = 0; i < vector_length(node->successors); i++) {
+                for (size_t i = 0; i < vector_length(node->successors); i++) {
                     int successor = *(int*)vector_get(node->successors, i);
                     if (successor != head) {
 
@@ -387,7 +383,7 @@ void process_node_task(int current_node, AbstractContext* ctx,
                 C* component = vector_get(ctx->wpo.Cx, component_id);
                 Vector* component_nodes = component->components;
 
-                for (int i = 0; i < vector_length(component_nodes); i++) {
+                for (size_t i = 0; i < vector_length(component_nodes); i++) {
                     int node = *(int*)vector_get(component_nodes, i);
                     omp_set_lock(&locks[node]);
                     N[node] = ctx->wpo.num_outer_sched_pred[component_id][node];
@@ -410,7 +406,7 @@ void process_node_task(int current_node, AbstractContext* ctx,
     // #endif
 }
 
-void* interpreter_abstract_run(AbstractContext* ctx)
+AbstractResult interpreter_abstract_run(AbstractContext* ctx)
 {
     int nodes_num = ctx->block_count + ctx->exit_count;
     if (!ctx) {
@@ -483,6 +479,27 @@ void* interpreter_abstract_run(AbstractContext* ctx)
     }
 #endif
 
+    int num_locals = entry_block->num_locals;
+    Vector** results = malloc(sizeof(Vector*) * num_locals);
+    for (int i = 0; i < num_locals; i++) {
+        results[i] = vector_new(sizeof(Interval));
+    }
+
+    for (int i = 0; i < ctx->block_count; i++) {
+        BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
+
+        if (entry_block->ir_function == block->ir_function) {
+            for (int j = 0; j < vector_length(X_out[i]->locals); j++) {
+                int interval_id = *(int*)vector_get(X_out[i]->locals, j);
+                Interval* iv = vector_get(X_out[i]->env, interval_id);
+
+                vector_push(results[j], iv);
+            }
+        }
+    }
+
+    AbstractResult result = { .results = results, .num_locals = num_locals };
+
 cleanup:
     for (int i = 0; i < nodes_num; i++) {
         omp_destroy_lock(&node_locks[i]);
@@ -508,5 +525,5 @@ cleanup:
     wpo_delete(ctx->wpo);
 
     free(ctx);
-    return NULL;
+    return result;
 }

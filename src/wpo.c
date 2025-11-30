@@ -90,7 +90,7 @@ static int
 compute_b_len(GraphMathRepr* graph, int head)
 {
     int res = 0;
-    for (int i = 0; i < vector_length(graph->edges); i++) {
+    for (size_t i = 0; i < vector_length(graph->edges); i++) {
         Pair* edge = vector_get(graph->edges, i);
         if (edge->second == head) {
             res++;
@@ -141,7 +141,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
     graph_mr_comp->edges = vector_new(sizeof(Pair));
     graph_mr_comp->nodes = vector_new(sizeof(int));
 
-    for (int i = 0; i < vector_length(graph->nodes); i++) {
+    for (size_t i = 0; i < vector_length(graph->nodes); i++) {
         int node = *(int*)vector_get(graph->nodes, i);
         if (node != head) {
             vector_push(graph_mr_comp->nodes, &node);
@@ -150,7 +150,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
 
     vector_push(graph_mr_comp->nodes, &new_exit);
 
-    for (int i = 0; i < vector_length(graph->edges); i++) {
+    for (size_t i = 0; i < vector_length(graph->edges); i++) {
         Pair* edge = vector_get(graph->edges, i);
         if (edge->second == head) {
             Pair new_edge = { .first = edge->first, .second = new_exit };
@@ -173,7 +173,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
 
     // vector_copy(result.nodes, wpo_component.nodes);
     vector_copy(c_last->components, wpo_component.exits);
-    for (int i = 0; i < vector_length(wpo_component.nodes); i++) {
+    for (size_t i = 0; i < vector_length(wpo_component.nodes); i++) {
         int node = *(int*)vector_get(wpo_component.nodes, i);
         if (node != new_exit) {
             vector_push(result.nodes, &node);
@@ -188,7 +188,7 @@ WPOComponent sccWPO(GraphMathRepr* graph, int* exit_index, Vector* Cx, Vector* h
     vector_push(result.exits, &new_exit);
 
     vector_copy(result.scheduling_edges, wpo_component.scheduling_edges);
-    for (int i = 0; i < vector_length(graph->edges); i++) {
+    for (size_t i = 0; i < vector_length(graph->edges); i++) {
         Pair* edge = vector_get(graph->edges, i);
         if (edge->first == head) {
             vector_push(result.scheduling_edges, edge);
@@ -231,17 +231,17 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
 
         uint8_t* in_component = calloc(vector_length(graph->nodes), sizeof(uint8_t));
 
-        for (int j = 0; j < vector_length(scc->components[i]); j++) {
+        for (size_t j = 0; j < vector_length(scc->components[i]); j++) {
             int node = *(int*)vector_get(scc->components[i], j);
             in_component[node] = 1;
         }
 
-        for (int j = 0; j < vector_length(scc->components[i]); j++) {
+        for (size_t j = 0; j < vector_length(scc->components[i]); j++) {
             int node_id = *(int*)vector_get(scc->components[i], j);
             vector_push(graph_mr_comp->nodes, &node_id);
             Node* node = vector_get(graph->nodes, node_id);
 
-            for (int k = 0; k < vector_length(node->successors); k++) {
+            for (size_t k = 0; k < vector_length(node->successors); k++) {
                 int successor = *(int*)vector_get(node->successors, k);
                 if (in_component[successor]) {
                     Pair edge = {
@@ -255,20 +255,20 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
         }
 
         WPOComponent wpo_component = sccWPO(graph_mr_comp, exit_index, Cx, heads, exits_vec);
-        for (int j = 0; j < vector_length(wpo_component.nodes); j++) {
+        for (size_t j = 0; j < vector_length(wpo_component.nodes); j++) {
             vector_push(result.nodes, vector_get(wpo_component.nodes, j));
         }
 
-        for (int j = 0; j < vector_length(wpo_component.exits); j++) {
+        for (size_t j = 0; j < vector_length(wpo_component.exits); j++) {
             vector_push(result.exits, vector_get(wpo_component.exits, j));
         }
 
-        for (int j = 0; j < vector_length(wpo_component.scheduling_edges); j++) {
+        for (size_t j = 0; j < vector_length(wpo_component.scheduling_edges); j++) {
             Pair* edge = vector_get(wpo_component.scheduling_edges, j);
             vector_push(result.scheduling_edges, edge);
         }
 
-        for (int j = 0; j < vector_length(wpo_component.stabilizing_edges); j++) {
+        for (size_t j = 0; j < vector_length(wpo_component.stabilizing_edges); j++) {
             Pair* edge = vector_get(wpo_component.stabilizing_edges, j);
             vector_push(result.stabilizing_edges, edge);
         }
@@ -288,7 +288,7 @@ WPOComponent wpo_construct(GraphMathRepr* graph_mr, int* exit_index, Vector* Cx,
         free(graph_mr_comp);
     }
 
-    for (int i = 0; i < vector_length(graph_mr->edges); i++) {
+    for (size_t i = 0; i < vector_length(graph_mr->edges); i++) {
         Pair* edge = vector_get(graph_mr->edges, i);
         if (graph->not_valid[edge->first] || graph->not_valid[edge->second]) {
             continue;
@@ -349,14 +349,14 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
         vector_push(graph_result->nodes, node);
     }
 
-    for (int i = 0; i < vector_length(result.scheduling_edges); i++) {
+    for (size_t i = 0; i < vector_length(result.scheduling_edges); i++) {
         Pair* edge = vector_get(result.scheduling_edges, i);
 
         Node* node = vector_get(graph_result->nodes, edge->first);
         vector_push(node->successors, &edge->second);
     }
 
-    for (int i = 0; i < vector_length(result.stabilizing_edges); i++) {
+    for (size_t i = 0; i < vector_length(result.stabilizing_edges); i++) {
         Pair* edge = vector_get(result.stabilizing_edges, i);
 
         Node* node = vector_get(graph_result->nodes, edge->first);
@@ -369,7 +369,7 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
         goto cleanup;
     }
 
-    for (int i = 0; i < vector_length(result.scheduling_edges); i++) {
+    for (size_t i = 0; i < vector_length(result.scheduling_edges); i++) {
         Pair* edge = vector_get(result.scheduling_edges, i);
         num_sched_pred[edge->second]++;
     }
@@ -380,9 +380,9 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
         node_to_component[i] = -1;
     }
 
-    for (int i = 0; i < vector_length(Cx); i++) {
+    for (size_t i = 0; i < vector_length(Cx); i++) {
         C* component = vector_get(Cx, i);
-        for (int j = 0; j < vector_length(component->components); j++) {
+        for (size_t j = 0; j < vector_length(component->components); j++) {
             int node = *(int*)vector_get(component->components, j);
             node_to_component[node] = i;
         }
@@ -401,14 +401,14 @@ int wpo_construct_aux(Graph* graph, WPO* wpo)
     // todo speed up this
     for (int i = 0; i < num_components; i++) {
         C* component = vector_get(Cx, i);
-        for (int j = 0; j < vector_length(result.scheduling_edges); j++) {
+        for (size_t j = 0; j < vector_length(result.scheduling_edges); j++) {
             Pair* edge = vector_get(result.scheduling_edges, j);
             int u = edge->first;
             int v = edge->second;
 
             int is_u_here = 0;
             int is_v_here = 0;
-            for (int k = 0; k < vector_length(component->components); k++) {
+            for (size_t k = 0; k < vector_length(component->components); k++) {
                 int node = *(int*)vector_get(component->components, k);
                 if (node == u) {
                     is_u_here = 1;
@@ -479,7 +479,7 @@ void wpo_delete(WPO wpo)
     free(wpo.node_to_component);
 
     if (wpo.Cx) {
-        for (int i = 0; i < vector_length(wpo.Cx); i++) {
+        for (size_t i = 0; i < vector_length(wpo.Cx); i++) {
             C* comp = vector_get(wpo.Cx, i);
             if (comp->components) {
                 vector_delete(comp->components);

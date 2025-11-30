@@ -8,6 +8,7 @@
 #include "vector.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 static BasicBlock* basic_block_new(int id)
 {
@@ -245,16 +246,12 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
     IrFunction* ir_function = ir_program_get_function_ir(m, config);
     BasicBlock* entry = *(BasicBlock**)vector_get(cfg->blocks, 0);
 
-    LOG_INFO("AB");
-
     int length = vector_length(cfg->blocks);
     for (int i = 0; i < length; i++) {
         BasicBlock* block = *(BasicBlock**)vector_get(cfg->blocks, i);
         for (int j = block->ip_start; j <= block->ip_end; j++) {
-            LOG_INFO("BC");
             IrInstruction* ir_instruction = *(IrInstruction**)vector_get(ir_function->ir_instructions, j);
             if (ir_instruction->opcode == OP_INVOKE) {
-                LOG_INFO("AAAAAAAAA");
                 int id = vector_length(cfg->blocks);
                 // split the current block
                 BasicBlock* invoke_exit = basic_block_new(id);
@@ -270,7 +267,6 @@ int cfg_inline(Cfg* cfg, Config* config, Method* m)
 
                 InvokeOP* invoke = &ir_instruction->data.invoke;
                 char* method_id = get_method_signature(invoke);
-                LOG_INFO("AAAAAAAAA");
 
                 if (!method_id) {
                     return FAILURE;

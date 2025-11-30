@@ -7,7 +7,12 @@
 
 typedef struct AbstractContext AbstractContext;
 
+typedef struct {
+    int num_locals;
+    Vector** results; // Vector<Interval> results[num_locals];
+} AbstractResult;
+
 AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts, const Config* cfg);
-void* interpreter_abstract_run(AbstractContext* abstract_context);
+AbstractResult interpreter_abstract_run(AbstractContext* abstract_context);
 
 #endif

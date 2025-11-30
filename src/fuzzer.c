@@ -1,7 +1,7 @@
 // Source = https://clang.llvm.org/docs/SanitizerCoverage.html
 #define _GNU_SOURCE
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "coverage.h"
 #include "fuzzer.h"
@@ -18,14 +18,15 @@
 #include <time.h>
 
 #define SEEN_CAPACITY 32768
-#define MUTATIONS_PER_PARENT  1000
+#define MUTATIONS_PER_PARENT 1000
 static pthread_mutex_t coverage_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Returns microseconds
-static inline uint64_t now_us() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)(ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000ULL);
+static inline uint64_t now_us()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)(ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000ULL);
 }
 
 typedef struct {
@@ -50,15 +51,15 @@ static void workqueue_init(WorkQueue* q, Corpus* corpus)
 
 static void workqueue_destroy(WorkQueue* q)
 {
-  vector_delete(q->items);
-  pthread_mutex_destroy(&q->lock);
+    vector_delete(q->items);
+    pthread_mutex_destroy(&q->lock);
 }
 
 static void workqueue_push(WorkQueue* q, TestCase* tc)
 {
-  pthread_mutex_lock(&q->lock);
-  vector_push(q->items, &tc);
-  pthread_mutex_unlock(&q->lock);
+    pthread_mutex_lock(&q->lock);
+    vector_push(q->items, &tc);
+    pthread_mutex_unlock(&q->lock);
 }
 
 static TestCase* workqueue_pop(WorkQueue* q)
@@ -80,60 +81,62 @@ static TestCase* workqueue_pop(WorkQueue* q)
     return tc;
 }
 
-
 static __thread uint32_t fuzz_rng_state = 0;
 static __thread int fuzz_rng_inited = 0;
 
 static uint32_t fuzz_rand_u32(void)
 {
-  if (!fuzz_rng_inited) {
-    uint32_t t = (uint32_t)time(NULL);
-    uint32_t tid = (uint32_t)(uintptr_t)pthread_self();
+    if (!fuzz_rng_inited) {
+        uint32_t t = (uint32_t)time(NULL);
+        uint32_t tid = (uint32_t)(uintptr_t)pthread_self();
 
-    fuzz_rng_state = t ^ (tid * 0x9e3779b9u);  // simple mixing
-    if (fuzz_rng_state == 0) fuzz_rng_state = 1;  // avoid zero state
+        fuzz_rng_state = t ^ (tid * 0x9e3779b9u); // simple mixing
+        if (fuzz_rng_state == 0)
+            fuzz_rng_state = 1; // avoid zero state
 
-    fuzz_rng_inited = 1;
-  }
+        fuzz_rng_inited = 1;
+    }
 
-  fuzz_rng_state = fuzz_rng_state * 1664525u + 1013904223u;
-  return fuzz_rng_state;
+    fuzz_rng_state = fuzz_rng_state * 1664525u + 1013904223u;
+    return fuzz_rng_state;
 }
 
-static inline size_t fuzz_rand_range(size_t max) {
-  if (max == 0) return 0;
-  return fuzz_rand_u32() % max;
-}
-
-static bool seen_insert(uint64_t *seen, int *seen_count, uint64_t h)
+static inline size_t fuzz_rand_range(size_t max)
 {
-  for (int i = 0; i < *seen_count; i++)
-    if (seen[i] == h)
-      return true;     // already seen
-
-  if (*seen_count < SEEN_CAPACITY)
-    seen[(*seen_count)++] = h;
-
-  return false;
+    if (max == 0)
+        return 0;
+    return fuzz_rand_u32() % max;
 }
 
+static bool seen_insert(uint64_t* seen, int* seen_count, uint64_t h)
+{
+    for (int i = 0; i < *seen_count; i++)
+        if (seen[i] == h)
+            return true; // already seen
+
+    if (*seen_count < SEEN_CAPACITY)
+        seen[(*seen_count)++] = h;
+
+    return false;
+}
 
 static size_t compute_required_len(Vector* arg_types)
 {
     size_t total = 0;
     for (size_t i = 0; i < vector_length(arg_types); i++) {
-        Type* t = *(Type**) vector_get(arg_types, i);
-        if (!t) continue; // or bail hard if you prefer
+        Type* t = *(Type**)vector_get(arg_types, i);
+        if (!t)
+            continue; // or bail hard if you prefer
 
         switch (t->kind) {
         case TK_INT:
         case TK_BOOLEAN:
         case TK_CHAR:
-            total += 1;      // 1 byte each
+            total += 1; // 1 byte each
             break;
 
         case TK_ARRAY:
-            total += 1;      // length byte, initially 0 → no payload
+            total += 1; // length byte, initially 0 → no payload
             break;
 
         default:
@@ -145,45 +148,44 @@ static size_t compute_required_len(Vector* arg_types)
     return total;
 }
 
+#define APPEND_FMT(buf, cursor, max, fmt, ...)                                    \
+    do {                                                                          \
+        int n = snprintf((buf) + *(cursor), (max) - *(cursor), fmt, __VA_ARGS__); \
+        if (n < 0 || (size_t)n >= (max) - *(cursor))                              \
+            return false;                                                         \
+        *(cursor) += (size_t)n;                                                   \
+    } while (0) // macro for safe-guarding buffer overflow
 
+static bool append_escaped_char(char* buffer, size_t* cursor, size_t max, char c)
+{
+    // Characters that break tokenizer OR require escaping
+    if (c == '\'' || c == '\\' || c == '(' || c == ')' || c == ',' || c == ' ' || !isprint((unsigned char)c)) {
+        APPEND_FMT(buffer, cursor, max, "'\\x%02x'", (unsigned char)c);
+        return true;
+    }
 
-#define APPEND_FMT(buf, cursor, max, fmt, ...) do { \
-int n = snprintf((buf) + *(cursor), (max) - *(cursor), fmt, __VA_ARGS__); \
-if (n < 0 || (size_t)n >= (max) - *(cursor)) return false; \
-*(cursor) += (size_t)n; \
-} while (0)  // macro for safe-guarding buffer overflow
-
-
-static bool append_escaped_char(char *buffer, size_t *cursor, size_t max, char c) {
-  // Characters that break tokenizer OR require escaping
-  if (c == '\'' || c == '\\' || c == '(' || c == ')' || c == ',' || c == ' ' || !isprint((unsigned char)c)) {
-    APPEND_FMT(buffer, cursor, max, "'\\x%02x'", (unsigned char)c);
+    // All other printable characters are safe
+    APPEND_FMT(buffer, cursor, max, "'%c'", c);
     return true;
-  }
-
-  // All other printable characters are safe
-  APPEND_FMT(buffer, cursor, max, "'%c'", c);
-  return true;
 }
-
 
 // TODO - Add abstract interpreter to mutation strategy
 // Vector {[-10,10], [-INF, INF]}
 // Vector {{INT_MIN, INT_MAX}}
 
-
 // TODO - Implement concurrent manipulations
-
 
 Fuzzer* fuzzer_init(size_t instruction_count, Vector* arg_types)
 {
     Fuzzer* f = malloc(sizeof(Fuzzer));
-    if (!f) return NULL;
+    if (!f) {
+        return NULL;
+    }
 
     f->instruction_count = instruction_count;
-    f->cov_bytes         = instruction_count;
-    f->corpus            = corpus_init();
-    f->corpus_index      = 0;
+    f->cov_bytes = instruction_count;
+    f->corpus = corpus_init();
+    f->corpus_index = 0;
 
     size_t seed_len = compute_required_len(arg_types);
     if (seed_len == 0) {
@@ -216,73 +218,69 @@ Fuzzer* fuzzer_init(size_t instruction_count, Vector* arg_types)
     return f;
 }
 
-
-
 Vector* fuzzer_run_until_complete(Fuzzer* f,
-                                  const Method* method,
-                                  const Config* config,
-                                  const Options* opts,
-                                  Vector* arg_types,
-                                  int thread_count)
+    const Method* method,
+    const Config* config,
+    const Options* opts,
+    Vector* arg_types,
+    int thread_count)
 {
-  Vector* all_interesting = vector_new(sizeof(TestCase*));
+    Vector* all_interesting = vector_new(sizeof(TestCase*));
     uint64_t start = now_us();
     uint64_t timeout_ms = 3000;
 
-  if (thread_count <= 1) {
+    if (thread_count <= 1) {
+
+        for (;;) {
+            if ((now_us() - start) / 1000 > timeout_ms) {
+                LOG_INFO("Timeout reached — stopping fuzzing early");
+            }
+            Vector* batch = fuzzer_run_single(f, method, config, opts, arg_types);
+
+            size_t n = vector_length(batch);
+            for (size_t i = 0; i < n; i++) {
+                TestCase* tc = *(TestCase**)vector_get(batch, i);
+                vector_push(all_interesting, &tc);
+            }
+
+            vector_delete(batch);
+
+            if (coverage_is_complete())
+                return all_interesting;
+        }
+    }
 
     for (;;) {
         if ((now_us() - start) / 1000 > timeout_ms) {
             LOG_INFO("Timeout reached — stopping fuzzing early");
+            break;
         }
-      Vector* batch =
-          fuzzer_run_single(f, method, config, opts, arg_types);
+        Vector* batch = fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
 
-      size_t n = vector_length(batch);
-      for (size_t i = 0; i < n; i++) {
-        TestCase* tc = *(TestCase**) vector_get(batch, i);
-        vector_push(all_interesting, &tc);
-      }
+        size_t n = vector_length(batch);
+        for (size_t i = 0; i < n; i++) {
+            TestCase* tc = *(TestCase**)vector_get(batch, i);
+            vector_push(all_interesting, &tc);
+        }
 
-      vector_delete(batch);
+        vector_delete(batch);
 
-      if (coverage_is_complete())
-        return all_interesting;
-    }
-  }
+        pthread_mutex_lock(&coverage_lock);
+        bool done = coverage_is_complete();
+        pthread_mutex_unlock(&coverage_lock);
 
-  for (;;) {
-      if ((now_us() - start) / 1000 > timeout_ms) {
-          LOG_INFO("Timeout reached — stopping fuzzing early");
-          break;
-      }
-    Vector* batch =
-        fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
-
-    size_t n = vector_length(batch);
-    for (size_t i = 0; i < n; i++) {
-      TestCase* tc = *(TestCase**) vector_get(batch, i);
-      vector_push(all_interesting, &tc);
+        if (done)
+            return all_interesting;
     }
 
-    vector_delete(batch);
-
-      pthread_mutex_lock(&coverage_lock);
-      bool done = coverage_is_complete();
-      pthread_mutex_unlock(&coverage_lock);
-
-      if (done)
-          return all_interesting;
-  }
-
-  return all_interesting;
+    return all_interesting;
 }
 
 Vector* fuzzer_run_single(Fuzzer* f,
-                          const Method* method,
-                          const Config* config,
-                          const Options* opts,
-                          Vector* arg_types)
+    const Method* method,
+    const Config* config,
+    const Options* opts,
+    Vector* arg_types)
 {
     // Build initial work queue from the corpus
     WorkQueue queue;
@@ -321,9 +319,9 @@ Vector* fuzzer_run_single(Fuzzer* f,
                 base_opts.parameters = NULL;
 
                 vm = persistent_ir_interpreter_setup(method,
-                                                     &base_opts,
-                                                     config,
-                                                     thread_bitmap);
+                    &base_opts,
+                    config,
+                    thread_bitmap);
                 if (!vm) {
                     testcase_free(child);
                     break;
@@ -345,8 +343,8 @@ Vector* fuzzer_run_single(Fuzzer* f,
 
             int locals_count = 0;
             Value* new_locals = build_locals_fast(heap, method,
-                                                  child->data, child->len,
-                                                  &locals_count);
+                child->data, child->len,
+                &locals_count);
 
             if (!new_locals) {
                 testcase_free(child);
@@ -396,13 +394,12 @@ Vector* fuzzer_run_single(Fuzzer* f,
     return interesting_global;
 }
 
-
 Vector* fuzzer_run_parallel(Fuzzer* f,
-                            const Method* method,
-                            const Config* config,
-                            const Options* opts,
-                            Vector* arg_types,
-                            int thread_count)
+    const Method* method,
+    const Config* config,
+    const Options* opts,
+    Vector* arg_types,
+    int thread_count)
 {
     WorkQueue queue;
     workqueue_init(&queue, f->corpus);
@@ -444,9 +441,9 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                     base_opts.parameters = NULL;
 
                     vm = persistent_ir_interpreter_setup(method,
-                                                         &base_opts,
-                                                         config,
-                                                         thread_bitmap);
+                        &base_opts,
+                        config,
+                        thread_bitmap);
                     if (!vm) {
                         testcase_free(child);
                         break;
@@ -467,8 +464,8 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
 
                 int locals_count = 0;
                 Value* new_locals = build_locals_fast(heap, method,
-                                                      child->data, child->len,
-                                                      &locals_count);
+                    child->data, child->len,
+                    &locals_count);
 
                 if (!new_locals) {
                     testcase_free(child);
@@ -534,18 +531,14 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
     return global_interesting;
 }
 
-
-
-
-
 Vector* fuzzer_run_thread(Fuzzer* f,
-                          const Method* method,
-                          const Config* config,
-                          const Options* options,
-                          Vector* arg_types)
+    const Method* method,
+    const Config* config,
+    const Options* options,
+    Vector* arg_types)
 {
     int stagnant_iterations = 0;
-    const size_t STAGNATION_LIMIT = 10000;
+    const int STAGNATION_LIMIT = 10000;
 
     uint64_t seen[SEEN_CAPACITY];
     int seen_count = 0;
@@ -599,8 +592,7 @@ Vector* fuzzer_run_thread(Fuzzer* f,
             Options local_opts = *options;
             local_opts.parameters = NULL;
 
-            persistent_vm =
-                persistent_ir_interpreter_setup(method, &local_opts, config, thread_bitmap);
+            persistent_vm = persistent_ir_interpreter_setup(method, &local_opts, config, thread_bitmap);
 
             if (!persistent_vm) {
                 testcase_free(child);
@@ -623,8 +615,7 @@ Vector* fuzzer_run_thread(Fuzzer* f,
         heap_reset(heap);
 
         int locals_count = 0;
-        Value* new_locals =
-            build_locals_fast(heap, method, child->data, child->len, &locals_count);
+        Value* new_locals = build_locals_fast(heap, method, child->data, child->len, &locals_count);
 
         if (!new_locals) {
             testcase_free(child);
@@ -674,166 +665,164 @@ Vector* fuzzer_run_thread(Fuzzer* f,
     return interesting;
 }
 
-bool parse (const uint8_t* data,const size_t length,
-            Vector* arg_types,
-            Options* out_opts) {
+bool parse(const uint8_t* data, const size_t length,
+    Vector* arg_types,
+    Options* out_opts)
+{
 
-  if (!data || !length || !arg_types || !out_opts) {
-    return false;
-  }
-
-
-
-  const size_t arguments_len = vector_length(arg_types);
-
-
-  char buffer[512];
-
-  size_t data_cursor = 0;
-  size_t buffer_cursor = 0;
-
-  for (int i = 0; i < arguments_len; i++) {
-    Type* t = *(Type**) vector_get(arg_types, i);
-    if (!t) return false;
-    if (data_cursor >= length) return false;
-
-    switch (t -> kind) {
-    case TK_INT: {
-      int int_val = (int8_t) data[data_cursor++];
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%d", int_val);
-      break;
-    }
-    case TK_BOOLEAN: {
-      bool bool_val = (bool) data[data_cursor++];
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%s", bool_val ? "true" : "false");
-      break;
-    }
-    case TK_CHAR: {
-      char char_val = (char) data[data_cursor++];
-      append_escaped_char(buffer, &buffer_cursor, sizeof(buffer), char_val);
-      break;
-    }
-    case TK_ARRAY: {
-      uint8_t raw_len = (uint8_t)data[data_cursor++];
-      uint8_t array_length = raw_len;
-
-      if (data_cursor + array_length > length) {
+    if (!data || !length || !arg_types || !out_opts) {
         return false;
-      }
+    }
 
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", '[');
+    const int arguments_len = (int)vector_length(arg_types);
 
-      Type* arr_type = t->array.element_type;
+    char buffer[512];
 
+    size_t data_cursor = 0;
+    size_t buffer_cursor = 0;
 
-      char type_char;
-        switch (arr_type -> kind) {
-        case TK_INT:
-          type_char = 'I';
-          break;
-        case TK_CHAR:
-          type_char = 'C';
-          break;
-        case TK_BOOLEAN:
-          type_char = 'Z';
-          break;
+    for (int i = 0; i < arguments_len; i++) {
+        Type* t = *(Type**)vector_get(arg_types, i);
+        if (!t)
+            return false;
+        if (data_cursor >= length)
+            return false;
+
+        switch (t->kind) {
+        case TK_INT: {
+            int int_val = (int8_t)data[data_cursor++];
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%d", int_val);
+            break;
+        }
+        case TK_BOOLEAN: {
+            bool bool_val = (bool)data[data_cursor++];
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%s", bool_val ? "true" : "false");
+            break;
+        }
+        case TK_CHAR: {
+            char char_val = (char)data[data_cursor++];
+            append_escaped_char(buffer, &buffer_cursor, sizeof(buffer), char_val);
+            break;
+        }
+        case TK_ARRAY: {
+            uint8_t raw_len = (uint8_t)data[data_cursor++];
+            uint8_t array_length = raw_len;
+
+            if (data_cursor + array_length > length) {
+                return false;
+            }
+
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", '[');
+
+            Type* arr_type = t->array.element_type;
+
+            char type_char;
+            switch (arr_type->kind) {
+            case TK_INT:
+                type_char = 'I';
+                break;
+            case TK_CHAR:
+                type_char = 'C';
+                break;
+            case TK_BOOLEAN:
+                type_char = 'Z';
+                break;
+            default:
+                return false;
+            }
+
+            // Write element type
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", type_char);
+
+            // EMPTY ARRAY → close immediately
+            if (array_length == 0) {
+                APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
+                break;
+            }
+
+            // Non-empty → write colon
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ':');
+
+            for (int j = 0; j < array_length; j++) {
+                switch (arr_type->kind) {
+                case TK_INT:
+                    int iv = (int8_t)data[data_cursor++];
+                    APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%d", iv);
+                    break;
+                case TK_CHAR:
+                    char cv = (char)data[data_cursor++];
+                    append_escaped_char(buffer, &buffer_cursor, sizeof(buffer), cv);
+                    break;
+                case TK_BOOLEAN:
+                    bool bv = (bool)data[data_cursor++];
+                    APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%s", bv ? "true" : "false");
+                    break;
+                default:
+                    return false;
+                }
+
+                if (j + 1 < array_length) {
+                    APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ',');
+                }
+            }
+
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
+            break;
+        }
+
         default:
-          return false;
+            return false;
         }
 
-        // Write element type
-        APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", type_char);
-
-        // EMPTY ARRAY → close immediately
-        if (array_length == 0) {
-          APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
-          break;
+        if (i + 1 < arguments_len) { // add comma for each new entry
+            APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ',');
         }
-
-        // Non-empty → write colon
-        APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ':');
-
-      for (int j = 0; j < array_length; j++) {
-        switch (arr_type -> kind) {
-        case TK_INT:
-          int iv = (int8_t) data[data_cursor++];
-          APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%d", iv);
-          break;
-        case TK_CHAR:
-          char cv = (char) data[data_cursor++];
-          append_escaped_char(buffer, &buffer_cursor, sizeof(buffer), cv);
-          break;
-        case TK_BOOLEAN:
-          bool bv = (bool) data[data_cursor++];
-          APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%s", bv ? "true" : "false");
-          break;
-        default:
-          return false;
-        }
-
-
-        if (j + 1 < array_length) {
-          APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c",',');
-        }
-      }
-
-
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ']');
-      break;
     }
 
+    if (buffer_cursor >= sizeof(buffer) - 1)
+        return false;
+    // buffer[buffer_cursor++] = ')';
+    buffer[buffer_cursor] = '\0'; // append )\0
 
-      default:
-      return false;
-
-
-
+    free(out_opts->parameters);
+    out_opts->parameters = strdup(buffer);
+    if (!out_opts->parameters) {
+        // Out of memory – treat as parse failure
+        return false;
     }
 
-    if (i + 1 < arguments_len) { // add comma for each new entry
-      APPEND_FMT(buffer, &buffer_cursor, sizeof(buffer), "%c", ',');
-    }
-  }
-
-  if (buffer_cursor >= sizeof(buffer) - 1) return false;
- // buffer[buffer_cursor++] = ')';
-  buffer[buffer_cursor]   = '\0'; // append )\0
-
-
-  free(out_opts->parameters);
-  out_opts->parameters = strdup(buffer);
-  if (!out_opts->parameters) {
-    // Out of memory – treat as parse failure
-    return false;
-  }
-
-  return true;
+    return true;
 }
 
 TestCase* mutate(TestCase* original, Vector* arg_types)
 {
-    if (!original || original->len == 0) return NULL;
+    if (!original || original->len == 0)
+        return NULL;
 
     // Always clone the original; mutations NEVER touch input testcase in-place
     TestCase* tc = testCase_copy(original);
-    if (!tc) return NULL;
+    if (!tc)
+        return NULL;
 
     uint8_t* data = tc->data;
     size_t len = tc->len;
 
     size_t arg_count = vector_length(arg_types);
-    if (arg_count == 0) return tc;
+    if (arg_count == 0)
+        return tc;
 
     // Choose argument to mutate
     size_t arg_index = fuzz_rand_range(arg_count);
     Type* t = *(Type**)vector_get(arg_types, arg_index);
-    if (!t) return tc;
+    if (!t)
+        return tc;
 
     // --- Compute offset ---
     size_t offset = 0;
     for (size_t i = 0; i < arg_index; i++) {
         Type* prev = *(Type**)vector_get(arg_types, i);
-        if (!prev) return tc;
+        if (!prev)
+            return tc;
 
         switch (prev->kind) {
         case TK_INT:
@@ -843,7 +832,8 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
             break;
 
         case TK_ARRAY: {
-            if (offset >= len) return tc;
+            if (offset >= len)
+                return tc;
             uint8_t arr_len = data[offset];
             offset += 1 + arr_len;
             break;
@@ -854,7 +844,8 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
         }
     }
 
-    if (offset >= len) return tc;
+    if (offset >= len)
+        return tc;
 
     // ---- Perform mutation (pure-copy semantics) ----
     switch (t->kind) {
@@ -862,9 +853,15 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     case TK_INT: {
         uint8_t v = data[offset];
         switch (fuzz_rand_u32() % 3) {
-        case 0: v ^= (1u << (fuzz_rand_u32() % 8)); break;
-        case 1: v = (uint8_t)(v + ((int8_t)((fuzz_rand_u32() % 5) - 2))); break;
-        case 2: v = (uint8_t)fuzz_rand_u32(); break;
+        case 0:
+            v ^= (1u << (fuzz_rand_u32() % 8));
+            break;
+        case 1:
+            v = (uint8_t)(v + ((int8_t)((fuzz_rand_u32() % 5) - 2)));
+            break;
+        case 2:
+            v = (uint8_t)fuzz_rand_u32();
+            break;
         }
         data[offset] = v;
         break;
@@ -877,15 +874,18 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
 
     case TK_CHAR: {
         uint8_t c = data[offset];
-        if (c < 0x20 || c > 0x7E) c = 'a';
-        else c++;
+        if (c < 0x20 || c > 0x7E)
+            c = 'a';
+        else
+            c++;
         data[offset] = c;
         break;
     }
 
     case TK_ARRAY: {
         uint8_t arr_len = data[offset];
-        if (offset + 1 + arr_len > len) return tc;
+        if (offset + 1 + arr_len > len)
+            return tc;
 
         Type* elem_t = t->array.element_type;
         int action = fuzz_rand_u32() % 3;
@@ -894,17 +894,17 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
         if (action == 0 && arr_len < 50) {
             size_t new_len = len + 1;
             uint8_t* buf = malloc(new_len);
-            if (!buf) return tc;
+            if (!buf)
+                return tc;
 
             memcpy(buf, data, offset + 1 + arr_len);
 
             buf[offset] = arr_len + 1;
-            buf[offset + 1 + arr_len] =
-                'a' + (fuzz_rand_u32() % 26); // Could type-check elem
+            buf[offset + 1 + arr_len] = 'a' + (fuzz_rand_u32() % 26); // Could type-check elem
 
             memcpy(buf + offset + 1 + arr_len + 1,
-                   data + offset + 1 + arr_len,
-                   len - (offset + 1 + arr_len));
+                data + offset + 1 + arr_len,
+                len - (offset + 1 + arr_len));
 
             free(tc->data);
             tc->data = buf;
@@ -916,18 +916,19 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
         if (action == 1 && arr_len > 0) {
             size_t new_len = len - 1;
             uint8_t* buf = malloc(new_len);
-            if (!buf) return tc;
+            if (!buf)
+                return tc;
 
             memcpy(buf, data, offset + 1); // includes len byte
             buf[offset] = arr_len - 1;
 
             memcpy(buf + offset + 1,
-                   data + offset + 1,
-                   arr_len - 1);
+                data + offset + 1,
+                arr_len - 1);
 
             memcpy(buf + offset + 1 + (arr_len - 1),
-                   data + offset + 1 + arr_len,
-                   len - (offset + 1 + arr_len));
+                data + offset + 1 + arr_len,
+                len - (offset + 1 + arr_len));
 
             free(tc->data);
             tc->data = buf;
@@ -962,13 +963,12 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     return tc;
 }
 
+void fuzzer_free(Fuzzer* f)
+{
+    if (!f)
+        return;
 
+    corpus_free(f->corpus);
 
-
-void fuzzer_free(Fuzzer* f) {
-  if (!f) return;
-
-  corpus_free(f->corpus);
-
-  free(f);
+    free(f);
 }
