@@ -489,7 +489,7 @@ AbstractResult interpreter_abstract_run(AbstractContext* ctx)
         BasicBlock* block = *(BasicBlock**)vector_get(ctx->cfg->blocks, i);
 
         if (entry_block->ir_function == block->ir_function) {
-            for (int j = 0; j < vector_length(X_out[i]->locals); j++) {
+            for (int j = 0; j < num_locals; j++) {
                 int interval_id = *(int*)vector_get(X_out[i]->locals, j);
                 Interval* iv = vector_get(X_out[i]->env, interval_id);
 
