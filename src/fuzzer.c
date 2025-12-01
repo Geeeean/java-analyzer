@@ -18,6 +18,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <time.h>
+#include <limits.h>
 #include <omp.h>
 #include "workqueue.h"
 
@@ -539,11 +540,7 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 local_interp_time += (ir1 - ir0);
 
 
-                // In parallel mode, mutex is still needed
-                size_t new_bits;
-                pthread_mutex_lock(&coverage_lock);
-                new_bits = coverage_commit_thread(thread_bitmap);
-                pthread_mutex_unlock(&coverage_lock);
+                size_t new_bits = coverage_commit_thread(thread_bitmap);
 
                 bool crash = (r != RT_OK);
 
@@ -645,6 +642,8 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
 
         switch (prev->kind) {
         case TK_INT:
+            offset += 4;  // Integers are 4 bytes
+            break;
         case TK_BOOLEAN:
         case TK_CHAR:
             offset += 1;
@@ -669,19 +668,39 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
     switch (t->kind) {
 
     case TK_INT: {
-        uint8_t v = data[offset];
-        switch (fuzz_rand_u32() % 3) {
+        if (offset + 4 > len)
+            return tc;
+        
+        int32_t v;
+        memcpy(&v, &data[offset], sizeof(int32_t));
+        
+        switch (fuzz_rand_u32() % 4) {
         case 0:
-            v ^= (1u << (fuzz_rand_u32() % 8));
+            // Bit flip in any of the 32 bits
+            v ^= (1u << (fuzz_rand_u32() % 32));
             break;
         case 1:
-            v = (uint8_t)(v + ((int8_t)((fuzz_rand_u32() % 5) - 2)));
+            // Small arithmetic adjustment
+            v += ((int32_t)(fuzz_rand_u32() % 11) - 5);
             break;
         case 2:
-            v = (uint8_t)fuzz_rand_u32();
+            // Set to boundary values
+            switch (fuzz_rand_u32() % 6) {
+                case 0: v = 0; break;
+                case 1: v = 1; break;
+                case 2: v = -1; break;
+                case 3: v = INT32_MAX; break;
+                case 4: v = INT32_MIN; break;
+                case 5: v = (int32_t)(fuzz_rand_u32() % 256) - 128; break;  // Small random
+            }
+            break;
+        case 3:
+            // Random value
+            v = (int32_t)fuzz_rand_u32();
             break;
         }
-        data[offset] = v;
+        
+        memcpy(&data[offset], &v, sizeof(int32_t));
         break;
     }
 
