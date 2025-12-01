@@ -8,7 +8,7 @@
 #include <time.h>
 
 typedef struct {
-    uint8_t* global_bits;
+    _Atomic uint8_t* global_bits;  // Make the bitmap atomic for lock-free access
     size_t nBits;
     bool is_initialized;
     _Atomic bool is_complete;
@@ -54,7 +54,7 @@ bool coverage_init(const size_t size) {
         return false;
     }
 
-    coverage.global_bits = calloc(size, sizeof(uint8_t));
+    coverage.global_bits = calloc(size, sizeof(_Atomic uint8_t));
 
     if (!coverage.global_bits) {
         free(coverage.global_bits);
@@ -91,9 +91,13 @@ size_t coverage_commit_thread(const uint8_t* bitmap) {
 
     size_t new_bits = 0;
     for (size_t i = 0; i < coverage.nBits; i++) {
-        if (bitmap[i] && !coverage.global_bits[i]) {
-            coverage.global_bits[i] = 1;
-            new_bits++;
+        if (bitmap[i]) {
+            // Use atomic compare-and-swap to avoid race conditions
+            uint8_t expected = 0;
+            if (atomic_compare_exchange_strong(&coverage.global_bits[i], &expected, 1)) {
+                // We successfully set a bit that was previously 0
+                new_bits++;
+            }
         }
     }
     
@@ -115,7 +119,7 @@ size_t coverage_commit_thread(const uint8_t* bitmap) {
     if (!atomic_load(&coverage.is_complete) && new_bits > 0) {
         bool all_covered = true;
         for (size_t i = 0; i < coverage.nBits; i++) {
-            if (coverage.global_bits[i] == 0) {
+            if (atomic_load(&coverage.global_bits[i]) == 0) {
                 all_covered = false;
                 break;
             }
@@ -134,7 +138,7 @@ size_t coverage_global_count(void) {
 
     size_t count = 0;
     for (size_t i = 0; i < coverage.nBits; i++) {
-        count += (coverage.global_bits[i] != 0);
+        count += (atomic_load(&coverage.global_bits[i]) != 0);
     }
     return count;
 }
@@ -159,7 +163,7 @@ int check_bits (const uint8_t* bitmap, size_t bitmap_size) {
     int new_bit_count = 0;
 
      for (size_t i = 0; i < bitmap_size; i++) {
-      if (bitmap[i] == 1 && coverage.global_bits[i] != 1)  {
+      if (bitmap[i] == 1 && atomic_load(&coverage.global_bits[i]) != 1)  {
         new_bit_count++;
       }
     }
@@ -171,7 +175,7 @@ void coverage_global_print(size_t maxBits) {
 
     const size_t limit = maxBits < coverage.nBits ? maxBits : coverage.nBits;
     for (size_t i = 0; i < limit; i++) {
-        putchar(coverage.global_bits[i] ? '1' : '0');
+        putchar(atomic_load(&coverage.global_bits[i]) ? '1' : '0');
     }
     putchar('\n');
 }
