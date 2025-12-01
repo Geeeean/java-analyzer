@@ -15,6 +15,24 @@ typedef struct {
 
 static coverage_state coverage = {0};
 
+static size_t g_total_instructions = 0;      // you probably already have this
+static uint8_t* g_global_bitmap = NULL;      // same here
+
+void coverage_get_stats(size_t* covered, size_t* total)
+{
+    if (!covered || !total) return;
+
+    *total = g_total_instructions;
+
+    size_t cnt = 0;
+    for (size_t i = 0; i < g_total_instructions; i++) {
+        if (g_global_bitmap[i]) {
+            cnt++;
+        }
+    }
+    *covered = cnt;
+}
+
 
 
 bool coverage_init(const size_t size) {

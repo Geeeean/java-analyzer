@@ -7,6 +7,7 @@
 #include "method.h"
 #include "testCaseCorpus.h"
 #include "vector.h"
+#include "workqueue.h"
 #include <stdbool.h>
 
 typedef struct {
@@ -25,20 +26,16 @@ Vector* fuzzer_run_single(Fuzzer* f,
                           const Method* method,
                           const Config* config,
                           const Options* opts,
-                          Vector* arg_types);
-
-Vector* fuzzer_run_thread(Fuzzer* f,
-                          const Method* method,
-                          const Config* config,
-                          const Options* options,
-                          Vector* arg_types);
+                          Vector* arg_types,
+                          WorkQueue* queue);
 
 Vector* fuzzer_run_parallel(Fuzzer* f,
                             const Method* method,
                             const Config* config,
                             const Options* opts,
                             Vector* arg_types,
-                            int thread_count);
+                            int thread_count,
+                            WorkQueue* queue);
 
 TestCase* mutate(TestCase* tc, Vector* arg_types);
 

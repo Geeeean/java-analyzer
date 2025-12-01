@@ -10,6 +10,8 @@ bool coverage_init(size_t nBits);
 
 uint8_t* coverage_create_thread_bitmap();
 
+void coverage_get_stats(size_t* covered, size_t* total);
+
 void coverage_reset_thread_bitmap(uint8_t* bitmap);
 
 void coverage_mark_thread(uint8_t* bitmap, size_t pc);

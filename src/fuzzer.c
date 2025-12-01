@@ -173,13 +173,14 @@ Fuzzer* fuzzer_init(size_t instruction_count, Vector* arg_types)
 }
 
 Vector* fuzzer_run_until_complete(
-    Fuzzer* f,
-    const Method* method,
-    const Config* config,
-    const Options* opts,
-    Vector* arg_types,
-    int thread_count,
-    AbstractResult* precomputed_abs) {
+        Fuzzer* f,
+        const Method* method,
+        const Config* config,
+        const Options* opts,
+        Vector* arg_types,
+        int thread_count,
+        AbstractResult* precomputed_abs)
+{
     Vector *all_interesting = vector_new(sizeof(TestCase *));
     uint64_t start = now_us();
     uint64_t timeout_ms = 3000;
@@ -196,7 +197,6 @@ Vector* fuzzer_run_until_complete(
     abstract_result_print(precomputed_abs);
 
     if (!has_array_arg && precomputed_abs) {
-
         Vector *interval_seeds =
                 generate_interval_seeds(f, precomputed_abs, arg_types);
 
@@ -211,60 +211,79 @@ Vector* fuzzer_run_until_complete(
 
     print_corpus(f->corpus, arg_types);
 
-    if (thread_count <= 1) {
-        for (;;) {
-            if ((now_us() - start) / 1000 > timeout_ms) {
-                LOG_INFO("Timeout reached — stopping fuzzing early");
-            }
+    atomic_store(&interp_time,       0);
+    atomic_store(&mutate_time,       0);
+    atomic_store(&build_locals_time, 0);
+    atomic_store(&heap_reset_time,   0);
+    atomic_store(&queue_pop_time,    0);
+    atomic_store(&lock_wait_time,    0);
+    atomic_store(&commit_time,       0);
 
-            Vector *batch =
-                    fuzzer_run_single(f, method, config, opts, arg_types);
+    for (;;) {
+        uint64_t now_ms = (now_us() - start) / 1000;
+        if (now_ms > timeout_ms) {
+            LOG_INFO("Timeout reached — stopping fuzzing early");
+            break;
+        }
 
+        if (coverage_is_complete()) {
+            LOG_INFO("Coverage is complete — stopping fuzzing");
+            break;
+        }
+
+        WorkQueue wq;
+        workqueue_init(&wq, f->corpus);
+
+        Vector *batch = NULL;
+        if (thread_count <= 1) {
+            batch = fuzzer_run_single(f, method, config, opts, arg_types, &wq);
+        } else {
+            batch = fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count, &wq);
+        }
+
+        workqueue_destroy(&wq);
+
+        if (batch) {
             size_t n = vector_length(batch);
             for (size_t i = 0; i < n; i++) {
                 TestCase *tc = *(TestCase **) vector_get(batch, i);
                 vector_push(all_interesting, &tc);
             }
-
             vector_delete(batch);
-
-            if (coverage_is_complete()) {
-                printf("Time_spent: %lu microseconds\n", (now_us() - start));
-                return all_interesting;
-            }
         }
+
+        size_t covered = 0, total = 0;
+        coverage_get_stats(&covered, &total);
+        printf("Current coverage after batch: %zu / %zu\n", covered, total);
     }
 
-    for (;;) {
-        if ((now_us() - start) / 1000 > timeout_ms) {
-            LOG_INFO("Timeout reached — stopping fuzzing early");
-            break;
-        }
+    // Print aggregated stats for the entire fuzzing run
+    printf("\n=== Coverage lock debug info ===\n");
+    printf("Total time waiting for coverage lock: %lu us\n",
+           atomic_load(&lock_wait_time));
+    printf("Total time running commit function:   %lu us\n",
+           atomic_load(&commit_time));
+    printf("===================================\n");
 
-        Vector *batch =
-                fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
+    printf("\n=== Fuzzer hotspot breakdown (aggregated) ===\n");
+    printf("Total time in mutate():          %lu us\n", atomic_load(&mutate_time));
+    printf("Total time in heap_reset():      %lu us\n", atomic_load(&heap_reset_time));
+    printf("Total time in build_locals_fast(): %lu us\n", atomic_load(&build_locals_time));
+    printf("Total time in interpreter_run(): %lu us\n", atomic_load(&interp_time));
+    printf("Total time in workqueue_pop():   %lu us\n", atomic_load(&queue_pop_time));
+    printf("===========================================\n");
 
-        size_t n = vector_length(batch);
-        for (size_t i = 0; i < n; i++) {
-            TestCase *tc = *(TestCase **) vector_get(batch, i);
-            vector_push(all_interesting, &tc);
-        }
+    printf("Time_spent: %lu microseconds\n", (now_us() - start));
 
-        vector_delete(batch);
-
-        if (coverage_is_complete()) {
-            printf("Time_spent: %lu microseconds\n", (now_us() - start));
-            return all_interesting;
-        }
-    }
-    return NULL;    
+    return all_interesting;
 }
 
 Vector* fuzzer_run_single(Fuzzer* f,
                           const Method* method,
                           const Config* config,
                           const Options* opts,
-                          Vector* arg_types)
+                          Vector* arg_types,
+                          WorkQueue* workQueue)
 {
     uint64_t start_us = now_us();
 
@@ -276,9 +295,6 @@ Vector* fuzzer_run_single(Fuzzer* f,
     uint64_t local_lock_wait_time    = 0;
     uint64_t local_commit_time       = 0;
 
-    WorkQueue queue;
-    workqueue_init(&queue, f->corpus);
-
     Vector* interesting_global = vector_new(sizeof(TestCase*));
 
     uint64_t seen[SEEN_CAPACITY];
@@ -289,7 +305,7 @@ Vector* fuzzer_run_single(Fuzzer* f,
 
     for (;;) {
         uint64_t q0 = now_us();
-        TestCase* parent = workqueue_pop(&queue);
+        TestCase* parent = workqueue_pop(workQueue);
         uint64_t q1 = now_us();
         local_queue_pop_time += (q1 - q0);
 
@@ -317,9 +333,9 @@ Vector* fuzzer_run_single(Fuzzer* f,
                 base_opts.parameters = NULL;
 
                 vm = fuzz_interpreter_setup(method,
-                                                     &base_opts,
-                                                     config,
-                                                     thread_bitmap);
+                                            &base_opts,
+                                            config,
+                                            thread_bitmap);
                 if (!vm) {
                     testcase_free(child);
                     break;
@@ -344,8 +360,8 @@ Vector* fuzzer_run_single(Fuzzer* f,
             int locals_count = 0;
             uint64_t bl0 = now_us();
             Value* new_locals = fuzz_build_locals_fast(heap, method,
-                                                  child->data, child->len,
-                                                  &locals_count);
+                                                       child->data, child->len,
+                                                       &locals_count);
             uint64_t bl1 = now_us();
             local_build_locals_time += (bl1 - bl0);
 
@@ -377,7 +393,7 @@ Vector* fuzzer_run_single(Fuzzer* f,
             if (new_bits > 0 && !already_seen) {
                 vector_push(interesting_global, &child);
                 corpus_add(f->corpus, child);
-                workqueue_push(&queue, child);
+                workqueue_push(workQueue, child);
                 continue;
             }
 
@@ -389,7 +405,7 @@ Vector* fuzzer_run_single(Fuzzer* f,
 
             if (!already_seen && (fuzz_rand_u32() % 500 == 0)) {
                 corpus_add(f->corpus, child);
-                workqueue_push(&queue, child);
+                workqueue_push(workQueue, child);
                 continue;
             }
 
@@ -400,40 +416,38 @@ Vector* fuzzer_run_single(Fuzzer* f,
     if (vm)
         fuzz_interpreter_free(vm);
 
-    workqueue_destroy(&queue);
-
     uint64_t end_us = now_us();
     uint64_t total_us = end_us - start_us;
+    (void)total_us; // currently unused, but kept if you want later
 
-    printf("\n=== fuzzer_run_single hotspot breakdown ===\n");
-    printf("Total time in mutate():          %lu us\n", local_mutate_time);
-    printf("Total time in heap_reset():      %lu us\n", local_heap_reset_time);
-    printf("Total time in build_locals_fast(): %lu us\n", local_build_locals_time);
-    printf("Total time in interpreter_run(): %lu us\n", local_interp_time);
-    printf("Total time in workqueue_pop():   %lu us\n", local_queue_pop_time);
-    printf("Total time waiting for lock:     %lu us\n", local_lock_wait_time);
-    printf("Total time in commit():          %lu us\n", local_commit_time);
-    printf("-------------------------------------------\n");
-    printf("Total time in fuzzer_run_single(): %lu us\n", total_us);
-    printf("===========================================\n");
+    atomic_fetch_add(&interp_time,       local_interp_time);
+    atomic_fetch_add(&mutate_time,       local_mutate_time);
+    atomic_fetch_add(&build_locals_time, local_build_locals_time);
+    atomic_fetch_add(&heap_reset_time,   local_heap_reset_time);
+    atomic_fetch_add(&queue_pop_time,    local_queue_pop_time);
+    atomic_fetch_add(&lock_wait_time,    local_lock_wait_time);
+    atomic_fetch_add(&commit_time,       local_commit_time);
 
     return interesting_global;
 }
 
 
+
+
 Vector* fuzzer_run_parallel(Fuzzer* f,
-    const Method* method,
-    const Config* config,
-    const Options* opts,
-    Vector* arg_types,
-    int thread_count)
+                            const Method* method,
+                            const Config* config,
+                            const Options* opts,
+                            Vector* arg_types,
+                            int thread_count,
+                            WorkQueue* workQueue)
 {
     uint64_t start_us = now_us();
-    WorkQueue queue;
-    workqueue_init(&queue, f->corpus);
+    (void)start_us; // currently unused; keep if you want total time
 
     Vector* global_interesting = vector_new(sizeof(TestCase*));
     pthread_mutex_t merge_lock = PTHREAD_MUTEX_INITIALIZER;
+
 #pragma omp parallel num_threads(thread_count)
     {
         uint64_t seen[SEEN_CAPACITY];
@@ -443,16 +457,16 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
         uint64_t local_build_locals_time = 0;
         uint64_t local_heap_reset_time   = 0;
         uint64_t local_queue_pop_time    = 0;
+        // Note: we could also track lock_wait/commit here if needed
 
         Vector* local_interesting = vector_new(sizeof(TestCase*));
 
         VMContext* vm = NULL;
         Heap* heap = NULL;
 
-
         for (;;) {
             uint64_t q0 = now_us();
-            TestCase* parent = workqueue_pop(&queue);
+            TestCase* parent = workqueue_pop(workQueue);
             uint64_t q1 = now_us();
             local_queue_pop_time += (q1 - q0);
             if (!parent) {
@@ -481,9 +495,9 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                     base_opts.parameters = NULL;
 
                     vm = fuzz_interpreter_setup(method,
-                        &base_opts,
-                        config,
-                        thread_bitmap);
+                                                &base_opts,
+                                                config,
+                                                thread_bitmap);
                     if (!vm) {
                         testcase_free(child);
                         break;
@@ -508,8 +522,8 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 int locals_count = 0;
                 uint64_t bl0 = now_us();
                 Value* new_locals = fuzz_build_locals_fast(heap, method,
-                                                      child->data, child->len,
-                                                      &locals_count);
+                                                           child->data, child->len,
+                                                           &locals_count);
                 uint64_t bl1 = now_us();
                 local_build_locals_time += (bl1 - bl0);
 
@@ -526,7 +540,6 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 uint64_t ir1 = now_us();
                 local_interp_time += (ir1 - ir0);
 
-
                 size_t new_bits;
                 uint64_t t0 = now_us();
                 pthread_mutex_lock(&coverage_lock);
@@ -534,14 +547,14 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 new_bits = coverage_commit_thread(thread_bitmap);
                 uint64_t t2 = now_us();
                 pthread_mutex_unlock(&coverage_lock);
-
+                (void)t0; (void)t1; (void)t2; // currently not aggregated; could be
 
                 bool crash = (r != RT_OK);
 
                 if (new_bits > 0 && !already_seen) {
                     vector_push(local_interesting, &child);
                     corpus_add(f->corpus, child);
-                    workqueue_push(&queue, child);
+                    workqueue_push(workQueue, child);
                     continue;
                 }
 
@@ -553,7 +566,7 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
 
                 if (!already_seen && (fuzz_rand_u32() % 500 == 0)) {
                     corpus_add(f->corpus, child);
-                    workqueue_push(&queue, child);
+                    workqueue_push(workQueue, child);
                     continue;
                 }
 
@@ -584,10 +597,10 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
         atomic_fetch_add(&build_locals_time, local_build_locals_time);
         atomic_fetch_add(&heap_reset_time,   local_heap_reset_time);
         atomic_fetch_add(&queue_pop_time,    local_queue_pop_time);
-
     }
 
-    workqueue_destroy(&queue);
+    return global_interesting;
+
 
     printf("\n=== Coverage lock debug info ===\n");
     printf("Total time waiting for coverage lock: %lu us\n",
@@ -603,7 +616,6 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
     printf("Total time in interpreter_run(): %lu us\n", atomic_load(&interp_time));
     printf("Total time in workqueue_pop():   %lu us\n", atomic_load(&queue_pop_time));
     printf("===========================================\n");
-
 
     return global_interesting;
 }
