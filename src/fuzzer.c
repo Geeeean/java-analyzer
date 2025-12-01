@@ -252,16 +252,12 @@ Vector* fuzzer_run_until_complete(
 
         vector_delete(batch);
 
-        pthread_mutex_lock(&coverage_lock);
-        bool done = coverage_is_complete();
-        pthread_mutex_unlock(&coverage_lock);
-
-        if (done) {
+        if (coverage_is_complete()) {
             printf("Time_spent: %lu microseconds\n", (now_us() - start));
             return all_interesting;
         }
     }
-    return NULL;
+    return NULL;    
 }
 
 Vector* fuzzer_run_single(Fuzzer* f,

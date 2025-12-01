@@ -4,11 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdatomic.h>
 
 typedef struct {
     uint8_t* global_bits;
     size_t nBits;
     bool is_initialized;
+    _Atomic bool is_complete;
 } coverage_state;
 
 static coverage_state coverage = {0};
@@ -63,6 +65,19 @@ size_t coverage_commit_thread(const uint8_t* bitmap) {
             new_bits++;
         }
     }
+    
+    // Update completion status if we found new bits
+    if (new_bits > 0) {
+        bool complete = true;
+        for (size_t i = 0; i < coverage.nBits; i++) {
+            if (coverage.global_bits[i] == 0) {
+                complete = false;
+                break;
+            }
+        }
+        atomic_store(&coverage.is_complete, complete);
+    }
+    
     return new_bits;
 }
 
@@ -114,11 +129,5 @@ void coverage_global_print(size_t maxBits) {
 
 bool coverage_is_complete(void) {
     if (!coverage.is_initialized) return false;
-
-    for (size_t i = 0; i < coverage.nBits; i++) {
-        if (coverage.global_bits[i] == 0) {
-            return false;
-        }
-    }
-    return true;
+    return atomic_load(&coverage.is_complete);
 }
