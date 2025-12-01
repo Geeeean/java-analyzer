@@ -5,15 +5,27 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdatomic.h>
+#include <time.h>
 
 typedef struct {
     uint8_t* global_bits;
     size_t nBits;
     bool is_initialized;
     _Atomic bool is_complete;
+    _Atomic uint64_t last_new_coverage_time_us;
 } coverage_state;
 
 static coverage_state coverage = {0};
+
+// Consider fuzzing complete if no new coverage for this many microseconds (1 second)
+#define STALE_COVERAGE_TIMEOUT_US 1000000
+
+// Helper function to get current time in microseconds
+static uint64_t get_time_us(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
 
 
 
@@ -34,7 +46,8 @@ bool coverage_init(const size_t size) {
 
     coverage.nBits = size;
     coverage.is_initialized = true;
-
+    atomic_store(&coverage.is_complete, false);  // Initially not complete
+    atomic_store(&coverage.last_new_coverage_time_us, get_time_us());
 
     return true;
 }
@@ -66,16 +79,32 @@ size_t coverage_commit_thread(const uint8_t* bitmap) {
         }
     }
     
-    // Update completion status if we found new bits
+    // Update staleness timer and check for completion
     if (new_bits > 0) {
-        bool complete = true;
+        // Found new coverage, update the timestamp
+        atomic_store(&coverage.last_new_coverage_time_us, get_time_us());
+    } else {
+        // No new coverage, check if we've been stale too long
+        uint64_t last_time = atomic_load(&coverage.last_new_coverage_time_us);
+        uint64_t current_time = get_time_us();
+        
+        if (current_time - last_time >= STALE_COVERAGE_TIMEOUT_US) {
+            atomic_store(&coverage.is_complete, true);
+        }
+    }
+    
+    // Also check if all bits are covered (ideal case)
+    if (!atomic_load(&coverage.is_complete) && new_bits > 0) {
+        bool all_covered = true;
         for (size_t i = 0; i < coverage.nBits; i++) {
             if (coverage.global_bits[i] == 0) {
-                complete = false;
+                all_covered = false;
                 break;
             }
         }
-        atomic_store(&coverage.is_complete, complete);
+        if (all_covered) {
+            atomic_store(&coverage.is_complete, true);
+        }
     }
     
     return new_bits;
@@ -100,6 +129,8 @@ void coverage_reset_all(void) {
     coverage.global_bits = NULL;
     coverage.nBits = 0;
     coverage.is_initialized = false;
+    atomic_store(&coverage.is_complete, false);
+    atomic_store(&coverage.last_new_coverage_time_us, 0);
 }
 
 
