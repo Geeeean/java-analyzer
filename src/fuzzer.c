@@ -378,14 +378,12 @@ Vector* fuzzer_run_single(Fuzzer* f,
             uint64_t ir1 = now_us();
             local_interp_time += (ir1 - ir0);
 
-            uint64_t t0 = now_us();
-            pthread_mutex_lock(&coverage_lock);
+            // In single-threaded mode, no need for mutex
             uint64_t t1 = now_us();
             size_t new_bits = coverage_commit_thread(thread_bitmap);
             uint64_t t2 = now_us();
-            pthread_mutex_unlock(&coverage_lock);
 
-            local_lock_wait_time += (t1 - t0);
+            local_lock_wait_time += 0;  // No lock wait in single-threaded mode
             local_commit_time    += (t2 - t1);
 
             bool crash = (r != RT_OK);
@@ -540,14 +538,12 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 uint64_t ir1 = now_us();
                 local_interp_time += (ir1 - ir0);
 
+
+                // In parallel mode, mutex is still needed
                 size_t new_bits;
-                uint64_t t0 = now_us();
                 pthread_mutex_lock(&coverage_lock);
-                uint64_t t1 = now_us();
                 new_bits = coverage_commit_thread(thread_bitmap);
-                uint64_t t2 = now_us();
                 pthread_mutex_unlock(&coverage_lock);
-                (void)t0; (void)t1; (void)t2; // currently not aggregated; could be
 
                 bool crash = (r != RT_OK);
 
