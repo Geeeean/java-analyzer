@@ -215,10 +215,8 @@ Vector* fuzzer_run_single(Fuzzer* f,
                           Vector* arg_types)
 {
     // Build persistent instruction tables once
-  uint64_t t0 = now_us();
   instruction_table_persistent_build_all(method, config);
-  uint64_t t1 = now_us();
-  printf("[TIMER] Instruction table build: %lu us\n", (unsigned long)(t1 - t0));
+
 
 
     // Build initial work queue from the corpus
@@ -294,15 +292,9 @@ Vector* fuzzer_run_single(Fuzzer* f,
             VMContext_set_locals(vm, new_locals, locals_count);
             VMContext_reset(vm);
 
-          uint64_t r0 = now_us();
           RuntimeResult r = interpreter_run(vm);
-          uint64_t r1 = now_us();
 
-          static __thread int run_print_counter = 0;
-          if (++run_print_counter % 1000000 == 0) {
-            printf("[TIMER] interpreter_run avg(1000): %lu us\n",
-                   (unsigned long)(r1 - r0));
-          }
+
             size_t new_bits = coverage_commit_thread(thread_bitmap);
             bool crash = (r != RT_OK);
 
@@ -344,10 +336,9 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                             Vector* arg_types,
                             int thread_count)
 {
-  uint64_t t0 = now_us();
   instruction_table_persistent_build_all(method, config);
-  uint64_t t1 = now_us();
-  printf("[TIMER] Instruction table build: %lu us\n", (unsigned long)(t1 - t0));
+
+
     // Build initial work queue from the corpus
     WorkQueue queue;
     workqueue_init(&queue, f->corpus);
@@ -432,15 +423,9 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                 VMContext_set_locals(vm, new_locals, locals_count);
                 VMContext_reset(vm);
 
-              uint64_t r0 = now_us();
-              RuntimeResult r = interpreter_run(vm);
-              uint64_t r1 = now_us();
 
-              static __thread int run_print_counter = 0;
-              if (++run_print_counter % 1000 == 0) {
-                printf("[TIMER] interpreter_run avg(1000): %lu us\n",
-                       (unsigned long)(r1 - r0));
-              }
+              RuntimeResult r = interpreter_run(vm);
+
                 size_t new_bits = coverage_commit_thread(thread_bitmap);
 
                 bool crash = (r != RT_OK);
