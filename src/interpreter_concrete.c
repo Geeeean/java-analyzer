@@ -510,7 +510,6 @@ Value* build_locals_fast(Heap* heap,
 
             uint8_t array_len = data[pos++];
 
-            // We require the full array payload to be present (same semantics as parse()).
             if (pos + array_len > len) {
                 LOG_ERROR("build_locals_fast: not enough bytes for ARRAY elements at arg %d", i);
                 goto fail;
@@ -566,7 +565,6 @@ Value* build_locals_fast(Heap* heap,
                 arr->array.elements[j] = elem;
             }
 
-            // If array_len == 0, elements == NULL and elements_count == 0, which is fine.
 
             v.type = TYPE_REFERENCE;
             if (heap_insert(heap, arr, &v.data.ref_value) != 0) {
@@ -594,7 +592,7 @@ Value* build_locals_fast(Heap* heap,
 
 fail:
     vector_delete(types);
-    free(locals); // Objects already inserted into heap are owned by the heap.
+    free(locals);
     *locals_count = 0;
     return NULL;
 }

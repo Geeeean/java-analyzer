@@ -4,7 +4,7 @@
 #include "value.h"
 #define HEAP_SIZE 100000
 
-typedef struct {
+typedef struct heap {
   ObjectValue* fields[HEAP_SIZE];
   int len;
 } Heap;

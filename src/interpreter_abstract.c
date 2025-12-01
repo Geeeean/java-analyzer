@@ -543,14 +543,14 @@ void abstract_result_print(const AbstractResult* result)
         LOG_INFO("Local %d:", local);
 
         if (!intervals) {
-            LOG_INFO("  (null vector)");
+            LOG_INFO("Interval error");
             continue;
         }
 
         for (size_t j = 0; j < vector_length(intervals); j++) {
             Interval* iv = vector_get(intervals, j);
             if (!iv) {
-                LOG_INFO("  [%zu] = (null interval)", j);
+                LOG_INFO("  [%zu] = (interval error)", j);
                 continue;
             }
 

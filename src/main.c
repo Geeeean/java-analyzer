@@ -161,8 +161,6 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg)
     case RT_NULL_POINTER:
         print_interpreter_outcome(OC_NULL_POINTER);
         break;
-    case RT_CANT_BUILD_FRAME:
-    case RT_NULL_PARAMETERS:
     case RT_UNKNOWN_ERROR:
     default:
         LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
