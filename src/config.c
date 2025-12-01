@@ -1,9 +1,10 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <stdio.h>
 #include "config.h"
 #include "log.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #define APP_NAME "java-analyzer"
@@ -13,16 +14,6 @@
 
 #define PWD_MAX 256
 #define CONFIG_PATH_MAX 256
-
-struct Config {
-    char* name;
-    char* version;
-    char* group;
-    bool for_science;
-    char* tags;
-    char* jpamb_source_path;
-    char* jpamb_decompiled_path;
-};
 
 char* config_get_name(const Config* cfg)
 {
@@ -81,7 +72,11 @@ static int set_field(Config* cfg, char* line)
         cfg->jpamb_source_path = strdup(value);
     } else if (strcmp(key, "jpamb_decompiled_path") == 0) {
         cfg->jpamb_decompiled_path = strdup(value);
-    } else {
+    } else if (strcmp(key, "threads") == 0) {
+        cfg->threads = atoi(value);
+        cfg->threads_set = true;
+    }
+    else {
         return 1;
     }
 
@@ -167,6 +162,12 @@ Config* config_load()
 
     fclose(f);
 
+    if (!cfg->threads_set) {
+        cfg->threads = 0;
+    } else if (cfg->threads <= 0) {
+        cfg->threads = 1;
+    }
+
     int check = sanity_check(cfg);
     if (check) {
         const char* missing = "unknown";
@@ -182,6 +183,7 @@ Config* config_load()
         config_delete(cfg);
         return NULL;
     }
+
 
     return cfg;
 }
@@ -215,4 +217,5 @@ void config_print(const Config* cfg)
     printf("analyzer tags:                   %s\n", cfg->tags);
     printf("analyzer jpamb_source_path:      %s\n", cfg->jpamb_source_path);
     printf("analyzer jpamb_decompiler_path:  %s\n", cfg->jpamb_decompiled_path);
+    printf("analyzer threads:                %d\n", cfg->threads);
 }

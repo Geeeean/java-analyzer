@@ -1,8 +1,11 @@
+#define _GNU_SOURCE
+#include <string.h>
+#include <stdio.h>
+
 #include "opcode.h"
 #include "log.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 static const char* opcode_signature[] = {
     [OP_LOAD] = "load",
@@ -75,4 +78,36 @@ const char* opcode_print(Opcode opcode)
     }
 
     return opcode_signature[opcode];
+}
+
+
+static void instruction_free(Instruction* inst) {
+  if (!inst) return;
+
+  switch (inst->opcode) {
+  case OP_INVOKE: {
+    InvokeOP* iv = &inst->data.invoke;
+
+    free(iv->method_name);
+    free(iv->ref_name);
+
+    free(iv->args);
+
+    break;
+  }
+  default:
+    break;
+  }
+
+  free(inst);
+}
+
+void instruction_table_free(InstructionTable* table) {
+  if (!table) return;
+
+  for (int i = 0; i < table->count; i++) {
+    instruction_free(table->instructions[i]);
+  }
+
+  free(table);
 }

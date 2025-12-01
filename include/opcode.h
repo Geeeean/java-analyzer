@@ -6,6 +6,9 @@
 #include "type.h"
 #include "value.h"
 
+// todo: make dynamic
+#define INSTRUCTION_TABLE_SIZE 100
+
 extern char args_type_signature[];
 
 typedef enum {
@@ -136,6 +139,39 @@ typedef struct {
     Type* type;
     int onnan;
 } CompareFloatingOP;
+
+typedef struct {
+    Opcode opcode;
+    int seq;
+    union {
+        PushOP push;
+        LoadOP load;
+        BinaryOP binary;
+        ReturnOP ret;
+        GetOP get;
+        InvokeOP invoke;
+        IfOP ift;
+        ThrowOP trw;
+        StoreOP store;
+        GotoOP go2;
+        CastOP cast;
+        DupOP dup;
+        NewArrayOP new_array;
+        ArrayStoreOP array_store;
+        ArrayLoadOP array_load;
+        ArrayLengthOP array_length;
+        IncrOP incr;
+    } data;
+} Instruction;
+
+typedef struct {
+    Instruction* instructions[INSTRUCTION_TABLE_SIZE];
+    int count;
+    int capacity;
+} InstructionTable;
+
+InstructionTable* instruction_table_build(const Method* m, const Config* cfg);
+// void value_print(const Value* value);
 
 const char* opcode_print(Opcode opcode);
 Opcode opcode_parse(cJSON* instruction_json);

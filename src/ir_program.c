@@ -1,10 +1,13 @@
-// TODO: handle delete (avoid mem leak)
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "ir_program.h"
 #include "log.h"
 
+#include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 
-// todo: use hashmap
 typedef struct IRItem IRItem;
 struct IRItem {
     char* method_id;
@@ -14,8 +17,8 @@ struct IRItem {
     IRItem* next;
 };
 
-// to be freed
-IRItem* it_map = NULL;
+static IRItem* it_map = NULL;
+static pthread_mutex_t ir_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static IRItem* find_item(const char* id)
 {
@@ -48,8 +51,8 @@ static IRItem* build_item(const Method* m, const Config* cfg)
     // TODO: check for success
     it->method_id = strdup(method_get_id(m));
     it->ir_function = ir_function_build(m, cfg);
-    it->cfg = cfg_build(it->ir_function);
     it->num_locals = vector_length(method_get_arguments_as_types(m));
+    it->cfg = cfg_build(it->ir_function, it->num_locals);
 
     it->next = it_map;
 
@@ -60,19 +63,10 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg)
 {
     const char* id = method_get_id(m);
 
-    // First check: no lock (fast)
-    IRItem* item = find_item(id);
     IrFunction* result = NULL;
-    if (item) {
-        result = item->ir_function;
-        if (result) {
-            return result;
-        }
-    }
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             if (item->ir_function) {
@@ -98,20 +92,10 @@ Cfg* ir_program_get_cfg(const Method* m, const Config* cfg)
 {
     const char* id = method_get_id(m);
 
-    // First check: no lock (fast)
-    IRItem* item = find_item(id);
     Cfg* result = NULL;
-
-    if (item) {
-        result = item->cfg;
-        if (result) {
-            return result;
-        }
-    }
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             if (item->cfg) {
@@ -146,7 +130,6 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
 
 #pragma omp critical(ir_program_map)
     {
-        // Second check: with lock (avoid double creation)
         IRItem* item = find_item(id);
         if (item) {
             result = item->num_locals;
@@ -160,4 +143,22 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
     }
 
     return result;
+}
+
+void ir_program_delete()
+{
+    IRItem* current = it_map;
+    while (current != NULL) {
+        IRItem* next_node = current->next;
+
+        free(current->method_id);
+        ir_function_delete(current->ir_function);
+        cfg_delete(current->cfg);
+
+        free(current);
+
+        current = next_node;
+    }
+
+    it_map = NULL;
 }

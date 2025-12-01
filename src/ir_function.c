@@ -1,6 +1,11 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "ir_function.h"
+
 #include "cJSON/cJSON.h"
 #include "ir_instruction.h"
+#include "log.h"
 #include "method.h"
 
 static IrFunction*
@@ -28,6 +33,7 @@ parse_bytecode(cJSON* method)
 
     cJSON* buffer;
     int i = 0;
+
     cJSON_ArrayForEach(buffer, bytecode)
     {
         IrInstruction* ir_instruction = ir_instruction_parse(buffer);

@@ -10,4 +10,6 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg);
 Cfg* ir_program_get_cfg(const Method* m, const Config* cfg);
 int ir_program_get_num_locals(const Method* m, const Config* cfg);
 
+void ir_program_delete();
+
 #endif

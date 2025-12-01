@@ -1,16 +1,20 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <string.h>
+
 #include "cli.h"
 #include "info.h"
 #include "log.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define OPTIONS_NUM 2
 #define MANDATORY_ARGS_NUM 1
 
 #define INTERPRETER_TAG "i"
 #define INTERPRETER_TAG_F "interpreter"
+#define FUZZ_SHORT "f"
+#define FUZZ_LONG "fuzzer"
 
 #define ABSTRACT_TAG "a"
 #define ABSTRACT_TAG_F "abstract"
@@ -25,6 +29,11 @@ static bool is_interpreter_only(const char* opt)
     return strcmp(opt, INTERPRETER_TAG) == 0 || strcmp(opt, INTERPRETER_TAG_F) == 0;
 }
 
+static bool is_fuzz_mode(const char* opt)
+{
+    return strcmp(opt, FUZZ_SHORT) == 0 || strcmp(opt, FUZZ_LONG) == 0;
+}
+
 OptionsParseResult options_parse_args(const int argc, const char** argv, Options* opts)
 {
     int args_num = argc - 1;
@@ -32,6 +41,7 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
     opts->info = false;
     opts->interpreter_only = false;
     opts->abstract_only = false;
+    opts->fuzzer = false;
     opts->method_id = NULL;
     opts->parameters = NULL;
 
@@ -51,6 +61,8 @@ OptionsParseResult options_parse_args(const int argc, const char** argv, Options
                     opts->interpreter_only = true;
                 } else if (is_abstract_only(argv[i] + 1)) {
                     opts->abstract_only = true;
+                } else if (is_fuzz_mode(argv[i] + 1)) {
+                    opts->fuzzer = true;
                 } else {
                     return OPT_OPTION_NOT_KNOWN;
                 }

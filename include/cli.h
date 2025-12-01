@@ -7,6 +7,7 @@ typedef struct {
     bool info;
     bool interpreter_only;
     bool abstract_only;
+    bool fuzzer;
     char* method_id;
     char* parameters;
 } Options;

@@ -1,11 +1,12 @@
+#define _GNU_SOURCE
 #include "method.h"
 #include "log.h"
 #include "type.h"
 #include "utils.h"
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+
+#include <stdlib.h>
 #include <sys/stat.h>
 
 #define METHOD_CLASS_SEP '.'
@@ -243,27 +244,37 @@ Vector* method_get_arguments_as_types(const Method* m)
     }
 
     Vector* v = vector_new(sizeof(Type*));
+    if (!v) {
+        return NULL;
+    }
 
     char* arguments = strdup(m->arguments);
+    if (!arguments) {
+        vector_delete(v);
+        return NULL;
+    }
+
     char* arguments_consume = arguments;
 
     while (*arguments_consume != '\0') {
         Type* type = get_type(&arguments_consume);
-        LOG_DEBUG("TYPE");
-
-        if (!type || vector_push(v, &type)) {
+        if (!type) {
             vector_delete(v);
             v = NULL;
+            break;
         }
 
-        arguments_consume++;
+        if (vector_push(v, &type) != 0) {
+            vector_delete(v);
+            v = NULL;
+            break;
+        }
     }
 
-cleanup:
     free(arguments);
-
     return v;
 }
+
 
 char* method_get_id(const Method* m)
 {
