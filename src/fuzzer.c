@@ -90,7 +90,7 @@ static size_t compute_required_len(Vector* arg_types)
 
         switch (t->kind) {
             case TK_INT:
-                total += 4;
+                total += 1;
                 break;
 
             case TK_BOOLEAN:
@@ -220,6 +220,11 @@ Vector* fuzzer_run_until_complete(
     atomic_store(&lock_wait_time,    0);
     atomic_store(&commit_time,       0);
 
+    WorkQueue wq;
+    workqueue_init(&wq, f->corpus);
+
+    size_t last_covered = (size_t)-1;
+    size_t last_total   = (size_t)-1;
     for (;;) {
         uint64_t now_ms = (now_us() - start) / 1000;
         if (now_ms > timeout_ms) {
@@ -232,9 +237,6 @@ Vector* fuzzer_run_until_complete(
             break;
         }
 
-        WorkQueue wq;
-        workqueue_init(&wq, f->corpus);
-
         Vector *batch = NULL;
         if (thread_count <= 1) {
             batch = fuzzer_run_single(f, method, config, opts, arg_types, &wq);
@@ -242,23 +244,34 @@ Vector* fuzzer_run_until_complete(
             batch = fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count, &wq);
         }
 
-        workqueue_destroy(&wq);
-
-        if (batch) {
-            size_t n = vector_length(batch);
-            for (size_t i = 0; i < n; i++) {
-                TestCase *tc = *(TestCase **) vector_get(batch, i);
-                vector_push(all_interesting, &tc);
-            }
-            vector_delete(batch);
+        if (!batch) {
+            LOG_INFO("No more work in queue — stopping fuzzing");
+            break;
         }
+
+        size_t n = vector_length(batch);
+        if (n == 0) {
+            vector_delete(batch);
+            LOG_INFO("Empty batch returned — stopping fuzzing");
+            break;
+        }
+
+        for (size_t i = 0; i < n; i++) {
+            TestCase *tc = *(TestCase **) vector_get(batch, i);
+            vector_push(all_interesting, &tc);
+        }
+        vector_delete(batch);
 
         size_t covered = 0, total = 0;
         coverage_get_stats(&covered, &total);
-        printf("Current coverage after batch: %zu / %zu\n", covered, total);
-    }
 
-    // Print aggregated stats for the entire fuzzing run
+        if (covered != last_covered || total != last_total) {
+            printf("Current coverage after batch: %zu / %zu\n", covered, total);
+            last_covered = covered;
+            last_total   = total;
+        }
+    }
+    workqueue_destroy(&wq);
     printf("\n=== Coverage lock debug info ===\n");
     printf("Total time waiting for coverage lock: %lu us\n",
            atomic_load(&lock_wait_time));
@@ -278,6 +291,8 @@ Vector* fuzzer_run_until_complete(
 
     return all_interesting;
 }
+
+
 
 Vector* fuzzer_run_single(Fuzzer* f,
                           const Method* method,
@@ -631,117 +646,85 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
 
     size_t arg_index = fuzz_rand_range(arg_count);
     Type* t = *(Type**)vector_get(arg_types, arg_index);
+
     if (!t)
         return tc;
 
+    // compute offset
     size_t offset = 0;
     for (size_t i = 0; i < arg_index; i++) {
         Type* prev = *(Type**)vector_get(arg_types, i);
-        if (!prev)
-            return tc;
+        if (!prev) return tc;
 
         switch (prev->kind) {
-        case TK_INT:
-            offset += 4;  // Integers are 4 bytes
-            break;
-        case TK_BOOLEAN:
-        case TK_CHAR:
-            offset += 1;
-            break;
+            case TK_INT:
+            case TK_BOOLEAN:
+            case TK_CHAR:
+                offset += 1;
+                break;
 
-        case TK_ARRAY: {
-            if (offset >= len)
+            case TK_ARRAY: {
+                if (offset >= len) return tc;
+                uint8_t arr_len = data[offset];
+                offset += 1 + arr_len;
+                break;
+            }
+
+            default:
                 return tc;
-            uint8_t arr_len = data[offset];
-            offset += 1 + arr_len;
-            break;
-        }
-
-        default:
-            return tc;
         }
     }
 
     if (offset >= len)
         return tc;
 
-    switch (t->kind) {
-
-    case TK_INT: {
-        if (offset + 4 > len)
-            return tc;
-        
-        int32_t v;
-        memcpy(&v, &data[offset], sizeof(int32_t));
-        
+    if (t->kind == TK_INT) {
+        int8_t v = (int8_t)data[offset];
         switch (fuzz_rand_u32() % 4) {
-        case 0:
-            // Bit flip in any of the 32 bits
-            v ^= (1u << (fuzz_rand_u32() % 32));
-            break;
-        case 1:
-            // Small arithmetic adjustment
-            v += ((int32_t)(fuzz_rand_u32() % 11) - 5);
-            break;
-        case 2:
-            // Set to boundary values
-            switch (fuzz_rand_u32() % 6) {
-                case 0: v = 0; break;
-                case 1: v = 1; break;
-                case 2: v = -1; break;
-                case 3: v = INT32_MAX; break;
-                case 4: v = INT32_MIN; break;
-                case 5: v = (int32_t)(fuzz_rand_u32() % 256) - 128; break;  // Small random
-            }
-            break;
-        case 3:
-            // Random value
-            v = (int32_t)fuzz_rand_u32();
-            break;
+            case 0: v ^= (1u << (fuzz_rand_u32() % 7)); break;
+            case 1: v += (int8_t)((fuzz_rand_u32() % 7) - 3); break;
+            case 2: v = (int8_t)(fuzz_rand_u32() % 256); break;
+            case 3: v = (int8_t)(-v); break;
         }
-        
-        memcpy(&data[offset], &v, sizeof(int32_t));
-        break;
+        data[offset] = (uint8_t)v;
+        return tc;
     }
 
-    case TK_BOOLEAN: {
-        data[offset] ^= 1u;
-        break;
+    if (t->kind == TK_BOOLEAN) {
+        data[offset] ^= 1;
+        return tc;
     }
 
-    case TK_CHAR: {
+    if (t->kind == TK_CHAR) {
         uint8_t c = data[offset];
-        if (c < 0x20 || c > 0x7E)
-            c = 'a';
-        else
-            c++;
+        if (c < 0x20 || c > 0x7E) c = 'a';
+        else c++;
         data[offset] = c;
-        break;
+        return tc;
     }
 
-    case TK_ARRAY: {
+    if (t->kind == TK_ARRAY) {
         uint8_t arr_len = data[offset];
+
         if (offset + 1 + arr_len > len)
             return tc;
 
-        Type* elem_t = t->array.element_type;
         int action = fuzz_rand_u32() % 3;
 
-        // ---- GROW ----
         if (action == 0 && arr_len < 50) {
             size_t new_len = len + 1;
             uint8_t* buf = malloc(new_len);
-            if (!buf)
-                return tc;
+            if (!buf) return tc;
 
             memcpy(buf, data, offset + 1 + arr_len);
 
             buf[offset] = arr_len + 1;
-            buf[offset + 1 + arr_len] = 'a' + (fuzz_rand_u32() % 26);
+
+            buf[offset + 1 + arr_len] = (uint8_t)(fuzz_rand_u32() % 256);
 
             memcpy(buf + offset + 1 + arr_len + 1,
-                data + offset + 1 + arr_len,
-                len - (offset + 1 + arr_len));
+                   data + offset + 1 + arr_len,
+                   len - (offset + 1 + arr_len));
 
             free(tc->data);
             tc->data = buf;
@@ -752,19 +735,19 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
         if (action == 1 && arr_len > 0) {
             size_t new_len = len - 1;
             uint8_t* buf = malloc(new_len);
-            if (!buf)
-                return tc;
+            if (!buf) return tc;
 
             memcpy(buf, data, offset + 1);
-            buf[offset] = arr_len - 1;
+
+            buf[offset] = (uint8_t)(arr_len - 1);
 
             memcpy(buf + offset + 1,
-                data + offset + 1,
-                arr_len - 1);
+                   data + offset + 1,
+                   arr_len - 1);
 
             memcpy(buf + offset + 1 + (arr_len - 1),
-                data + offset + 1 + arr_len,
-                len - (offset + 1 + arr_len));
+                   data + offset + 1 + arr_len,
+                   len - (offset + 1 + arr_len));
 
             free(tc->data);
             tc->data = buf;
@@ -773,30 +756,16 @@ TestCase* mutate(TestCase* original, Vector* arg_types)
         }
 
         if (arr_len > 0) {
-            size_t i = fuzz_rand_range(arr_len);
-            uint8_t* elem = &data[offset + 1 + i];
-
-            switch (elem_t->kind) {
-            case TK_INT:
-            case TK_CHAR:
-                *elem = 'a' + (fuzz_rand_u32() % 26);
-                break;
-            case TK_BOOLEAN:
-                *elem ^= 1u;
-                break;
-            default:
-                break;
-            }
+            size_t idx = fuzz_rand_range(arr_len);
+            data[offset + 1 + idx] ^= (1u << (fuzz_rand_u32() % 7));
         }
-        break;
-    }
 
-    default:
-        break;
+        return tc;
     }
 
     return tc;
 }
+
 
 void fuzzer_free(Fuzzer* f)
 {

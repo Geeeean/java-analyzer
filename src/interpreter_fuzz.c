@@ -1041,38 +1041,26 @@ void fuzz_interpreter_free(VMContext* vm)
     free(vm);
 }
 
-/* --------------------------------------------------------------------------
- * build_locals_fast
- * -------------------------------------------------------------------------- */
 
 Value* fuzz_build_locals_fast(Heap* heap,
-                         const Method* m,
-                         const uint8_t* data,
-                         size_t len,
-                         int* locals_count)
+                              const Method* m,
+                              const uint8_t* data,
+                              size_t len,
+                              int* locals_count)
 {
     *locals_count = 0;
 
-    if (!heap) {
-        LOG_ERROR("build_locals_fast called with NULL heap");
+    if (!heap || !m || (!data && len > 0))
         return NULL;
-    }
-
-    if (!m || (!data && len > 0) || !locals_count) {
-        LOG_ERROR("build_locals_fast: invalid arguments");
-        return NULL;
-    }
 
     Vector* types = method_get_arguments_as_types(m);
-    if (!types) {
-        LOG_ERROR("build_locals_fast: method_get_arguments_as_types returned NULL");
+    if (!types)
         return NULL;
-    }
 
     int argc = (int)vector_length(types);
     if (argc == 0) {
         vector_delete(types);
-        return NULL; // no arguments -> no locals
+        return NULL;
     }
 
     Value* locals = calloc((size_t)argc, sizeof(Value));
@@ -1084,115 +1072,76 @@ Value* fuzz_build_locals_fast(Heap* heap,
     size_t pos = 0;
 
     for (int i = 0; i < argc; i++) {
-        Type* t = *(Type**)vector_get(types, (size_t)i);
-        if (!t) {
-            LOG_ERROR("build_locals_fast: NULL type at index %d", i);
-            goto fail;
-        }
+        Type* t = *(Type**)vector_get(types, i);
+        if (!t) goto fail;
 
-        Value v;
-        v.type = NULL;
+        Value v; v.type = NULL;
 
         switch (t->kind) {
-            case TK_INT:
-                if (pos + 1 > len) {
-                    LOG_ERROR("build_locals_fast: not enough bytes for INT at arg %d", i);
-                    goto fail;
-                }
-                v.type           = TYPE_INT;
-                v.data.int_value = (int8_t)data[pos++];
-                break;
 
-            case TK_BOOLEAN:
-                if (pos + 1 > len) {
-                    LOG_ERROR("build_locals_fast: not enough bytes for BOOLEAN at arg %d", i);
-                    goto fail;
-                }
-                v.type            = TYPE_BOOLEAN;
-                v.data.bool_value = (data[pos++] & 1);
+            case TK_INT: {
+                if (pos + 1 > len) goto fail;
+                int8_t b = (int8_t)data[pos++];
+                v.type = TYPE_INT;
+                v.data.int_value = (int32_t)b;
                 break;
+            }
 
-            case TK_CHAR:
-                if (pos + 1 > len) {
-                    LOG_ERROR("build_locals_fast: not enough bytes for CHAR at arg %d", i);
-                    goto fail;
-                }
-                v.type            = TYPE_CHAR;
+            case TK_BOOLEAN: {
+                if (pos + 1 > len) goto fail;
+                v.type = TYPE_BOOLEAN;
+                v.data.bool_value = data[pos++] & 1;
+                break;
+            }
+
+            case TK_CHAR: {
+                if (pos + 1 > len) goto fail;
+                v.type = TYPE_CHAR;
                 v.data.char_value = (char)data[pos++];
                 break;
+            }
 
             case TK_ARRAY: {
-                if (pos + 1 > len) {
-                    LOG_ERROR("build_locals_fast: missing length byte for ARRAY at arg %d", i);
-                    goto fail;
-                }
-
-                uint8_t array_len = data[pos++];
-
-                if (pos + array_len > len) {
-                    LOG_ERROR("build_locals_fast: not enough bytes for ARRAY elements at arg %d", i);
-                    goto fail;
-                }
+                if (pos + 1 > len) goto fail;
+                uint8_t arr_len = data[pos++];
 
                 ObjectValue* arr = malloc(sizeof(ObjectValue));
-                if (!arr)
+                if (!arr) goto fail;
+
+                arr->type = t;
+                arr->array.elements_count = arr_len;
+                arr->array.elements = arr_len > 0 ? malloc(arr_len * sizeof(Value)) : NULL;
+
+                if (arr_len > 0 && !arr->array.elements) {
+                    free(arr);
                     goto fail;
+                }
 
-                arr->type                 = t;
-                arr->array.elements_count = array_len;
-                arr->array.elements       = NULL;
-
-                if (array_len > 0) {
-                    arr->array.elements = malloc(sizeof(Value) * array_len);
-                    if (!arr->array.elements) {
+                for (int j = 0; j < arr_len; j++) {
+                    if (pos + 1 > len) {
+                        if (arr->array.elements) free(arr->array.elements);
                         free(arr);
                         goto fail;
                     }
-                }
+                    int8_t b = (int8_t)data[pos++];
 
-                Type* inner = t->array.element_type;
-
-                for (int j = 0; j < array_len; j++) {
                     Value elem;
-                    elem.type = NULL;
-
-                    switch (inner->kind) {
-                        case TK_INT:
-                            elem.type           = TYPE_INT;
-                            elem.data.int_value = (int8_t)data[pos++];
-                            break;
-                        case TK_BOOLEAN:
-                            elem.type            = TYPE_BOOLEAN;
-                            elem.data.bool_value = (data[pos++] & 1);
-                            break;
-                        case TK_CHAR:
-                            elem.type            = TYPE_CHAR;
-                            elem.data.char_value = (char)data[pos++];
-                            break;
-                        default:
-                            LOG_ERROR("build_locals_fast: unsupported array element kind %d", inner->kind);
-                            if (arr->array.elements)
-                                free(arr->array.elements);
-                            free(arr);
-                            goto fail;
-                    }
-
+                    elem.type = TYPE_INT;
+                    elem.data.int_value = (int32_t)b;
                     arr->array.elements[j] = elem;
                 }
 
                 v.type = TYPE_REFERENCE;
                 if (heap_insert(heap, arr, &v.data.ref_value) != 0) {
-                    LOG_ERROR("build_locals_fast: heap_insert failed for array arg %d", i);
-                    if (arr->array.elements)
-                        free(arr->array.elements);
+                    if (arr->array.elements) free(arr->array.elements);
                     free(arr);
                     goto fail;
                 }
+
                 break;
             }
 
             default:
-                LOG_ERROR("build_locals_fast: unsupported type kind %d", t->kind);
                 goto fail;
         }
 
@@ -1209,3 +1158,4 @@ Value* fuzz_build_locals_fast(Heap* heap,
     *locals_count = 0;
     return NULL;
 }
+
