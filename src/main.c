@@ -161,8 +161,6 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg)
     case RT_NULL_POINTER:
         print_interpreter_outcome(OC_NULL_POINTER);
         break;
-    case RT_CANT_BUILD_FRAME:
-    case RT_NULL_PARAMETERS:
     case RT_UNKNOWN_ERROR:
     default:
         LOG_ERROR("Error while executing interpreter: %d", interpreter_result);
@@ -174,6 +172,8 @@ void run_interpreter(const Method* m, Options opts, const Config* cfg)
 
 void run_fuzzer(const Method* m, Options opts, const Config* cfg)
 {
+
+
     size_t instruction_count = interpreter_instruction_count(m, cfg);
 
     if (!coverage_init(instruction_count)) {
@@ -187,6 +187,9 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg)
         coverage_reset_all();
         return;
     }
+
+    AbstractContext* abs_ctx = interpreter_abstract_setup(m, &opts, cfg);
+    AbstractResult abs_result = interpreter_abstract_run(abs_ctx);
 
     Fuzzer* f = fuzzer_init(instruction_count, arg_types);
     if (!f) {
@@ -202,7 +205,12 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg)
     thread_count = omp_threads;
 #endif
 
-    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count);
+    printf("arg_types count = %zu\n", vector_length(arg_types));
+    for (size_t i = 0; i < vector_length(arg_types); i++) {
+        Type* t = *(Type**)vector_get(arg_types, i);
+        printf("  arg %zu kind = %d\n", i, t->kind);
+    }
+    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count, &abs_result);
 
     size_t covered = coverage_global_count();
 

@@ -14,5 +14,5 @@ typedef struct {
 
 AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts, const Config* cfg);
 AbstractResult interpreter_abstract_run(AbstractContext* abstract_context);
-
+void abstract_result_print(const AbstractResult* result);
 #endif

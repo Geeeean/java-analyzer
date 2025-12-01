@@ -512,3 +512,37 @@ cleanup:
     free(ctx);
     return result;
 }
+
+void abstract_result_print(const AbstractResult* result)
+{
+    if (!result) {
+        LOG_INFO("AbstractResult = NULL");
+        return;
+    }
+
+    LOG_INFO("=== ABSTRACT RESULT ===");
+    LOG_INFO("num_locals = %d", result->num_locals);
+
+    for (int local = 0; local < result->num_locals; local++) {
+        Vector* intervals = result->results[local];
+        LOG_INFO("Local %d:", local);
+
+        if (!intervals) {
+            LOG_INFO("Interval error");
+            continue;
+        }
+
+        for (size_t j = 0; j < vector_length(intervals); j++) {
+            Interval* iv = vector_get(intervals, j);
+            if (!iv) {
+                LOG_INFO("  [%zu] = (interval error)", j);
+                continue;
+            }
+
+            LOG_INFO("  [%zu]  interval = [%d, %d]",
+                     j, iv->lower, iv->upper);
+        }
+    }
+
+    LOG_INFO("=========================");
+}

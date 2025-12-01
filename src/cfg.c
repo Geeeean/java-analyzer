@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "cfg.h"
 #include "common.h"
 #include "ir_instruction.h"

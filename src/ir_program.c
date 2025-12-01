@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "ir_program.h"
 #include "log.h"
 

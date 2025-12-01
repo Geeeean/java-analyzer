@@ -244,28 +244,37 @@ Vector* method_get_arguments_as_types(const Method* m)
     }
 
     Vector* v = vector_new(sizeof(Type*));
-
-    char* arguments = strdup(m->arguments);
-    char* arguments_consume = arguments;
-
-    int i = 0;
-    while (*arguments_consume != '\0') {
-        Type* type = get_type(&arguments_consume);
-        // LOG_DEBUG("TYPE %d %d", strlen(arguments), i);
-
-        if (!type || vector_push(v, &type)) {
-            vector_delete(v);
-            v = NULL;
-        }
-
-        arguments_consume++;
+    if (!v) {
+        return NULL;
     }
 
-cleanup:
-    free(arguments);
+    char* arguments = strdup(m->arguments);
+    if (!arguments) {
+        vector_delete(v);
+        return NULL;
+    }
 
+    char* arguments_consume = arguments;
+
+    while (*arguments_consume != '\0') {
+        Type* type = get_type(&arguments_consume);
+        if (!type) {
+            vector_delete(v);
+            v = NULL;
+            break;
+        }
+
+        if (vector_push(v, &type) != 0) {
+            vector_delete(v);
+            v = NULL;
+            break;
+        }
+    }
+
+    free(arguments);
     return v;
 }
+
 
 char* method_get_id(const Method* m)
 {

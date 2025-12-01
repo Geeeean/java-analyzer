@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <string.h>
+
 #include "itgraph.h"
 #include "config.h"
 #include "interpreter_concrete.h"
