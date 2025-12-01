@@ -87,6 +87,7 @@ IntervalState* interval_new_top_state(int num_locals)
     st->locals = vector_new(sizeof(int));
     st->stack = vector_new(sizeof(int));
     st->env = vector_new(sizeof(Interval));
+    st->arrays = vector_new(sizeof(ArrayInterval));
 
     for (int i = 0; i < num_locals; i++) {
         vector_push(st->locals, &i);
@@ -108,6 +109,7 @@ IntervalState* interval_new_bottom_state(int num_locals)
     st->locals = vector_new(sizeof(int));
     st->stack = vector_new(sizeof(int));
     st->env = vector_new(sizeof(Interval));
+    st->arrays = vector_new(sizeof(ArrayInterval));
 
     for (int i = 0; i < num_locals; i++) {
         vector_push(st->locals, &i);
@@ -128,6 +130,7 @@ void interval_state_delete(IntervalState* st)
     vector_delete(st->env);
     vector_delete(st->locals);
     vector_delete(st->stack);
+    vector_delete(st->arrays);
     free(st);
 }
 
@@ -146,6 +149,10 @@ int interval_state_copy(IntervalState* dst, const IntervalState* src)
     }
 
     if (vector_copy(dst->env, src->env)) {
+        return FAILURE;
+    }
+
+    if (vector_copy(dst->arrays, src->arrays)) {
         return FAILURE;
     }
 
@@ -205,6 +212,34 @@ int interval_join(IntervalState* acc, const IntervalState* new, int* changed)
 
     for (size_t i = locals_len; i < vector_length(new->locals); i++) {
         vector_push(acc->locals, vector_get(new->locals, i));
+    }
+
+    // Join array abstractions
+    int acc_arrays_len = vector_length(acc->arrays);
+    int new_arrays_len = vector_length(new->arrays);
+    
+    while (vector_length(acc->arrays) < new_arrays_len) {
+        ArrayInterval bottom_arr = {
+            .length = interval_bottom(),
+            .content = interval_bottom()
+        };
+        vector_push(acc->arrays, &bottom_arr);
+        *changed = 1;
+    }
+    
+    for (int i = 0; i < new_arrays_len; i++) {
+        ArrayInterval* a = vector_get(acc->arrays, i);
+        ArrayInterval* b = vector_get(new->arrays, i);
+        
+        Interval new_length = interval_join_single(a->length, b->length);
+        Interval new_content = interval_join_single(a->content, b->content);
+        
+        if (new_length.lower != a->length.lower || new_length.upper != a->length.upper ||
+            new_content.lower != a->content.lower || new_content.upper != a->content.upper) {
+            a->length = new_length;
+            a->content = new_content;
+            *changed = 1;
+        }
     }
 
     int lenA = vector_length(acc->stack);
@@ -330,6 +365,28 @@ int interval_widening(IntervalState* acc, const IntervalState* new, int* changed
             vector_push(acc->env, &r);
 
             *changed = 1;
+        }
+    }
+
+    // Widen array abstractions for fixpoint computation in loops
+    int acc_arrays_len = vector_length(acc->arrays);
+    int new_arrays_len = vector_length(new->arrays);
+    int max_arrays = (acc_arrays_len > new_arrays_len) ? acc_arrays_len : new_arrays_len;
+    
+    for (int i = 0; i < max_arrays; i++) {
+        if (i < acc_arrays_len && i < new_arrays_len) {
+            ArrayInterval* a = vector_get(acc->arrays, i);
+            ArrayInterval* b = vector_get(new->arrays, i);
+            
+            Interval new_length = interval_widen_single(a->length, b->length);
+            Interval new_content = interval_widen_single(a->content, b->content);
+            
+            if (new_length.lower != a->length.lower || new_length.upper != a->length.upper ||
+                new_content.lower != a->content.lower || new_content.upper != a->content.upper) {
+                a->length = new_length;
+                a->content = new_content;
+                *changed = 1;
+            }
         }
     }
 
@@ -640,6 +697,175 @@ static int handle_negate(IntervalState* st, IrInstruction* ins)
     return SUCCESS;
 }
 
+static int handle_new_array(IntervalState* st, IrInstruction* ins)
+{
+    if (!st || !ins) {
+        return FAILURE;
+    }
+
+    NewArrayOP* new_array = &ins->data.new_array;
+    
+    // Pop array dimensions from stack (for multi-dimensional arrays)
+    // For now, we handle single dimension
+    int length_id;
+    if (vector_pop(st->stack, &length_id)) {
+        return FAILURE;
+    }
+    
+    // Get the length interval
+    Interval* length_iv = vector_get(st->env, length_id);
+    if (!length_iv) {
+        return FAILURE;
+    }
+    
+    // Create array abstraction
+    ArrayInterval arr;
+    arr.length = *length_iv;
+    // Initially, array content is TOP (can contain any value)
+    arr.content = interval_top();
+    
+    // Store array in arrays vector and push reference on stack
+    int array_id = vector_length(st->arrays);
+    vector_push(st->arrays, &arr);
+    
+    // Push array reference as an interval [array_id, array_id]
+    int name = vector_length(st->env);
+    Interval ref = { .lower = array_id, .upper = array_id };
+    vector_push(st->env, &ref);
+    vector_push(st->stack, &name);
+    
+    return SUCCESS;
+}
+
+static int handle_array_store(IntervalState* st, IrInstruction* ins)
+{
+    if (!st || !ins) {
+        return FAILURE;
+    }
+    
+    // Pop value, index, and array reference from stack
+    int value_id, index_id, array_ref_id;
+    if (vector_pop(st->stack, &value_id)) {
+        return FAILURE;
+    }
+    if (vector_pop(st->stack, &index_id)) {
+        return FAILURE;
+    }
+    if (vector_pop(st->stack, &array_ref_id)) {
+        return FAILURE;
+    }
+    
+    // Get the array reference interval
+    Interval* array_ref = vector_get(st->env, array_ref_id);
+    if (!array_ref) {
+        return FAILURE;
+    }
+    
+    // Get the value interval
+    Interval* value = vector_get(st->env, value_id);
+    if (!value) {
+        return FAILURE;
+    }
+    
+    // If array reference is precise (points to single array)
+    if (array_ref->lower == array_ref->upper && array_ref->lower >= 0) {
+        int array_id = array_ref->lower;
+        if (array_id < vector_length(st->arrays)) {
+            ArrayInterval* arr = vector_get(st->arrays, array_id);
+            if (arr) {
+                // Join the stored value with existing content
+                arr->content = interval_join_single(arr->content, *value);
+            }
+        }
+    }
+    // Otherwise, we can't precisely track which array is modified
+    
+    return SUCCESS;
+}
+
+static int handle_array_load(IntervalState* st, IrInstruction* ins)
+{
+    if (!st || !ins) {
+        return FAILURE;
+    }
+    
+    // Pop index and array reference from stack
+    int index_id, array_ref_id;
+    if (vector_pop(st->stack, &index_id)) {
+        return FAILURE;
+    }
+    if (vector_pop(st->stack, &array_ref_id)) {
+        return FAILURE;
+    }
+    
+    // Get the array reference interval
+    Interval* array_ref = vector_get(st->env, array_ref_id);
+    if (!array_ref) {
+        return FAILURE;
+    }
+    
+    Interval result = interval_top();  // Default to TOP
+    
+    // If array reference is precise (points to single array)
+    if (array_ref->lower == array_ref->upper && array_ref->lower >= 0) {
+        int array_id = array_ref->lower;
+        if (array_id < vector_length(st->arrays)) {
+            ArrayInterval* arr = vector_get(st->arrays, array_id);
+            if (arr) {
+                // Return the content summarization
+                result = arr->content;
+            }
+        }
+    }
+    
+    // Push the loaded value onto stack
+    int name = vector_length(st->env);
+    vector_push(st->env, &result);
+    vector_push(st->stack, &name);
+    
+    return SUCCESS;
+}
+
+static int handle_array_length(IntervalState* st, IrInstruction* ins)
+{
+    if (!st || !ins) {
+        return FAILURE;
+    }
+    
+    // Pop array reference from stack
+    int array_ref_id;
+    if (vector_pop(st->stack, &array_ref_id)) {
+        return FAILURE;
+    }
+    
+    // Get the array reference interval
+    Interval* array_ref = vector_get(st->env, array_ref_id);
+    if (!array_ref) {
+        return FAILURE;
+    }
+    
+    Interval result = interval_top();  // Default to TOP
+    
+    // If array reference is precise (points to single array)
+    if (array_ref->lower == array_ref->upper && array_ref->lower >= 0) {
+        int array_id = array_ref->lower;
+        if (array_id < vector_length(st->arrays)) {
+            ArrayInterval* arr = vector_get(st->arrays, array_id);
+            if (arr) {
+                // Return the array length
+                result = arr->length;
+            }
+        }
+    }
+    
+    // Push the length onto stack
+    int name = vector_length(st->env);
+    vector_push(st->env, &result);
+    vector_push(st->stack, &name);
+    
+    return SUCCESS;
+}
+
 int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
 {
     if (!out_state || !ir_instruction) {
@@ -676,11 +902,17 @@ int interval_transfer(IntervalState* out_state, IrInstruction* ir_instruction)
     case OP_INCR:
         result = handle_incr(out_state, ir_instruction);
         break;
-    case OP_ARRAY_STORE:
     case OP_NEW_ARRAY:
+        result = handle_new_array(out_state, ir_instruction);
+        break;
+    case OP_ARRAY_STORE:
+        result = handle_array_store(out_state, ir_instruction);
+        break;
     case OP_ARRAY_LOAD:
+        result = handle_array_load(out_state, ir_instruction);
+        break;
     case OP_ARRAY_LENGTH:
-        result = FAILURE;
+        result = handle_array_length(out_state, ir_instruction);
         break;
     default:
         break;

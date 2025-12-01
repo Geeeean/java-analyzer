@@ -73,9 +73,16 @@ static TestCase* build_testcase_from_values(Fuzzer* f,
             len += 1;
             break;
 
-        case TK_ARRAY:
-            // TODO arrays not supported yet for interval-based seeds
-            return NULL;
+         case TK_ARRAY: {
+            // Use the provided tuple value as desired length (clamped to [0,255])
+            int v = *(int*)vector_get(arg_values_tuple, i);
+            int arr_len = v;
+            if (arr_len < 0) arr_len = 0;
+            if (arr_len > 255) arr_len = 255;
+            // 1 byte for length + arr_len bytes for elements (all element kinds are 1 byte each)
+            len += 1 + (size_t)arr_len;
+            break;
+        }
 
         default:
             return NULL;
@@ -108,6 +115,35 @@ static TestCase* build_testcase_from_values(Fuzzer* f,
         }
         case TK_CHAR: {
             buf[cursor++] = (uint8_t)(unsigned char)v;
+            break;
+        }
+        case TK_ARRAY: {
+            // Encode as: [len:1][elements:len*1]
+            int arr_len = v;
+            if (arr_len < 0) arr_len = 0;
+            if (arr_len > 255) arr_len = 255;
+
+            buf[cursor++] = (uint8_t)arr_len;
+
+            Type* elem_t = t->array.element_type;
+            for (int j = 0; j < arr_len; j++) {
+                switch (elem_t->kind) {
+                case TK_INT:
+                    // 1-byte signed int element
+                    buf[cursor++] = (uint8_t)((v + j) & 0xFF);
+                    break;
+                case TK_BOOLEAN:
+                    buf[cursor++] = (uint8_t)((v + j) & 1);
+                    break;
+                case TK_CHAR:
+                    buf[cursor++] = (uint8_t)('a' + (j % 26));
+                    break;
+                default:
+                    // Unsupported element type, fill zero
+                    buf[cursor++] = 0;
+                    break;
+                }
+            }
             break;
         }
         default:

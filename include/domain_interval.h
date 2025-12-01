@@ -12,9 +12,15 @@ typedef struct {
 } Interval;
 
 typedef struct {
+    Interval length;   // Array length as an interval
+    Interval content;  // Summarization of all array elements
+} ArrayInterval;
+
+typedef struct {
     Vector* locals; // Vector<int>
     Vector* stack; // Vector<int>
     Vector* env; // Vector<Interval>
+    Vector* arrays; // Vector<ArrayInterval> - array abstractions
 } IntervalState;
 
 IntervalState* interval_new_top_state(int num_vars);
