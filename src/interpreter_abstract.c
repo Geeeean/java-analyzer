@@ -9,11 +9,14 @@
 #include <limits.h>
 #include <omp.h>
 
+#define MAXIMUM_LOOP_ITERATION 50
+
 struct AbstractContext {
     Cfg* cfg;
     WPO wpo;
     int block_count;
     int exit_count;
+    int* loop_iteration;
 };
 
 AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts, const Config* cfg)
@@ -69,6 +72,7 @@ AbstractContext* interpreter_abstract_setup(const Method* m, const Options* opts
     ctx->exit_count = vector_length(wpo.wpo->nodes) - ctx->block_count;
     ctx->wpo = wpo;
     ctx->cfg = control_flow_graph;
+    ctx->loop_iteration = calloc(vector_length(ctx->wpo.Cx), sizeof(int));
 
 #ifdef DEBUG
     graph_print(wpo.wpo);
@@ -103,31 +107,6 @@ static void set_n_for_component(int* N, int exit_node, AbstractContext* ctx, Vec
         }
     }
 }
-
-// static void update_scheduling_successors(
-//     Graph* graph,
-//     int current_node,
-//     int* N,
-//     int* num_sched_pred,
-//     IntervalState** X_in,
-//     IntervalState** X_out,
-//     int is_conditional)
-// {
-//     Node* node = vector_get(graph->nodes, current_node);
-//     for (size_t i = 0; i < vector_length(node->successors); i++) {
-//         int successor = *(int*)vector_get(node->successors, i);
-//         N[successor]++;
-//
-//         if (!(is_conditional && (i == 0 || i == 1))) {
-//             int dummy;
-//             interval_join(X_in[successor], X_out[current_node], &dummy);
-//         }
-//
-//         if (num_sched_pred[successor] == N[successor]) {
-//             vector_push(worklist, &successor);
-//         }
-//     }
-// }
 
 void apply_last(IrInstruction* last,
     BasicBlock* block,
@@ -220,10 +199,13 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
         block->ip_end);
 
     if (head == current_node) {
-        if (is_interval_state_bottom(out)) {
+        if (is_interval_state_bottom(out) && ctx->loop_iteration[component] < MAXIMUM_LOOP_ITERATION) {
+            ctx->loop_iteration[component]++;
             interval_state_copy(out, in);
-        } else {
+        } else if (ctx->loop_iteration[component] >= MAXIMUM_LOOP_ITERATION) {
             interval_widening(out, in, &dummy);
+        } else {
+            ctx->loop_iteration[component]++;
         }
 
         for (int ip = block->ip_start; ip < block->ip_end; ip++) {
@@ -233,6 +215,7 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
         }
 
         apply_last(last, block, X_in, X_out, out, current_node, component, ctx, 1, locks);
+
     } else {
         interval_state_copy(out, in);
 
@@ -246,6 +229,7 @@ int apply_f(int current_node, AbstractContext* ctx, IntervalState** X_in, Interv
         interval_join(in, out, &dummy);
     }
 
+    interval_state_copy(X_in[current_node], X_out[current_node]);
     return ir_instruction_is_conditional(last) || last->opcode == OP_INVOKE;
 }
 
@@ -262,8 +246,8 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
     IntervalState* test_in = interval_new_top_state(block->num_locals);
     IntervalState* test_out = interval_new_top_state(block->num_locals);
 
-    interval_state_copy(test_in, X_in[head]);
-    interval_state_copy(test_out, X_out[head]);
+    interval_state_copy(test_in, X_in[current_node]);
+    interval_state_copy(test_out, X_in[head]);
 
     omp_unset_lock(&locks[head]);
 
@@ -284,7 +268,7 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
             continue;
         }
 
-        if ((out->lower < in->lower) || (out->upper > in->upper)) {
+        if ((out->lower > in->lower) || (out->upper < in->upper)) {
             interval_state_delete(test_in);
             interval_state_delete(test_out);
             return 0;
@@ -293,6 +277,7 @@ int is_component_stabilized(int current_node, AbstractContext* ctx, IntervalStat
 
     interval_state_delete(test_in);
     interval_state_delete(test_out);
+
     return 1;
 }
 

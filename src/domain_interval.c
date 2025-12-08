@@ -74,6 +74,8 @@ static Interval interval_widen_single(Interval old, Interval newer)
 
     r.upper = MAX(r.upper, MAX(newer.upper, old.upper));
 
+    LOG_DEBUG("RESULT UPPER %d", r.upper);
+
     return r;
 }
 
@@ -601,6 +603,7 @@ static int handle_new(IntervalState* st, IrInstruction* ins)
     return SUCCESS;
 }
 
+int ciao = 0;
 static int handle_incr(IntervalState* st, IrInstruction* ins)
 {
     if (!st || !ins) {
@@ -612,12 +615,15 @@ static int handle_incr(IntervalState* st, IrInstruction* ins)
 
     Interval iv = *(Interval*)vector_get(st->env, *iv_id);
 
-    iv.lower++;
+    if (iv.lower < INT_MAX) {
+        iv.lower++;
+    }
 
     if (iv.upper < INT_MAX)
         iv.upper++;
 
     *iv_id = vector_length(st->env);
+
     vector_push(st->env, &iv);
 
     return SUCCESS;
