@@ -42,7 +42,7 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
                                   const Options* opts,
                                   Vector* arg_types,
                                   int thread_count,
-                                  AbstractResult* precomputed_abs);
+                                  Vector* precomputed_abs);
 
 uint8_t* fuzzer_make_seed(Vector* arg_types, size_t* out_len);
 

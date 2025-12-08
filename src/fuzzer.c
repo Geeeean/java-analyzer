@@ -160,15 +160,39 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
                                   const Options* opts,
                                   Vector* arg_types,
                                   int thread_count,
-                                  AbstractResult* abs)
-{
-    Vector* all_interesting = vector_new(sizeof(TestCase*));
+                                  Vector* interval_seeds) {
+
+    Vector *all_interesting = vector_new(sizeof(TestCase *));
+
+    for (size_t i = 0; i < vector_length(interval_seeds); i++) {
+        TestCase *tc = *(TestCase**)vector_get(interval_seeds, i);
+
+        corpus_add(f->corpus, tc);
+
+        coverage_reset_thread_bitmap(tc->coverage_bitmap);
+
+        Options base_opts = *opts;
+        base_opts.parameters = NULL;
+
+        VMContext *vm = fuzz_interpreter_setup(method, &base_opts, config, tc->coverage_bitmap);
+        if (vm) {
+            fuzz_VMContext_reset(vm);
+            fuzz_interpreter_run(vm);
+            coverage_commit_thread(tc->coverage_bitmap);
+            fuzz_interpreter_free(vm);
+        }
+
+        vector_push(all_interesting, &tc);
+    }
+
+    printf("[FUZZER] Loaded %zu interval-guided seeds\n",
+           vector_length(interval_seeds));
 
     if (vector_length(arg_types) == 0) {
-        Vector* result = vector_new(sizeof(TestCase*));
+        Vector *result = vector_new(sizeof(TestCase *));
 
-        uint8_t* empty_cov = calloc(f->cov_bytes, 1);
-        TestCase* tc = create_testCase(NULL, 0, empty_cov, f->cov_bytes);
+        uint8_t *empty_cov = calloc(f->cov_bytes, 1);
+        TestCase *tc = create_testCase(NULL, 0, empty_cov, f->cov_bytes);
         free(empty_cov);
 
         coverage_reset_thread_bitmap(tc->coverage_bitmap);
@@ -176,7 +200,7 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
         Options base_opts = *opts;
         base_opts.parameters = NULL;
 
-        VMContext* vm = fuzz_interpreter_setup(method, &base_opts, config, tc->coverage_bitmap);
+        VMContext *vm = fuzz_interpreter_setup(method, &base_opts, config, tc->coverage_bitmap);
         if (!vm) {
             return result;
         }
@@ -189,29 +213,35 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
         fuzz_interpreter_free(vm);
 
         vector_push(result, &tc);
+
         return result;
     }
 
     uint64_t start = now_us();
-    const uint64_t TIMEOUT_US = 5ULL * 1000000ULL;
+    const uint64_t TIMEOUT_US = 10ULL * 1000000ULL;
 
     if (thread_count <= 1) {
         for (;;) {
             if (now_us() - start > TIMEOUT_US)
                 return all_interesting;
 
-            Vector* batch = fuzzer_run_single(f, method, config, opts, arg_types);
+            Vector *batch = fuzzer_run_single(f, method, config, opts, arg_types);
 
             size_t n = vector_length(batch);
             for (size_t i = 0; i < n; i++) {
-                TestCase* tc = *(TestCase**)vector_get(batch, i);
+                TestCase *tc = *(TestCase **) vector_get(batch, i);
+
                 vector_push(all_interesting, &tc);
             }
 
             vector_delete(batch);
 
-            if (coverage_is_complete())
+            if (coverage_is_complete()) {
+                uint64_t end = now_us();
+                printf("[FUZZER] Time taken: %.3f seconds\n",
+                       (end - start) / 1e6);
                 return all_interesting;
+            }
         }
     }
 
@@ -219,19 +249,24 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
         if (now_us() - start > TIMEOUT_US)
             return all_interesting;
 
-        Vector* batch =
-            fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
+        Vector *batch =
+                fuzzer_run_parallel(f, method, config, opts, arg_types, thread_count);
 
         size_t n = vector_length(batch);
         for (size_t i = 0; i < n; i++) {
-            TestCase* tc = *(TestCase**)vector_get(batch, i);
+            TestCase *tc = *(TestCase **) vector_get(batch, i);
+
             vector_push(all_interesting, &tc);
         }
 
         vector_delete(batch);
 
-        if (coverage_is_complete())
+        if (coverage_is_complete()) {
+            uint64_t end = now_us();
+            printf("[FUZZER] Time taken: %.3f seconds\n",
+                   (end - start) / 1e6);
             return all_interesting;
+        }
     }
 }
 
@@ -334,11 +369,11 @@ Vector* fuzzer_run_single(Fuzzer* f,
                 continue;
             }
 
-            if (!already_seen) {
+            /* if (!already_seen) {
                 corpus_add(f->corpus, child);
                 workqueue_push(&queue, child);
                 continue;
-            }
+            } */
 
             testcase_free(child);
         }
@@ -461,11 +496,11 @@ Vector* fuzzer_run_parallel(Fuzzer* f,
                     continue;
                 }
 
-                if (!already_seen) {
+               /*  if (!already_seen) {
                     corpus_add(f->corpus, child);
                     workqueue_push(&queue, child);
                     continue;
-                }
+                } */
 
                 testcase_free(child);
             }
@@ -577,7 +612,6 @@ TestCase* mutate(TestCase* tc, Vector* arg_types)
         uint8_t* arr = buf + offset + 1;
         int action = fuzz_rand_u32() % 3;
 
-        /* grow */
         if (action == 0 && len < 255) {
             int grow_by = 1 + (fuzz_rand_u32() % 200);
             if (len + grow_by > 255) grow_by = 255 - len;
@@ -642,7 +676,6 @@ TestCase* mutate(TestCase* tc, Vector* arg_types)
             return tc;
         }
 
-        /* mutate an element */
         if (len > 0) {
             size_t idx = fuzz_rand_range(len);
             uint8_t* ep = arr + idx * esz;

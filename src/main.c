@@ -14,6 +14,7 @@
 
 #include "tree_sitter/api.h"
 #include "utils.h"
+#include "interval_testcase.h"
 #include <omp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -205,12 +206,14 @@ void run_fuzzer(const Method* m, Options opts, const Config* cfg)
     thread_count = omp_threads;
 #endif
 
+    Vector* interval_seeds = generate_interval_seeds(f, &abs_result, arg_types);
+
     printf("arg_types count = %zu\n", vector_length(arg_types));
     for (size_t i = 0; i < vector_length(arg_types); i++) {
         Type* t = *(Type**)vector_get(arg_types, i);
         printf("  arg %zu kind = %d\n", i, t->kind);
     }
-    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count, &abs_result);
+    Vector* results = fuzzer_run_until_complete(f, m, cfg, &opts, arg_types, thread_count, interval_seeds);
 
     size_t covered = coverage_global_count();
 

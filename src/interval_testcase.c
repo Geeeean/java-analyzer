@@ -19,16 +19,13 @@ static int is_singleton(Interval* iv) {
 
 static Vector* interval_to_values(Interval* iv) {
     Vector* reps = vector_new(sizeof(int));
-
     if (is_bottom_interval(iv))
         return reps;
-
     if (is_singleton(iv)) {
         int v = iv->lower;
         vector_push(reps, &v);
         return reps;
     }
-
     if (is_top_interval(iv))
         return reps;
 
@@ -49,36 +46,29 @@ static Vector* interval_to_values(Interval* iv) {
     return reps;
 }
 
-
 static TestCase* build_testcase_from_values(Fuzzer* f,
                                             Vector* arg_types,
                                             Vector* arg_values_tuple)
 {
     size_t arg_count = vector_length(arg_types);
-
     size_t len = 0;
+
     for (size_t i = 0; i < arg_count; i++) {
         Type* t = *(Type**) vector_get(arg_types, i);
-        if (!t) {
-            return NULL;
-        }
+        if (!t) return NULL;
 
         switch (t->kind) {
-        case TK_INT:
-            len += 4;
-            break;
-
-        case TK_BOOLEAN:
-        case TK_CHAR:
-            len += 1;
-            break;
-
-        case TK_ARRAY:
-            // TODO arrays not supported yet for interval-based seeds
-            return NULL;
-
-        default:
-            return NULL;
+            case TK_INT:
+                len += 1;
+                break;
+            case TK_BOOLEAN:
+            case TK_CHAR:
+                len += 1;
+                break;
+            case TK_ARRAY:
+                return NULL;
+            default:
+                return NULL;
         }
     }
 
@@ -86,6 +76,7 @@ static TestCase* build_testcase_from_values(Fuzzer* f,
     if (!buf) return NULL;
 
     size_t cursor = 0;
+
     for (size_t i = 0; i < arg_count; i++) {
         int v = *(int*)vector_get(arg_values_tuple, i);
         Type* t = *(Type**) vector_get(arg_types, i);
@@ -95,24 +86,24 @@ static TestCase* build_testcase_from_values(Fuzzer* f,
         }
 
         switch (t->kind) {
-        case TK_INT: {
-            int32_t iv = (int32_t)v;
-            // write as 4 bytes, little-endian
-            memcpy(&buf[cursor], &iv, sizeof(int32_t));
-            cursor += 4;
-            break;
-        }
-        case TK_BOOLEAN: {
-            buf[cursor++] = (v != 0) ? 1u : 0u;
-            break;
-        }
-        case TK_CHAR: {
-            buf[cursor++] = (uint8_t)(unsigned char)v;
-            break;
-        }
-        default:
-            buf[cursor++] = 0;
-            break;
+            case TK_INT: {
+                if (v < -128) v = -128;
+                if (v > 127) v = 127;
+                int8_t iv = (int8_t)v;
+                buf[cursor++] = (uint8_t)iv;
+                break;
+            }
+            case TK_BOOLEAN: {
+                buf[cursor++] = (v != 0) ? 1u : 0u;
+                break;
+            }
+            case TK_CHAR: {
+                buf[cursor++] = (uint8_t)(unsigned char)v;
+                break;
+            }
+            default:
+                buf[cursor++] = 0;
+                break;
         }
     }
 
@@ -131,7 +122,6 @@ static TestCase* build_testcase_from_values(Fuzzer* f,
 
     return tc;
 }
-
 
 Vector* generate_interval_seeds(Fuzzer* f,
                                 AbstractResult* abs,
@@ -153,7 +143,6 @@ Vector* generate_interval_seeds(Fuzzer* f,
 
         for (size_t i = 0; i < n; i++) {
             Interval* iv = (Interval*) vector_get(intervals, i);
-
             if (is_top_interval(iv)) continue;
             if (is_bottom_interval(iv)) continue;
 
@@ -194,18 +183,18 @@ Vector* generate_interval_seeds(Fuzzer* f,
             if (idx[pos] < vector_length(arg_representatives[pos]))
                 break;
             idx[pos] = 0;
-            if (pos == 0) goto done_cartesian;
+            if (pos == 0) goto done;
             pos--;
         }
     }
 
-done_cartesian:
+    done:
     free(idx);
 
     for (size_t a = 0; a < arg_count; a++) {
         vector_delete(arg_representatives[a]);
     }
-    free(arg_representatives);
 
+    free(arg_representatives);
     return all_seeds;
 }
