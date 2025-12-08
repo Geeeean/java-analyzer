@@ -188,7 +188,6 @@ Vector* generate_interval_seeds(Fuzzer* f,
         }
     }
 
-    done:
     free(idx);
 
     for (size_t a = 0; a < arg_count; a++) {
