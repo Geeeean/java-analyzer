@@ -7,7 +7,6 @@
 #include "method.h"
 #include "testCaseCorpus.h"
 #include "vector.h"
-#include "workqueue.h"
 #include <stdbool.h>
 
 typedef struct {
@@ -26,16 +25,14 @@ Vector* fuzzer_run_single(Fuzzer* f,
                           const Method* method,
                           const Config* config,
                           const Options* opts,
-                          Vector* arg_types,
-                          WorkQueue* queue);
+                          Vector* arg_types);
 
 Vector* fuzzer_run_parallel(Fuzzer* f,
                             const Method* method,
                             const Config* config,
                             const Options* opts,
                             Vector* arg_types,
-                            int thread_count,
-                            WorkQueue* queue);
+                            int thread_count);
 
 TestCase* mutate(TestCase* tc, Vector* arg_types);
 
@@ -46,5 +43,7 @@ Vector* fuzzer_run_until_complete(Fuzzer* f,
                                   Vector* arg_types,
                                   int thread_count,
                                   AbstractResult* precomputed_abs);
-void print_corpus(const Corpus* corpus, Vector* arg_types);
+
+uint8_t* fuzzer_make_seed(Vector* arg_types, size_t* out_len);
+
 #endif

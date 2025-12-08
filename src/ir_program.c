@@ -77,6 +77,7 @@ IrFunction* ir_program_get_function_ir(const Method* m, const Config* cfg)
         } else {
             IRItem* it = build_item(m, cfg);
             if (it) {
+                it -> next = it_map;
                 it_map = it;
                 result = it->ir_function;
             } else {
@@ -106,6 +107,7 @@ Cfg* ir_program_get_cfg(const Method* m, const Config* cfg)
         } else {
             IRItem* it = build_item(m, cfg);
             if (it) {
+                it -> next = it_map;
                 it_map = it;
                 result = it->cfg;
             } else {
@@ -136,6 +138,7 @@ int ir_program_get_num_locals(const Method* m, const Config* cfg)
         } else {
             IRItem* it = build_item(m, cfg);
             if (it) {
+                it -> next = it_map;
                 it_map = it;
                 result = it->num_locals;
             }

@@ -89,7 +89,6 @@ TestCase* testCase_copy(TestCase* parent) {
         return NULL;
     }
 
-    // child’s coverage bitmap starts at 0 (fresh execution)
     memset(child->coverage_bitmap, 0, parent->cov_bytes);
     child->cov_bytes = parent->cov_bytes;
 
@@ -97,10 +96,6 @@ TestCase* testCase_copy(TestCase* parent) {
 
     return child;
 }
-
-// -----------------------------
-// Corpus implementation
-// -----------------------------
 
 Corpus* corpus_init(void)
 {

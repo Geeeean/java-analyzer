@@ -418,6 +418,7 @@ static StepResult handle_store(VMContext* vm_context, IrInstruction* instruction
     if (!store)
         return SR_NULL_INSTRUCTION;
 
+
     Frame* frame = vm_context->frame;
     Value  v;
 
@@ -427,6 +428,11 @@ static StepResult handle_store(VMContext* vm_context, IrInstruction* instruction
     int index = store->index;
     if (index < 0)
         return SR_OUT_OF_BOUNDS;
+
+    if (frame->locals_count == 0) {
+        LOG_ERROR("STORE to local %d but function has no locals!", index);
+        return SR_OUT_OF_BOUNDS;
+    }
 
     if (index >= frame->locals_count) {
         int new_count = index + 1;
@@ -1079,70 +1085,91 @@ Value* fuzz_build_locals_fast(Heap* heap,
 
         switch (t->kind) {
 
-            case TK_INT: {
-                if (pos + 1 > len) goto fail;
-                int8_t b = (int8_t)data[pos++];
-                v.type = TYPE_INT;
-                v.data.int_value = (int32_t)b;
-                break;
+        case TK_INT: {
+            if (pos + 1 > len) goto fail;
+            int8_t b = (int8_t)data[pos++];
+            v.type = t;                          // FIX: use the actual Type*
+            v.data.int_value = (int32_t)b;
+            break;
+        }
+
+        case TK_BOOLEAN: {
+            if (pos + 1 > len) goto fail;
+            v.type = t;                          // FIX
+            v.data.bool_value = data[pos++] & 1;
+            break;
+        }
+
+        case TK_CHAR: {
+            if (pos + 1 > len) goto fail;
+            v.type = t;                          // FIX
+            v.data.char_value = (char)data[pos++];
+            break;
+        }
+
+        case TK_ARRAY: {
+            if (pos + 1 > len) goto fail;
+            uint8_t arr_len = data[pos++];
+
+            ObjectValue* arr = malloc(sizeof(ObjectValue));
+            if (!arr) goto fail;
+
+            arr->type = t;
+            arr->array.elements_count = arr_len;
+            arr->array.elements = arr_len > 0 ? malloc(arr_len * sizeof(Value)) : NULL;
+
+            if (arr_len > 0 && !arr->array.elements) {
+                free(arr);
+                goto fail;
             }
 
-            case TK_BOOLEAN: {
-                if (pos + 1 > len) goto fail;
-                v.type = TYPE_BOOLEAN;
-                v.data.bool_value = data[pos++] & 1;
-                break;
-            }
+            Type* elem = t->array.element_type;
 
-            case TK_CHAR: {
-                if (pos + 1 > len) goto fail;
-                v.type = TYPE_CHAR;
-                v.data.char_value = (char)data[pos++];
-                break;
-            }
-
-            case TK_ARRAY: {
-                if (pos + 1 > len) goto fail;
-                uint8_t arr_len = data[pos++];
-
-                ObjectValue* arr = malloc(sizeof(ObjectValue));
-                if (!arr) goto fail;
-
-                arr->type = t;
-                arr->array.elements_count = arr_len;
-                arr->array.elements = arr_len > 0 ? malloc(arr_len * sizeof(Value)) : NULL;
-
-                if (arr_len > 0 && !arr->array.elements) {
-                    free(arr);
-                    goto fail;
-                }
-
-                for (int j = 0; j < arr_len; j++) {
-                    if (pos + 1 > len) {
-                        if (arr->array.elements) free(arr->array.elements);
-                        free(arr);
-                        goto fail;
-                    }
-                    int8_t b = (int8_t)data[pos++];
-
-                    Value elem;
-                    elem.type = TYPE_INT;
-                    elem.data.int_value = (int32_t)b;
-                    arr->array.elements[j] = elem;
-                }
-
-                v.type = TYPE_REFERENCE;
-                if (heap_insert(heap, arr, &v.data.ref_value) != 0) {
+            for (int j = 0; j < arr_len; j++) {
+                if (pos + 1 > len) {
                     if (arr->array.elements) free(arr->array.elements);
                     free(arr);
                     goto fail;
                 }
 
-                break;
+                uint8_t b = data[pos++];
+
+                Value ev;
+                ev.type = elem;                  // FIX: actual element type
+
+                switch (elem->kind) {
+                    case TK_INT:
+                        ev.data.int_value = (int32_t)(int8_t)b;
+                        break;
+
+                    case TK_BOOLEAN:
+                        ev.data.bool_value = b & 1;
+                        break;
+
+                    case TK_CHAR:
+                        ev.data.char_value = (char)b;
+                        break;
+
+                    default:
+                        ev.type = NULL;
+                        break;
+                }
+
+                arr->array.elements[j] = ev;
             }
 
-            default:
+            v.type = TYPE_REFERENCE;
+            if (heap_insert(heap, arr, &v.data.ref_value) != 0) {
+                if (arr->array.elements) free(arr->array.elements);
+                free(arr);
                 goto fail;
+            }
+
+            break;
+        }
+
+        default:
+            goto fail;
         }
 
         locals[*locals_count] = v;
@@ -1152,7 +1179,7 @@ Value* fuzz_build_locals_fast(Heap* heap,
     vector_delete(types);
     return locals;
 
-    fail:
+fail:
     vector_delete(types);
     free(locals);
     *locals_count = 0;
